@@ -23,8 +23,8 @@ func TestRunScanWritesCSVAndHashes(t *testing.T) {
 	output := filepath.Join(workspace, "report.csv")
 	done, err := runScan(source, output, scanOptions{
 		Hashing:       true,
-		IncludeHidden: true,
-		IncludeSystem: true,
+		ExcludeHidden: false,
+		ExcludeSystem: false,
 		ExcludedExts:  map[string]struct{}{},
 	})
 	if err != nil {
@@ -83,8 +83,8 @@ func TestRunScanAppliesFilters(t *testing.T) {
 	output := filepath.Join(workspace, "filtered.csv")
 	done, err := runScan(source, output, scanOptions{
 		Hashing:       false,
-		IncludeHidden: false,
-		IncludeSystem: false,
+		ExcludeHidden: true,
+		ExcludeSystem: true,
 		ExcludedExts: map[string]struct{}{
 			"log": {},
 		},

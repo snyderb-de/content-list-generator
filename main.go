@@ -26,6 +26,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/xuri/excelize/v2"
 )
 
 type stage int
@@ -46,6 +47,8 @@ const (
 	focusHashing
 	focusHidden
 	focusSystem
+	focusXLSX
+	focusPreserveZeros
 	focusStart
 	focusCount
 )
@@ -58,6 +61,7 @@ Fast recursive inventory export for very large folders.
 - Browse to an output folder
 - Name the output CSV
 - Filter hidden files or common system clutter
+- Optionally convert the CSV to XLSX after the scan
 - Stream rows directly to disk
 
 CSV is the safest default for huge scans because the app never builds the whole table in memory.`
@@ -86,19 +90,26 @@ type scanProgressMsg struct {
 }
 
 type scanDoneMsg struct {
-	files         uint64
-	directories   uint64
-	bytes         uint64
-	errors        uint64
-	filtered      uint64
-	outputPath    string
-	elapsed       time.Duration
-	topByCount    []summaryEntry
-	topBySize     []summaryEntry
-	hashWorkers   int
-	hashing       bool
-	includeHidden bool
-	includeSystem bool
+	files           uint64
+	directories     uint64
+	bytes           uint64
+	errors          uint64
+	filtered        uint64
+	outputPath      string
+	xlsxPath        string
+	elapsed         time.Duration
+	topByCount      []summaryEntry
+	topBySize       []summaryEntry
+	hashWorkers     int
+	hashing         bool
+	excludeHidden   bool
+	excludeSystem   bool
+	createXLSX      bool
+	preserveZeros   bool
+	filteredHidden  uint64
+	filteredSystem  uint64
+	filteredExts    uint64
+	filteredSamples []string
 }
 
 type scanErrorMsg struct {
@@ -107,8 +118,10 @@ type scanErrorMsg struct {
 
 type scanOptions struct {
 	Hashing          bool
-	IncludeHidden    bool
-	IncludeSystem    bool
+	ExcludeHidden    bool
+	ExcludeSystem    bool
+	CreateXLSX       bool
+	PreserveZeros    bool
 	ExcludedExts     map[string]struct{}
 	ExcludedExtsText string
 }
@@ -138,8 +151,10 @@ type model struct {
 	excludeInput  textinput.Model
 	settingsFocus int
 	hashing       bool
-	includeHidden bool
-	includeSystem bool
+	excludeHidden bool
+	excludeSystem bool
+	createXLSX    bool
+	preserveZeros bool
 	spinner       spinner.Model
 	sourceDir     string
 	outputDir     string
@@ -203,8 +218,10 @@ func main() {
 		excludeInput:  excludeInput,
 		settingsFocus: focusFileName,
 		hashing:       false,
-		includeHidden: false,
-		includeSystem: false,
+		excludeHidden: false,
+		excludeSystem: false,
+		createXLSX:    false,
+		preserveZeros: false,
 		spinner:       spin,
 		sourceDir:     startDir,
 		outputDir:     startDir,
@@ -273,7 +290,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.list.SetSize(msg.Width-6, msg.Height-18)
+		m.list.SetSize(msg.Width-8, boundedListHeight(msg.Height))
 		m.outputInput.Width = max(20, msg.Width-28)
 		m.excludeInput.Width = max(20, msg.Width-28)
 		return m, nil
@@ -328,7 +345,7 @@ func (m model) updateSourceStage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if parent != m.sourceDir {
 			m.sourceDir = parent
 			m.list = newSourceList(parent)
-			m.list.SetSize(m.width-6, m.height-18)
+			m.list.SetSize(m.width-8, boundedListHeight(m.height))
 		}
 		return m, nil
 	case key.Matches(msg, sourceKeys.Choose):
@@ -337,24 +354,24 @@ func (m model) updateSourceStage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.outputDir = m.sourceDir
 			m.stage = stagePickOutputDir
 			m.list = newDirectoryList(m.outputDir, "Output Folder")
-			m.list.SetSize(m.width-6, m.height-18)
+			m.list.SetSize(m.width-8, boundedListHeight(m.height))
 			return m, nil
 		}
 		if selected.name == ".." {
 			m.sourceDir = selected.path
 			m.list = newSourceList(selected.path)
-			m.list.SetSize(m.width-6, m.height-18)
+			m.list.SetSize(m.width-8, boundedListHeight(m.height))
 			return m, nil
 		}
 		m.sourceDir = selected.path
 		m.list = newSourceList(selected.path)
-		m.list.SetSize(m.width-6, m.height-18)
+		m.list.SetSize(m.width-8, boundedListHeight(m.height))
 		return m, nil
 	case msg.String() == " ":
 		m.outputDir = m.sourceDir
 		m.stage = stagePickOutputDir
 		m.list = newDirectoryList(m.outputDir, "Output Folder")
-		m.list.SetSize(m.width-6, m.height-18)
+		m.list.SetSize(m.width-8, boundedListHeight(m.height))
 		return m, nil
 	case msg.String() == "q" || msg.String() == "ctrl+c":
 		m.quitting = true
@@ -373,7 +390,7 @@ func (m model) updateOutputDirStage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if parent != m.outputDir {
 			m.outputDir = parent
 			m.list = newDirectoryList(parent, "Output Folder")
-			m.list.SetSize(m.width-6, m.height-18)
+			m.list.SetSize(m.width-8, boundedListHeight(m.height))
 		}
 		return m, nil
 	case key.Matches(msg, sourceKeys.Choose):
@@ -387,12 +404,12 @@ func (m model) updateOutputDirStage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if selected.name == ".." {
 			m.outputDir = selected.path
 			m.list = newDirectoryList(selected.path, "Output Folder")
-			m.list.SetSize(m.width-6, m.height-18)
+			m.list.SetSize(m.width-8, boundedListHeight(m.height))
 			return m, nil
 		}
 		m.outputDir = selected.path
 		m.list = newDirectoryList(selected.path, "Output Folder")
-		m.list.SetSize(m.width-6, m.height-18)
+		m.list.SetSize(m.width-8, boundedListHeight(m.height))
 		return m, nil
 	case msg.String() == " ":
 		m.stage = stageSetOutput
@@ -402,7 +419,7 @@ func (m model) updateOutputDirStage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case msg.String() == "esc":
 		m.stage = stagePickSource
 		m.list = newDirectoryList(m.sourceDir, "Source Folder")
-		m.list.SetSize(m.width-6, m.height-18)
+		m.list.SetSize(m.width-8, boundedListHeight(m.height))
 		return m, nil
 	case msg.String() == "q" || msg.String() == "ctrl+c":
 		m.quitting = true
@@ -422,7 +439,7 @@ func (m model) updateOutputStage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		m.stage = stagePickOutputDir
 		m.list = newDirectoryList(m.outputDir, "Output Folder")
-		m.list.SetSize(m.width-6, m.height-18)
+		m.list.SetSize(m.width-8, boundedListHeight(m.height))
 		m.syncSettingsFocus()
 		return m, nil
 	case "tab", "down":
@@ -439,10 +456,21 @@ func (m model) updateOutputStage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.hashing = !m.hashing
 			return m, nil
 		case focusHidden:
-			m.includeHidden = !m.includeHidden
+			m.excludeHidden = !m.excludeHidden
 			return m, nil
 		case focusSystem:
-			m.includeSystem = !m.includeSystem
+			m.excludeSystem = !m.excludeSystem
+			return m, nil
+		case focusXLSX:
+			m.createXLSX = !m.createXLSX
+			if !m.createXLSX {
+				m.preserveZeros = false
+			}
+			return m, nil
+		case focusPreserveZeros:
+			if m.createXLSX {
+				m.preserveZeros = !m.preserveZeros
+			}
 			return m, nil
 		}
 	case "enter":
@@ -451,10 +479,21 @@ func (m model) updateOutputStage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.hashing = !m.hashing
 			return m, nil
 		case focusHidden:
-			m.includeHidden = !m.includeHidden
+			m.excludeHidden = !m.excludeHidden
 			return m, nil
 		case focusSystem:
-			m.includeSystem = !m.includeSystem
+			m.excludeSystem = !m.excludeSystem
+			return m, nil
+		case focusXLSX:
+			m.createXLSX = !m.createXLSX
+			if !m.createXLSX {
+				m.preserveZeros = false
+			}
+			return m, nil
+		case focusPreserveZeros:
+			if m.createXLSX {
+				m.preserveZeros = !m.preserveZeros
+			}
 			return m, nil
 		case focusFileName, focusExcludeExts:
 			m.settingsFocus = (m.settingsFocus + 1) % focusCount
@@ -492,8 +531,10 @@ func (m model) updateOutputStage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 			return m.beginScan(outputPath, scanOptions{
 				Hashing:          m.hashing,
-				IncludeHidden:    m.includeHidden,
-				IncludeSystem:    m.includeSystem,
+				ExcludeHidden:    m.excludeHidden,
+				ExcludeSystem:    m.excludeSystem,
+				CreateXLSX:       m.createXLSX,
+				PreserveZeros:    m.preserveZeros,
 				ExcludedExts:     excludedMap,
 				ExcludedExtsText: strings.TrimSpace(m.excludeInput.Value()),
 			})
@@ -521,8 +562,10 @@ func (m model) updateConfirmOverwriteStage(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 		}
 		return m.beginScan(m.pendingPath, scanOptions{
 			Hashing:          m.hashing,
-			IncludeHidden:    m.includeHidden,
-			IncludeSystem:    m.includeSystem,
+			ExcludeHidden:    m.excludeHidden,
+			ExcludeSystem:    m.excludeSystem,
+			CreateXLSX:       m.createXLSX,
+			PreserveZeros:    m.preserveZeros,
 			ExcludedExts:     excludedMap,
 			ExcludedExtsText: strings.TrimSpace(m.excludeInput.Value()),
 		})
@@ -596,7 +639,7 @@ func (m model) viewSourcePicker() string {
 		"",
 		styleHint("Navigate folders with arrows. Press enter to open a folder. Press space to choose the current folder."),
 		"",
-		m.list.View(),
+		renderListWithFade(m.list.View()),
 		"",
 		styleHint(fmt.Sprintf("Current source folder: %s", m.sourceDir)),
 	)
@@ -611,7 +654,7 @@ func (m model) viewOutputDirPicker() string {
 		styleLabel(fmt.Sprintf("Source folder: %s", m.sourceDir)),
 		styleHint("Navigate folders with arrows. Press enter to open a folder. Press space to choose the current folder."),
 		"",
-		m.list.View(),
+		renderListWithFade(m.list.View()),
 		"",
 		styleHint(fmt.Sprintf("Current output folder: %s", m.outputDir)),
 	)
@@ -627,10 +670,13 @@ func (m model) viewOutputForm() string {
 		styleLabel(fmt.Sprintf("Output folder: %s", m.outputDir)),
 		"",
 		focusedLine(m.settingsFocus == focusFileName, "File name", m.outputInput.View()),
+		focusedInfo(false, "Format", "Scan writes CSV first. XLSX can be created afterward as a spreadsheet copy."),
 		focusedLine(m.settingsFocus == focusExcludeExts, "Exclude extensions", m.excludeInput.View()),
 		focusedToggle(m.settingsFocus == focusHashing, "SHA-256 hashing", m.hashing),
-		focusedToggle(m.settingsFocus == focusHidden, "Include hidden files", m.includeHidden),
-		focusedToggle(m.settingsFocus == focusSystem, "Include common system files", m.includeSystem),
+		focusedToggle(m.settingsFocus == focusHidden, "Exclude hidden files", m.excludeHidden),
+		focusedToggle(m.settingsFocus == focusSystem, "Exclude common system files", m.excludeSystem),
+		focusedToggle(m.settingsFocus == focusXLSX, "Create XLSX after scan", m.createXLSX),
+		focusedToggle(m.settingsFocus == focusPreserveZeros, "Preserve leading zeros in XLSX", m.preserveZeros && m.createXLSX),
 		focusedAction(m.settingsFocus == focusStart, "Start scan"),
 		"",
 		styleHint("Tab or arrows move between controls. Space toggles a switch. Enter activates the focused control."),
@@ -652,8 +698,10 @@ func (m model) viewScanning() string {
 		styleLabel(fmt.Sprintf("Source: %s", m.sourceDir)),
 		styleLabel(fmt.Sprintf("Output: %s", m.outputPath)),
 		styleLabel(fmt.Sprintf("Hashes: %s", onOff(m.hashing))),
-		styleLabel(fmt.Sprintf("Include hidden: %s", onOff(m.includeHidden))),
-		styleLabel(fmt.Sprintf("Include system: %s", onOff(m.includeSystem))),
+		styleLabel(fmt.Sprintf("Exclude hidden: %s", onOff(m.excludeHidden))),
+		styleLabel(fmt.Sprintf("Exclude system: %s", onOff(m.excludeSystem))),
+		styleLabel(fmt.Sprintf("Create XLSX: %s", onOff(m.createXLSX))),
+		styleLabel(fmt.Sprintf("Preserve zeros in XLSX: %s", onOff(m.preserveZeros && m.createXLSX))),
 		styleLabel(fmt.Sprintf("Excluded exts: %s", valueOrDefault(strings.TrimSpace(m.excludeInput.Value()), "none"))),
 		"",
 		styleStat("Files", formatUint(m.progress.files)),
@@ -693,17 +741,25 @@ func (m model) viewDone() string {
 		styleTitle("Scan Complete"),
 		"",
 		styleStat("Output", m.done.outputPath),
+		styleStat("XLSX copy", valueOrDefault(m.done.xlsxPath, "not created")),
 		styleStat("Files", formatUint(m.done.files)),
 		styleStat("Directories", formatUint(m.done.directories)),
 		styleStat("Bytes", humanBytes(m.done.bytes)),
 		styleStat("Filtered out", formatUint(m.done.filtered)),
+		styleStat("Hidden filtered", formatUint(m.done.filteredHidden)),
+		styleStat("System filtered", formatUint(m.done.filteredSystem)),
+		styleStat("Extension filtered", formatUint(m.done.filteredExts)),
 		styleStat("Errors skipped", formatUint(m.done.errors)),
 		styleStat("Elapsed", m.done.elapsed.Round(time.Millisecond).String()),
 		styleStat("Hash workers", fmt.Sprintf("%d", m.done.hashWorkers)),
+		styleStat("Create XLSX", onOff(m.done.createXLSX)),
+		styleStat("Preserve zeros", onOff(m.done.preserveZeros)),
 		"",
 		countSummary,
 		"",
 		sizeSummary,
+		"",
+		renderFilteredSamples(m.done.filteredSamples),
 		"",
 		styleHint("Press enter to exit."),
 	)
@@ -772,32 +828,76 @@ func setProgress(files, directories, bytes, filtered uint64, startedAt time.Time
 	})
 }
 
-func runScan(sourceDir, outputPath string, options scanOptions) (scanDoneMsg, error) {
-	startedAt := time.Now()
-	setProgress(0, 0, 0, 0, startedAt)
+type reportWriter interface {
+	WriteHeader() error
+	WriteRow([]string) error
+	Finalize(uint64) error
+	Close() error
+}
 
+type csvReportWriter struct {
+	file   *os.File
+	buffer *bufio.Writer
+	writer *csv.Writer
+}
+
+func newReportWriter(outputPath string) (reportWriter, error) {
 	if err := os.MkdirAll(filepath.Dir(outputPath), 0o755); err != nil {
-		return scanDoneMsg{}, err
+		return nil, err
 	}
-
 	file, err := os.Create(outputPath)
 	if err != nil {
-		return scanDoneMsg{}, err
+		return nil, err
 	}
-	defer file.Close()
-
 	buffer := bufio.NewWriterSize(file, 1<<20)
-	defer buffer.Flush()
+	return &csvReportWriter{
+		file:   file,
+		buffer: buffer,
+		writer: csv.NewWriter(buffer),
+	}, nil
+}
 
-	writer := csv.NewWriter(buffer)
-	if err := writer.Write([]string{
+func (w *csvReportWriter) WriteHeader() error {
+	return w.writer.Write([]string{
 		"File Name",
 		"Extension",
 		"Size in Bytes",
 		"Size in Human Readable",
 		"Path From Root Folder",
 		"SHA256 Hash",
-	}); err != nil {
+	})
+}
+
+func (w *csvReportWriter) WriteRow(values []string) error {
+	return w.writer.Write(values)
+}
+
+func (w *csvReportWriter) Finalize(_ uint64) error {
+	w.writer.Flush()
+	if err := w.writer.Error(); err != nil {
+		return err
+	}
+	return w.buffer.Flush()
+}
+
+func (w *csvReportWriter) Close() error {
+	if err := w.file.Close(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func runScan(sourceDir, outputPath string, options scanOptions) (scanDoneMsg, error) {
+	startedAt := time.Now()
+	setProgress(0, 0, 0, 0, startedAt)
+
+	reportWriter, err := newReportWriter(outputPath)
+	if err != nil {
+		return scanDoneMsg{}, err
+	}
+	defer reportWriter.Close()
+
+	if err := reportWriter.WriteHeader(); err != nil {
 		return scanDoneMsg{}, err
 	}
 
@@ -813,6 +913,13 @@ func runScan(sourceDir, outputPath string, options scanOptions) (scanDoneMsg, er
 	workCh := make(chan scanWork, hashWorkers*4)
 	resultCh := make(chan scanResult, hashWorkers*4)
 	walkErrCh := make(chan error, 1)
+	typeTotals := make(map[string]summaryEntry)
+	pending := make(map[uint64]scanResult)
+	filteredHidden := uint64(0)
+	filteredSystem := uint64(0)
+	filteredExts := uint64(0)
+	filteredSamples := make([]string, 0, 8)
+	var expected uint64
 
 	var workerWG sync.WaitGroup
 	for range hashWorkers {
@@ -849,8 +956,10 @@ func runScan(sourceDir, outputPath string, options scanOptions) (scanDoneMsg, er
 			}
 
 			if d.IsDir() {
-				if path != sourceDir && !options.IncludeHidden && isHiddenName(d.Name()) {
+				if path != sourceDir && options.ExcludeHidden && isHiddenName(d.Name()) {
 					stats.filtered.Add(1)
+					filteredHidden += 1
+					filteredSamples = appendFilteredSample(filteredSamples, fmt.Sprintf("%s -> hidden directory", filepath.ToSlash(path)))
 					setProgress(stats.files.Load(), stats.directories.Load(), stats.bytes.Load(), stats.filtered.Load(), startedAt)
 					return filepath.SkipDir
 				}
@@ -868,8 +977,17 @@ func runScan(sourceDir, outputPath string, options scanOptions) (scanDoneMsg, er
 				return nil
 			}
 
-			if shouldSkipFile(path, d.Name(), options) {
+			if reason, skipped := shouldSkipFile(path, d.Name(), options); skipped {
 				stats.filtered.Add(1)
+				switch reason {
+				case "hidden path":
+					filteredHidden += 1
+				case "system file":
+					filteredSystem += 1
+				case "excluded extension":
+					filteredExts += 1
+				}
+				filteredSamples = appendFilteredSample(filteredSamples, fmt.Sprintf("%s -> %s", filepath.ToSlash(path), reason))
 				setProgress(stats.files.Load(), stats.directories.Load(), stats.bytes.Load(), stats.filtered.Load(), startedAt)
 				return nil
 			}
@@ -899,10 +1017,6 @@ func runScan(sourceDir, outputPath string, options scanOptions) (scanDoneMsg, er
 		})
 	}()
 
-	typeTotals := make(map[string]summaryEntry)
-	pending := make(map[uint64]scanResult)
-	var expected uint64
-
 	for result := range resultCh {
 		pending[result.index] = result
 		for {
@@ -919,7 +1033,7 @@ func runScan(sourceDir, outputPath string, options scanOptions) (scanDoneMsg, er
 				continue
 			}
 
-			if err := writer.Write([]string{
+			if err := reportWriter.WriteRow([]string{
 				ready.work.name,
 				ready.work.ext,
 				fmt.Sprintf("%d", ready.work.size),
@@ -933,13 +1047,6 @@ func runScan(sourceDir, outputPath string, options scanOptions) (scanDoneMsg, er
 
 			stats.files.Add(1)
 			stats.bytes.Add(ready.work.size)
-			if stats.files.Load()%1024 == 0 {
-				writer.Flush()
-				if err := writer.Error(); err != nil {
-					cancel()
-					return scanDoneMsg{}, err
-				}
-			}
 
 			key := summaryKey(ready.work.ext)
 			entry := typeTotals[key]
@@ -955,26 +1062,39 @@ func runScan(sourceDir, outputPath string, options scanOptions) (scanDoneMsg, er
 	if walkErr := <-walkErrCh; walkErr != nil && !errors.Is(walkErr, context.Canceled) {
 		return scanDoneMsg{}, walkErr
 	}
-
-	writer.Flush()
-	if err := writer.Error(); err != nil {
+	if err := reportWriter.Finalize(stats.files.Load()); err != nil {
 		return scanDoneMsg{}, err
 	}
 
+	xlsxPath := ""
+	if options.CreateXLSX {
+		xlsxPath = strings.TrimSuffix(outputPath, filepath.Ext(outputPath)) + ".xlsx"
+		if err := convertCSVToXLSX(outputPath, xlsxPath, options.PreserveZeros); err != nil {
+			return scanDoneMsg{}, err
+		}
+	}
+
 	return scanDoneMsg{
-		files:         stats.files.Load(),
-		directories:   stats.directories.Load(),
-		bytes:         stats.bytes.Load(),
-		errors:        stats.errors.Load(),
-		filtered:      stats.filtered.Load(),
-		outputPath:    outputPath,
-		elapsed:       time.Since(startedAt),
-		topByCount:    summarizeByCount(typeTotals, 8),
-		topBySize:     summarizeBySize(typeTotals, 8),
-		hashWorkers:   hashWorkers,
-		hashing:       options.Hashing,
-		includeHidden: options.IncludeHidden,
-		includeSystem: options.IncludeSystem,
+		files:           stats.files.Load(),
+		directories:     stats.directories.Load(),
+		bytes:           stats.bytes.Load(),
+		errors:          stats.errors.Load(),
+		filtered:        stats.filtered.Load(),
+		outputPath:      outputPath,
+		xlsxPath:        xlsxPath,
+		elapsed:         time.Since(startedAt),
+		topByCount:      summarizeByCount(typeTotals, 8),
+		topBySize:       summarizeBySize(typeTotals, 8),
+		hashWorkers:     hashWorkers,
+		hashing:         options.Hashing,
+		excludeHidden:   options.ExcludeHidden,
+		excludeSystem:   options.ExcludeSystem,
+		createXLSX:      options.CreateXLSX,
+		preserveZeros:   options.PreserveZeros,
+		filteredHidden:  filteredHidden,
+		filteredSystem:  filteredSystem,
+		filteredExts:    filteredExts,
+		filteredSamples: filteredSamples,
 	}, nil
 }
 
@@ -1026,6 +1146,98 @@ func ensureOutputPath(outputPath string) (bool, error) {
 	return false, os.Remove(testFile)
 }
 
+func isSupportedOutputPath(outputPath string) bool {
+	return strings.ToLower(filepath.Ext(outputPath)) == ".csv"
+}
+
+func convertCSVToXLSX(csvPath, xlsxPath string, preserveZeros bool) error {
+	file, err := os.Open(csvPath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	rows, err := reader.ReadAll()
+	if err != nil {
+		return err
+	}
+
+	workbook := excelize.NewFile()
+	defer workbook.Close()
+
+	sheet := workbook.GetSheetName(workbook.GetActiveSheetIndex())
+	streamWriter, err := workbook.NewStreamWriter(sheet)
+	if err != nil {
+		return err
+	}
+
+	textStyleID := 0
+	if preserveZeros {
+		textStyleID, err = workbook.NewStyle(&excelize.Style{NumFmt: 49})
+		if err != nil {
+			return err
+		}
+	}
+
+	for rowIndex, row := range rows {
+		cellName, err := excelize.CoordinatesToCellName(1, rowIndex+1)
+		if err != nil {
+			return err
+		}
+
+		cells := make([]interface{}, 0, len(row))
+		for colIndex, value := range row {
+			if preserveZeros {
+				cells = append(cells, excelize.Cell{StyleID: textStyleID, Value: value})
+				continue
+			}
+			if rowIndex > 0 && colIndex == 2 {
+				cells = append(cells, parseUintString(value))
+				continue
+			}
+			cells = append(cells, value)
+		}
+
+		if err := streamWriter.SetRow(cellName, cells); err != nil {
+			return err
+		}
+	}
+
+	if err := streamWriter.Flush(); err != nil {
+		return err
+	}
+
+	if len(rows) > 0 {
+		lastCell, err := excelize.CoordinatesToCellName(6, len(rows))
+		if err == nil {
+			showRows := true
+			_ = workbook.AddTable(sheet, &excelize.Table{
+				Range:             "A1:" + lastCell,
+				Name:              "ContentList",
+				StyleName:         "TableStyleMedium2",
+				ShowFirstColumn:   false,
+				ShowLastColumn:    false,
+				ShowRowStripes:    &showRows,
+				ShowColumnStripes: false,
+			})
+		}
+	}
+
+	return workbook.SaveAs(xlsxPath)
+}
+
+func parseUintString(value string) interface{} {
+	var parsed uint64
+	for _, char := range value {
+		if char < '0' || char > '9' {
+			return value
+		}
+		parsed = parsed*10 + uint64(char-'0')
+	}
+	return parsed
+}
+
 func parseExcludedExtensions(input string) (map[string]struct{}, error) {
 	result := make(map[string]struct{})
 	if strings.TrimSpace(input) == "" {
@@ -1046,17 +1258,17 @@ func parseExcludedExtensions(input string) (map[string]struct{}, error) {
 	return result, nil
 }
 
-func shouldSkipFile(path, name string, options scanOptions) bool {
-	if !options.IncludeHidden && hasHiddenComponent(path) {
-		return true
+func shouldSkipFile(path, name string, options scanOptions) (string, bool) {
+	if options.ExcludeHidden && hasHiddenComponent(path) {
+		return "hidden path", true
 	}
-	if !options.IncludeSystem && isSystemFile(name) {
-		return true
+	if options.ExcludeSystem && isSystemFile(name) {
+		return "system file", true
 	}
 	if _, ok := options.ExcludedExts[normalizeExt(filepath.Ext(name))]; ok {
-		return true
+		return "excluded extension", true
 	}
-	return false
+	return "", false
 }
 
 func hasHiddenComponent(path string) bool {
@@ -1090,6 +1302,13 @@ func summaryKey(ext string) string {
 		return "[no extension]"
 	}
 	return "." + ext
+}
+
+func appendFilteredSample(samples []string, value string) []string {
+	if len(samples) >= 8 {
+		return samples
+	}
+	return append(samples, value)
 }
 
 func summarizeByCount(entries map[string]summaryEntry, limit int) []summaryEntry {
@@ -1212,6 +1431,27 @@ func renderSummaryList(title string, items []summaryEntry, formatter func(summar
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)
 }
 
+func renderFilteredSamples(items []string) string {
+	lines := []string{styleTitle("Filtered examples")}
+	if len(items) == 0 {
+		lines = append(lines, styleHint("Nothing was filtered."))
+		return lipgloss.JoinVertical(lipgloss.Left, lines...)
+	}
+	for _, item := range items {
+		lines = append(lines, styleHint(item))
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, lines...)
+}
+
+func renderListWithFade(content string) string {
+	return lipgloss.JoinVertical(
+		lipgloss.Left,
+		lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("  . . ."),
+		content,
+		lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("  . . ."),
+	)
+}
+
 func focusedLine(focused bool, label, value string) string {
 	return lipgloss.JoinHorizontal(
 		lipgloss.Top,
@@ -1220,6 +1460,18 @@ func focusedLine(focused bool, label, value string) string {
 			lipgloss.Left,
 			styleLabel(label),
 			value,
+		),
+	)
+}
+
+func focusedInfo(focused bool, label, value string) string {
+	return lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		focusPrefix(focused),
+		lipgloss.JoinVertical(
+			lipgloss.Left,
+			styleLabel(label),
+			styleHint(value),
 		),
 	)
 }
@@ -1259,6 +1511,17 @@ func valueOrDefault(value, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func boundedListHeight(windowHeight int) int {
+	height := windowHeight - 28
+	if height < 8 {
+		return 8
+	}
+	if height > 14 {
+		return 14
+	}
+	return height
 }
 
 func styleFrame(body string, width int) string {

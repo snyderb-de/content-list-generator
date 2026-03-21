@@ -24,10 +24,13 @@ Built with Go and Charm's TUI stack:
 - Output folder browser
 - Output file naming with overwrite confirmation
 - Optional SHA-256 hashing
-- Hidden file filter
-- Common system file filter
+- Optional hidden file exclusion
+- Optional common system file exclusion
 - Comma-separated extension exclusions
+- Optional post-scan XLSX copy generation
+- Optional XLSX text-preservation mode for leading zeros
 - Completion summaries by extension count and total size
+- Completion summaries for filtered reasons and sample filtered paths
 - Parallel hashing when hashes are enabled
 
 ## Why CSV
@@ -53,7 +56,7 @@ go build -o ./bin/content-list-generator .
 3. Browse to the output folder
 4. Press `space` to choose the current output folder
 5. Enter the output `.csv` file name
-6. Configure hashing and filters
+6. Configure hashing, exclusions, and optional XLSX conversion
 7. Start the scan
 8. If the file already exists, press `y` to overwrite or `n` to go back
 
@@ -101,6 +104,7 @@ Artifacts are written to `dist/`.
 - Hashing is optional because it is the slowest step.
 - The scan is recursive.
 - Rows are written as they are found.
-- CSV keeps the first version portable and spreadsheet-friendly.
+- CSV is the primary fast scan format.
+- If enabled, XLSX is created after the CSV scan completes.
 
 If you later want a second output mode for truly huge inventories, SQLite is the natural next step.
