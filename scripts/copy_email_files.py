@@ -41,11 +41,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--source", help="Folder to scan")
     parser.add_argument("--dest", help="Folder to copy matching files into")
     parser.add_argument(
-        "--flat",
-        action="store_true",
-        help="Copy into a single folder instead of preserving relative paths",
-    )
-    parser.add_argument(
         "--cli",
         action="store_true",
         help="Use text prompts instead of native folder pickers",
@@ -83,30 +78,12 @@ def collect_matches(source: Path) -> list[Path]:
     return matches
 
 
-def next_available_flat_path(dest_dir: Path, original_name: str) -> Path:
-    candidate = dest_dir / original_name
-    if not candidate.exists():
-        return candidate
-
-    stem = candidate.stem
-    suffix = candidate.suffix
-    counter = 2
-    while True:
-        numbered = dest_dir / f"{stem}-{counter}{suffix}"
-        if not numbered.exists():
-            return numbered
-        counter += 1
-
-
-def copy_matches(source: Path, dest: Path, matches: list[Path], flat: bool) -> list[dict[str, str]]:
+def copy_matches(source: Path, dest: Path, matches: list[Path]) -> list[dict[str, str]]:
     copied_rows: list[dict[str, str]] = []
 
     for path in matches:
-        if flat:
-            target = next_available_flat_path(dest, path.name)
-        else:
-            relative = path.relative_to(source)
-            target = dest / relative
+        relative = path.relative_to(source)
+        target = dest / relative
 
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(path, target)
@@ -189,7 +166,7 @@ def main() -> int:
         print("Nothing to copy.")
         return 0
 
-    copied_rows = copy_matches(source, dest, matches, args.flat)
+    copied_rows = copy_matches(source, dest, matches)
     manifest_path = write_manifest(dest, copied_rows)
 
     print("\nDone")
@@ -200,10 +177,7 @@ def main() -> int:
     print("Extensions included:")
     print("  " + ", ".join(sorted(EMAIL_EXTENSIONS)))
     print("")
-    if args.flat:
-        print("Mode: flat copy")
-    else:
-        print("Mode: preserve relative folders")
+    print("Mode: preserve relative folders from the chosen source root")
     return 0
 
 
