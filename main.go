@@ -49,6 +49,7 @@ const (
 	focusSystem
 	focusXLSX
 	focusPreserveZeros
+	focusEmailCopy
 	focusStart
 	focusCount
 )
@@ -97,6 +98,9 @@ type scanDoneMsg struct {
 	filtered        uint64
 	outputPath      string
 	xlsxPath        string
+	emailCopyDir    string
+	emailManifest   string
+	emailCopied     uint64
 	elapsed         time.Duration
 	topByCount      []summaryEntry
 	topBySize       []summaryEntry
@@ -106,6 +110,7 @@ type scanDoneMsg struct {
 	excludeSystem   bool
 	createXLSX      bool
 	preserveZeros   bool
+	copyEmailFiles  bool
 	filteredHidden  uint64
 	filteredSystem  uint64
 	filteredExts    uint64
@@ -122,6 +127,7 @@ type scanOptions struct {
 	ExcludeSystem    bool
 	CreateXLSX       bool
 	PreserveZeros    bool
+	CopyEmailFiles   bool
 	ExcludedExts     map[string]struct{}
 	ExcludedExtsText string
 }
@@ -143,29 +149,30 @@ type scanResult struct {
 }
 
 type model struct {
-	stage         stage
-	width         int
-	height        int
-	list          list.Model
-	outputInput   textinput.Model
-	excludeInput  textinput.Model
-	settingsFocus int
-	hashing       bool
-	excludeHidden bool
-	excludeSystem bool
-	createXLSX    bool
-	preserveZeros bool
-	spinner       spinner.Model
-	sourceDir     string
-	outputDir     string
-	outputPath    string
-	pendingPath   string
-	err           error
-	done          scanDoneMsg
-	progress      scanProgressMsg
-	glamourIntro  string
-	quitting      bool
-	scanStartedAt time.Time
+	stage          stage
+	width          int
+	height         int
+	list           list.Model
+	outputInput    textinput.Model
+	excludeInput   textinput.Model
+	settingsFocus  int
+	hashing        bool
+	excludeHidden  bool
+	excludeSystem  bool
+	createXLSX     bool
+	preserveZeros  bool
+	copyEmailFiles bool
+	spinner        spinner.Model
+	sourceDir      string
+	outputDir      string
+	outputPath     string
+	pendingPath    string
+	err            error
+	done           scanDoneMsg
+	progress       scanProgressMsg
+	glamourIntro   string
+	quitting       bool
+	scanStartedAt  time.Time
 }
 
 type scannerStats struct {
@@ -184,6 +191,22 @@ type sourceKeyMap struct {
 var sourceKeys = sourceKeyMap{
 	Choose: key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "open / choose")),
 	Up:     key.NewBinding(key.WithKeys("backspace", "h"), key.WithHelp("backspace", "up")),
+}
+
+var emailExtensions = map[string]struct{}{
+	".dbx":            {},
+	".eml":            {},
+	".emlx":           {},
+	".emlxpart":       {},
+	".mbox":           {},
+	".mbx":            {},
+	".msg":            {},
+	".olk14msgsource": {},
+	".ost":            {},
+	".pst":            {},
+	".rge":            {},
+	".tbb":            {},
+	".wdseml":         {},
 }
 
 func main() {
@@ -212,20 +235,21 @@ func main() {
 	spin.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
 
 	m := model{
-		stage:         stagePickSource,
-		list:          newSourceList(startDir),
-		outputInput:   outputInput,
-		excludeInput:  excludeInput,
-		settingsFocus: focusFileName,
-		hashing:       false,
-		excludeHidden: false,
-		excludeSystem: false,
-		createXLSX:    false,
-		preserveZeros: false,
-		spinner:       spin,
-		sourceDir:     startDir,
-		outputDir:     startDir,
-		glamourIntro:  intro,
+		stage:          stagePickSource,
+		list:           newSourceList(startDir),
+		outputInput:    outputInput,
+		excludeInput:   excludeInput,
+		settingsFocus:  focusFileName,
+		hashing:        false,
+		excludeHidden:  false,
+		excludeSystem:  false,
+		createXLSX:     false,
+		preserveZeros:  false,
+		copyEmailFiles: false,
+		spinner:        spin,
+		sourceDir:      startDir,
+		outputDir:      startDir,
+		glamourIntro:   intro,
 	}
 	m.syncSettingsFocus()
 
@@ -472,6 +496,9 @@ func (m model) updateOutputStage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.preserveZeros = !m.preserveZeros
 			}
 			return m, nil
+		case focusEmailCopy:
+			m.copyEmailFiles = !m.copyEmailFiles
+			return m, nil
 		}
 	case "enter":
 		switch m.settingsFocus {
@@ -494,6 +521,9 @@ func (m model) updateOutputStage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.createXLSX {
 				m.preserveZeros = !m.preserveZeros
 			}
+			return m, nil
+		case focusEmailCopy:
+			m.copyEmailFiles = !m.copyEmailFiles
 			return m, nil
 		case focusFileName, focusExcludeExts:
 			m.settingsFocus = (m.settingsFocus + 1) % focusCount
@@ -535,6 +565,7 @@ func (m model) updateOutputStage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				ExcludeSystem:    m.excludeSystem,
 				CreateXLSX:       m.createXLSX,
 				PreserveZeros:    m.preserveZeros,
+				CopyEmailFiles:   m.copyEmailFiles,
 				ExcludedExts:     excludedMap,
 				ExcludedExtsText: strings.TrimSpace(m.excludeInput.Value()),
 			})
@@ -566,6 +597,7 @@ func (m model) updateConfirmOverwriteStage(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 			ExcludeSystem:    m.excludeSystem,
 			CreateXLSX:       m.createXLSX,
 			PreserveZeros:    m.preserveZeros,
+			CopyEmailFiles:   m.copyEmailFiles,
 			ExcludedExts:     excludedMap,
 			ExcludedExtsText: strings.TrimSpace(m.excludeInput.Value()),
 		})
@@ -677,6 +709,7 @@ func (m model) viewOutputForm() string {
 		focusedToggle(m.settingsFocus == focusSystem, "Exclude common system files", m.excludeSystem),
 		focusedToggle(m.settingsFocus == focusXLSX, "Create XLSX after scan", m.createXLSX),
 		focusedToggle(m.settingsFocus == focusPreserveZeros, "Preserve leading zeros in XLSX", m.preserveZeros && m.createXLSX),
+		focusedToggle(m.settingsFocus == focusEmailCopy, "Copy email files after scan", m.copyEmailFiles),
 		focusedAction(m.settingsFocus == focusStart, "Start scan"),
 		"",
 		styleHint("Tab or arrows move between controls. Space toggles a switch. Enter activates the focused control."),
@@ -702,6 +735,7 @@ func (m model) viewScanning() string {
 		styleLabel(fmt.Sprintf("Exclude system: %s", onOff(m.excludeSystem))),
 		styleLabel(fmt.Sprintf("Create XLSX: %s", onOff(m.createXLSX))),
 		styleLabel(fmt.Sprintf("Preserve zeros in XLSX: %s", onOff(m.preserveZeros && m.createXLSX))),
+		styleLabel(fmt.Sprintf("Copy email files: %s", onOff(m.copyEmailFiles))),
 		styleLabel(fmt.Sprintf("Excluded exts: %s", valueOrDefault(strings.TrimSpace(m.excludeInput.Value()), "none"))),
 		"",
 		styleStat("Files", formatUint(m.progress.files)),
@@ -742,6 +776,9 @@ func (m model) viewDone() string {
 		"",
 		styleStat("Output", m.done.outputPath),
 		styleStat("XLSX copy", valueOrDefault(m.done.xlsxPath, "not created")),
+		styleStat("Email copy dir", valueOrDefault(m.done.emailCopyDir, "not created")),
+		styleStat("Email manifest", valueOrDefault(m.done.emailManifest, "not created")),
+		styleStat("Email files copied", formatUint(m.done.emailCopied)),
 		styleStat("Files", formatUint(m.done.files)),
 		styleStat("Directories", formatUint(m.done.directories)),
 		styleStat("Bytes", humanBytes(m.done.bytes)),
@@ -754,6 +791,7 @@ func (m model) viewDone() string {
 		styleStat("Hash workers", fmt.Sprintf("%d", m.done.hashWorkers)),
 		styleStat("Create XLSX", onOff(m.done.createXLSX)),
 		styleStat("Preserve zeros", onOff(m.done.preserveZeros)),
+		styleStat("Copy email files", onOff(m.done.copyEmailFiles)),
 		"",
 		countSummary,
 		"",
@@ -1074,6 +1112,20 @@ func runScan(sourceDir, outputPath string, options scanOptions) (scanDoneMsg, er
 		}
 	}
 
+	emailCopyDir := ""
+	emailManifest := ""
+	emailCopied := uint64(0)
+	if options.CopyEmailFiles {
+		baseName := strings.TrimSuffix(filepath.Base(outputPath), filepath.Ext(outputPath))
+		emailCopyDir = filepath.Join(filepath.Dir(outputPath), baseName+"-email-files")
+		manifestPath, copiedCount, err := copyEmailFiles(sourceDir, emailCopyDir)
+		if err != nil {
+			return scanDoneMsg{}, err
+		}
+		emailManifest = manifestPath
+		emailCopied = copiedCount
+	}
+
 	return scanDoneMsg{
 		files:           stats.files.Load(),
 		directories:     stats.directories.Load(),
@@ -1082,6 +1134,9 @@ func runScan(sourceDir, outputPath string, options scanOptions) (scanDoneMsg, er
 		filtered:        stats.filtered.Load(),
 		outputPath:      outputPath,
 		xlsxPath:        xlsxPath,
+		emailCopyDir:    emailCopyDir,
+		emailManifest:   emailManifest,
+		emailCopied:     emailCopied,
 		elapsed:         time.Since(startedAt),
 		topByCount:      summarizeByCount(typeTotals, 8),
 		topBySize:       summarizeBySize(typeTotals, 8),
@@ -1091,6 +1146,7 @@ func runScan(sourceDir, outputPath string, options scanOptions) (scanDoneMsg, er
 		excludeSystem:   options.ExcludeSystem,
 		createXLSX:      options.CreateXLSX,
 		preserveZeros:   options.PreserveZeros,
+		copyEmailFiles:  options.CopyEmailFiles,
 		filteredHidden:  filteredHidden,
 		filteredSystem:  filteredSystem,
 		filteredExts:    filteredExts,
@@ -1148,6 +1204,117 @@ func ensureOutputPath(outputPath string) (bool, error) {
 
 func isSupportedOutputPath(outputPath string) bool {
 	return strings.ToLower(filepath.Ext(outputPath)) == ".csv"
+}
+
+func copyEmailFiles(sourceDir, destDir string) (string, uint64, error) {
+	if err := os.MkdirAll(destDir, 0o755); err != nil {
+		return "", 0, err
+	}
+
+	timestamp := time.Now().Format("2006-01-02T15-04-05")
+	manifestPath := filepath.Join(destDir, fmt.Sprintf("email-copy-manifest-%s.csv", timestamp))
+
+	manifestFile, err := os.Create(manifestPath)
+	if err != nil {
+		return "", 0, err
+	}
+	defer manifestFile.Close()
+
+	writer := csv.NewWriter(manifestFile)
+	defer writer.Flush()
+
+	if err := writer.Write([]string{
+		"Source Path",
+		"Destination Path",
+		"Relative Path",
+		"File Name",
+		"Extension",
+		"Size in Bytes",
+	}); err != nil {
+		return "", 0, err
+	}
+
+	var copied uint64
+	err = filepath.WalkDir(sourceDir, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return nil
+		}
+		if d.IsDir() {
+			return nil
+		}
+
+		ext := strings.ToLower(filepath.Ext(d.Name()))
+		if _, ok := emailExtensions[ext]; !ok {
+			return nil
+		}
+
+		relative, err := filepath.Rel(sourceDir, path)
+		if err != nil {
+			return nil
+		}
+		targetPath := filepath.Join(destDir, relative)
+		if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
+			return err
+		}
+		if err := copyFile(path, targetPath); err != nil {
+			return err
+		}
+
+		info, err := os.Stat(path)
+		if err != nil {
+			return nil
+		}
+
+		if err := writer.Write([]string{
+			path,
+			targetPath,
+			filepath.ToSlash(relative),
+			filepath.Base(path),
+			ext,
+			fmt.Sprintf("%d", info.Size()),
+		}); err != nil {
+			return err
+		}
+
+		copied++
+		return nil
+	})
+	if err != nil {
+		return "", 0, err
+	}
+	writer.Flush()
+	if err := writer.Error(); err != nil {
+		return "", 0, err
+	}
+
+	return manifestPath, copied, nil
+}
+
+func copyFile(sourcePath, destPath string) error {
+	sourceFile, err := os.Open(sourcePath)
+	if err != nil {
+		return err
+	}
+	defer sourceFile.Close()
+
+	destFile, err := os.Create(destPath)
+	if err != nil {
+		return err
+	}
+	defer destFile.Close()
+
+	if _, err := io.Copy(destFile, sourceFile); err != nil {
+		return err
+	}
+	if err := destFile.Sync(); err != nil {
+		return err
+	}
+
+	info, err := os.Stat(sourcePath)
+	if err == nil {
+		_ = os.Chmod(destPath, info.Mode())
+	}
+	return nil
 }
 
 func convertCSVToXLSX(csvPath, xlsxPath string, preserveZeros bool) error {

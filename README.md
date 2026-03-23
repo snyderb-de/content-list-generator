@@ -29,6 +29,7 @@ Built with Go and Charm's TUI stack:
 - Comma-separated extension exclusions
 - Optional post-scan XLSX copy generation
 - Optional XLSX text-preservation mode for leading zeros
+- Optional post-scan email-file copy into a dedicated subfolder with manifest
 - Completion summaries by extension count and total size
 - Completion summaries for filtered reasons and sample filtered paths
 - Parallel hashing when hashes are enabled
@@ -56,7 +57,7 @@ go build -o ./bin/content-list-generator .
 3. Browse to the output folder
 4. Press `space` to choose the current output folder
 5. Enter the output `.csv` file name
-6. Configure hashing, exclusions, and optional XLSX conversion
+6. Configure hashing, exclusions, optional XLSX conversion, and optional email-file copy
 7. Start the scan
 8. If the file already exists, press `y` to overwrite or `n` to go back
 
@@ -106,5 +107,16 @@ Artifacts are written to `dist/`.
 - Rows are written as they are found.
 - CSV is the primary fast scan format.
 - If enabled, XLSX is created after the CSV scan completes.
+- If enabled, email-related files are copied after the scan into an output subfolder with a CSV manifest.
+
+## Email Copy Utility
+
+There is also a standalone helper at [copy_email_files.py](/Users/baghead/code/content-list-generator/scripts/copy_email_files.py).
+
+Run it with:
+
+```bash
+./scripts/copy_email_files.py
+```
 
 If you later want a second output mode for truly huge inventories, SQLite is the natural next step.
