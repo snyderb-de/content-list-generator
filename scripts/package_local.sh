@@ -13,6 +13,12 @@ cd "$ROOT_DIR"
 
 go build -o "$ROOT_DIR/bin/content-list-generator" .
 
+if go build -tags gui -o "$ROOT_DIR/bin/content-list-generator-gui" .; then
+  echo "  Go GUI binary: $ROOT_DIR/bin/content-list-generator-gui"
+else
+  echo "  Go GUI binary: skipped"
+fi
+
 rm -rf "$PY_DIR"
 mkdir -p "$PY_DIR/python" "$PY_DIR/scripts"
 cp "$ROOT_DIR/python/content_list_core.py" "$PY_DIR/python/"

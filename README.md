@@ -14,6 +14,8 @@ Both apps include two first-class workflows:
 
 - `core.go` contains the Go scan/email engine and shared non-UI logic.
 - `main.go` is the Go TUI entry point and interaction layer.
+- `gui_fyne.go` adds an optional Go desktop GUI shell for macOS/Linux builds compiled with the `gui` build tag.
+- `gui_stub.go` keeps the default build portable and reports how to launch the GUI-enabled build.
 - `python/content_list_core.py` contains the Python scan/email engine and shared non-GUI logic.
 - `python/content_list_generator.py` is the Windows-native Python full app and CLI entry point.
 - `scripts/copy_email_files.py` is now a thin compatibility wrapper that launches the Python app's integrated email-copy mode instead of owning separate logic.
@@ -89,6 +91,12 @@ CSV is still the safest default for large scans because rows are streamed direct
 go build -o ./bin/content-list-generator .
 ```
 
+Optional Go desktop GUI build:
+
+```bash
+go build -tags gui -o ./bin/content-list-generator-gui .
+```
+
 ## Run The Go App
 
 ```bash
@@ -99,6 +107,22 @@ The Go app opens to a main menu where you choose either:
 
 - `Generate Content List`
 - `Copy Email Files`
+
+## Run The Go GUI
+
+The optional Go desktop GUI is intended for macOS/Linux and sits on top of the same `core.go` engine as the TUI.
+
+Run it directly:
+
+```bash
+go run -tags gui . --gui
+```
+
+Or use the helper:
+
+```bash
+./scripts/run_local.sh go-gui
+```
 
 ## Run The Python App
 
@@ -143,6 +167,7 @@ Go:
 
 ```bash
 go test ./...
+go test -tags gui ./...
 ```
 
 Python:
@@ -162,6 +187,12 @@ The automated coverage now includes:
 - Python non-GUI core behavior
 - shared fixture-driven parity checks for Go and Python
 
+Dedicated parity command:
+
+```bash
+./scripts/parity_check.sh
+```
+
 One-command local verification:
 
 ```bash
@@ -172,6 +203,7 @@ Quick local launchers:
 
 ```bash
 ./scripts/run_local.sh go
+./scripts/run_local.sh go-gui
 ./scripts/run_local.sh python
 ./scripts/run_local.sh python-cli -- --help
 ```

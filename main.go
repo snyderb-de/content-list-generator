@@ -149,6 +149,18 @@ func main() {
 		os.Exit(1)
 	}
 
+	if hasArg("--gui") {
+		if err := launchGUI(startDir); err != nil {
+			fmt.Fprintf(os.Stderr, "gui error: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	runTUI(startDir)
+}
+
+func runTUI(startDir string) {
 	intro := renderMarkdown(introMarkdown, 88)
 
 	outputInput := textinput.New()
@@ -193,6 +205,15 @@ func main() {
 		fmt.Fprintf(os.Stderr, "app error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func hasArg(flag string) bool {
+	for _, arg := range os.Args[1:] {
+		if arg == flag {
+			return true
+		}
+	}
+	return false
 }
 
 func newSourceList(currentDir string) list.Model {

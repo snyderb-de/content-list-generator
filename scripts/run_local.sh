@@ -12,6 +12,11 @@ case "$MODE" in
     go build -o ./bin/content-list-generator .
     exec ./bin/content-list-generator
     ;;
+  go-gui)
+    mkdir -p ./bin
+    go build -tags gui -o ./bin/content-list-generator-gui .
+    exec ./bin/content-list-generator-gui --gui
+    ;;
   python|python-gui)
     exec python3 ./python/content_list_generator.py
     ;;
@@ -20,7 +25,7 @@ case "$MODE" in
     exec python3 ./python/content_list_generator.py --cli "$@"
     ;;
   *)
-    echo "Usage: $0 [go|python|python-cli]" >&2
+    echo "Usage: $0 [go|go-gui|python|python-cli]" >&2
     exit 1
     ;;
 esac

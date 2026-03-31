@@ -179,8 +179,14 @@ class EmailCopyWindow:
             justify="left",
         ).pack(anchor="w", pady=(6, 18))
 
-        card = ttk.Frame(outer, style="Card.TFrame", padding=20)
-        card.pack(fill="both", expand=True)
+        content = ttk.Frame(outer, style="App.TFrame")
+        content.pack(fill="both", expand=True)
+        content.columnconfigure(0, weight=5)
+        content.columnconfigure(1, weight=3)
+        content.rowconfigure(0, weight=1)
+
+        card = ttk.Frame(content, style="Card.TFrame", padding=20)
+        card.grid(row=0, column=0, sticky="nsew", padx=(0, 12))
         card.columnconfigure(1, weight=1)
 
         self.parent.add_path_row(card, 0, "Source folder", self.source_var, self.choose_source)
@@ -233,6 +239,7 @@ class EmailCopyWindow:
 
         self.running = True
         self.status_var.set("Copying email files...")
+        self.parent.latest_status_var.set("Last action: email copy in progress")
         if self.start_button is not None:
             self.start_button.configure(state="disabled")
         thread = threading.Thread(target=self.run_copy_thread, args=(source, dest), daemon=True)
@@ -258,6 +265,11 @@ class EmailCopyWindow:
                         f"Email copy complete. Copied {result.copied} files to {result.dest_dir}."
                     )
                     self.parent.last_email_result = result
+                    self.parent.latest_status_var.set("Last action: email copy completed")
+                    self.parent.set_activity(
+                        "Email copy completed",
+                        f"Copied {result.copied} files into {result.dest_dir}.\nManifest: {result.manifest_path}",
+                    )
                     self.parent.append_summary(
                         "\n".join(
                             [
@@ -281,6 +293,7 @@ class EmailCopyWindow:
                     if self.start_button is not None:
                         self.start_button.configure(state="normal")
                     self.status_var.set("Copy failed.")
+                    self.parent.latest_status_var.set("Last action: email copy failed")
                     messagebox.showerror("Copy failed", str(payload))
         except queue.Empty:
             pass
@@ -292,16 +305,17 @@ class ContentListApp:
     def __init__(self) -> None:
         self.root = tk.Tk()
         self.root.title("Content List Generator")
-        self.root.geometry("1000x760")
-        self.root.minsize(900, 660)
-        self.root.configure(bg="#f3f5f8")
+        self.root.geometry("1220x820")
+        self.root.minsize(1040, 720)
+        self.root.configure(bg="#eef3f7")
 
         self.message_queue: queue.Queue[tuple[str, object]] = queue.Queue()
         self.running = False
 
-        self.source_var = tk.StringVar(value=os.getcwd())
-        self.output_dir_var = tk.StringVar(value=os.getcwd())
-        self.output_name_var = tk.StringVar(value=default_output_name(Path(os.getcwd())))
+        cwd = Path(os.getcwd())
+        self.source_var = tk.StringVar(value=str(cwd))
+        self.output_dir_var = tk.StringVar(value=str(cwd))
+        self.output_name_var = tk.StringVar(value=default_output_name(cwd))
         self.exclude_var = tk.StringVar(value="")
         self.hash_var = tk.BooleanVar(value=False)
         self.hidden_var = tk.BooleanVar(value=False)
@@ -310,6 +324,14 @@ class ContentListApp:
         self.preserve_zeros_var = tk.BooleanVar(value=False)
         self.status_var = tk.StringVar(value="Ready.")
         self.progress_var = tk.DoubleVar(value=0)
+        self.activity_title_var = tk.StringVar(value="No activity yet.")
+        self.activity_detail_var = tk.StringVar(
+            value="Run a content-list scan or open the email-copy window to create your first result."
+        )
+        self.latest_scan_var = tk.StringVar(value="Latest CSV: none")
+        self.latest_xlsx_var = tk.StringVar(value="Latest XLSX: none")
+        self.latest_manifest_var = tk.StringVar(value="Latest manifest: none")
+        self.latest_status_var = tk.StringVar(value="Last action: none")
         self.last_scan_output: Path | None = None
         self.last_scan_xlsx: Path | None = None
         self.last_email_result: EmailCopyResult | None = None
@@ -317,6 +339,9 @@ class ContentListApp:
         self.email_button: ttk.Button | None = None
         self.open_folder_button: ttk.Button | None = None
         self.open_latest_button: ttk.Button | None = None
+        self.open_scan_button: ttk.Button | None = None
+        self.open_xlsx_button: ttk.Button | None = None
+        self.open_manifest_button: ttk.Button | None = None
 
         self.configure_style()
         self.build_ui()
@@ -326,11 +351,20 @@ class ContentListApp:
         style = ttk.Style()
         if "clam" in style.theme_names():
             style.theme_use("clam")
-        style.configure("App.TFrame", background="#f3f5f8")
+        style.configure("App.TFrame", background="#eef3f7")
+        style.configure("Hero.TFrame", background="#14324a")
         style.configure("Card.TFrame", background="#ffffff", relief="flat")
-        style.configure("Title.TLabel", background="#f3f5f8", foreground="#12324a", font=("Segoe UI", 24, "bold"))
+        style.configure("Panel.TFrame", background="#f6f9fc", relief="flat")
+        style.configure("Title.TLabel", background="#eef3f7", foreground="#12324a", font=("Segoe UI", 26, "bold"))
+        style.configure("HeroTitle.TLabel", background="#14324a", foreground="#ffffff", font=("Segoe UI", 24, "bold"))
+        style.configure("HeroBody.TLabel", background="#14324a", foreground="#d7e5f2", font=("Segoe UI", 11))
         style.configure("Body.TLabel", background="#ffffff", foreground="#243746", font=("Segoe UI", 11))
-        style.configure("Hint.TLabel", background="#f3f5f8", foreground="#5b6b79", font=("Segoe UI", 10))
+        style.configure("Panel.TLabel", background="#f6f9fc", foreground="#243746", font=("Segoe UI", 11))
+        style.configure("Hint.TLabel", background="#eef3f7", foreground="#5b6b79", font=("Segoe UI", 10))
+        style.configure("CardHint.TLabel", background="#ffffff", foreground="#5b6b79", font=("Segoe UI", 10))
+        style.configure("PanelHint.TLabel", background="#f6f9fc", foreground="#607282", font=("Segoe UI", 10))
+        style.configure("MetricValue.TLabel", background="#ffffff", foreground="#12324a", font=("Segoe UI", 18, "bold"))
+        style.configure("MetricLabel.TLabel", background="#ffffff", foreground="#607282", font=("Segoe UI", 9))
         style.configure("Primary.TButton", font=("Segoe UI", 11, "bold"))
         style.configure("Secondary.TButton", font=("Segoe UI", 10))
         style.configure("Modern.Horizontal.TProgressbar", troughcolor="#dde6ee", background="#2b7fff", bordercolor="#dde6ee")
@@ -338,36 +372,52 @@ class ContentListApp:
     def build_ui(self) -> None:
         outer = ttk.Frame(self.root, style="App.TFrame", padding=24)
         outer.pack(fill="both", expand=True)
+        outer.columnconfigure(0, weight=4)
+        outer.columnconfigure(1, weight=2)
+        outer.rowconfigure(2, weight=1)
 
-        header = ttk.Frame(outer, style="App.TFrame")
-        header.pack(fill="x")
-        ttk.Label(header, text="Content List Generator", style="Title.TLabel").pack(anchor="w")
+        hero = ttk.Frame(outer, style="Hero.TFrame", padding=22)
+        hero.grid(row=0, column=0, columnspan=2, sticky="ew")
+        ttk.Label(hero, text="Content List Generator", style="HeroTitle.TLabel").pack(anchor="w")
         ttk.Label(
-            header,
-            text="Windows-native Python app with scan and email-copy workflows, native pickers, optional XLSX export, and live progress.",
-            style="Hint.TLabel",
-        ).pack(anchor="w", pady=(6, 18))
+            hero,
+            text=(
+                "Desktop workflow for recursive content-list scans and email-file copy jobs. "
+                "Use the main window for inventory exports and launch the dedicated email-copy flow when needed."
+            ),
+            style="HeroBody.TLabel",
+            wraplength=1040,
+            justify="left",
+        ).pack(anchor="w", pady=(8, 0))
 
-        quick = ttk.Frame(outer, style="App.TFrame")
-        quick.pack(fill="x", pady=(0, 12))
-        ttk.Label(quick, text="Workflows", style="Body.TLabel").pack(anchor="w")
+        metrics = ttk.Frame(outer, style="App.TFrame")
+        metrics.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(16, 16))
+        for column in range(4):
+            metrics.columnconfigure(column, weight=1)
+        self.build_metric_card(metrics, 0, "Inventory", "CSV first, XLSX optional")
+        self.build_metric_card(metrics, 1, "Email Copy", "Preserve relative folders")
+        self.build_metric_card(metrics, 2, "Quick Access", "Open latest results")
+        self.build_metric_card(metrics, 3, "Cross-Platform", "Windows GUI, Go GUI/TUI")
+
+        main_card = ttk.Frame(outer, style="Card.TFrame", padding=22)
+        main_card.grid(row=2, column=0, sticky="nsew", padx=(0, 12))
+        main_card.columnconfigure(1, weight=1)
+        main_card.rowconfigure(8, weight=1)
+
+        ttk.Label(main_card, text="Scan Workflow", style="Body.TLabel").grid(row=0, column=0, sticky="w")
         ttk.Label(
-            quick,
-            text="Generate inventories from the main window or launch the dedicated email-copy sub-window.",
-            style="Hint.TLabel",
-        ).pack(anchor="w", pady=(4, 0))
+            main_card,
+            text="Choose the source and output settings below, then generate the content list.",
+            style="CardHint.TLabel",
+        ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(4, 14))
 
-        card = ttk.Frame(outer, style="Card.TFrame", padding=20)
-        card.pack(fill="both", expand=True)
-        card.columnconfigure(1, weight=1)
+        self.add_path_row(main_card, 2, "Source folder", self.source_var, self.choose_source)
+        self.add_path_row(main_card, 3, "Output folder", self.output_dir_var, self.choose_output)
+        self.add_entry_row(main_card, 4, "Output file name", self.output_name_var)
+        self.add_entry_row(main_card, 5, "Exclude extensions", self.exclude_var, "Example: tmp,log,bak")
 
-        self.add_path_row(card, 0, "Source folder", self.source_var, self.choose_source)
-        self.add_path_row(card, 1, "Output folder", self.output_dir_var, self.choose_output)
-        self.add_entry_row(card, 2, "Output file name", self.output_name_var)
-        self.add_entry_row(card, 3, "Exclude extensions", self.exclude_var, "Example: tmp,log,bak")
-
-        options = ttk.Frame(card, style="Card.TFrame")
-        options.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(12, 4))
+        options = ttk.Frame(main_card, style="Card.TFrame")
+        options.grid(row=6, column=0, columnspan=3, sticky="ew", pady=(14, 6))
         ttk.Checkbutton(options, text="Include SHA-256 hashes", variable=self.hash_var).pack(anchor="w")
         ttk.Checkbutton(options, text="Include hidden files", variable=self.hidden_var).pack(anchor="w")
         ttk.Checkbutton(options, text="Include common system files", variable=self.system_var).pack(anchor="w")
@@ -379,8 +429,8 @@ class ContentListApp:
         )
         self.preserve_zeros_toggle.pack(anchor="w")
 
-        actions = ttk.Frame(card, style="Card.TFrame")
-        actions.grid(row=5, column=0, columnspan=3, sticky="ew", pady=(16, 8))
+        actions = ttk.Frame(main_card, style="Card.TFrame")
+        actions.grid(row=7, column=0, columnspan=3, sticky="ew", pady=(16, 10))
         self.generate_button = ttk.Button(actions, text="Generate Content List", style="Primary.TButton", command=self.start_scan)
         self.generate_button.pack(side="left")
         self.email_button = ttk.Button(actions, text="Copy Email Files", style="Secondary.TButton", command=self.open_email_copy_window)
@@ -391,17 +441,67 @@ class ContentListApp:
         self.open_latest_button = ttk.Button(actions, text="Open Latest Result", style="Secondary.TButton", command=self.open_latest_result)
         self.open_latest_button.pack(side="left", padx=(10, 0))
 
-        self.progress = ttk.Progressbar(card, style="Modern.Horizontal.TProgressbar", variable=self.progress_var, mode="determinate")
-        self.progress.grid(row=6, column=0, columnspan=3, sticky="ew", pady=(10, 8))
-        ttk.Label(card, textvariable=self.status_var, style="Body.TLabel").grid(row=7, column=0, columnspan=3, sticky="w")
+        self.progress = ttk.Progressbar(main_card, style="Modern.Horizontal.TProgressbar", variable=self.progress_var, mode="determinate")
+        self.progress.grid(row=8, column=0, columnspan=3, sticky="ew", pady=(0, 8))
+        ttk.Label(main_card, textvariable=self.status_var, style="Body.TLabel").grid(row=9, column=0, columnspan=3, sticky="w")
 
-        ttk.Label(card, text="Summary", style="Body.TLabel").grid(row=8, column=0, sticky="w", pady=(18, 8))
-        self.summary = tk.Text(card, height=16, wrap="word", bd=0, bg="#f7fafc", fg="#243746", font=("Consolas", 11))
-        self.summary.grid(row=9, column=0, columnspan=3, sticky="nsew")
-        card.rowconfigure(9, weight=1)
+        ttk.Label(main_card, text="Detailed Summary", style="Body.TLabel").grid(row=10, column=0, sticky="w", pady=(18, 8))
+        self.summary = tk.Text(main_card, height=16, wrap="word", bd=0, bg="#f7fafc", fg="#243746", font=("Consolas", 11))
+        self.summary.grid(row=11, column=0, columnspan=3, sticky="nsew")
+        main_card.rowconfigure(11, weight=1)
+
+        side = ttk.Frame(outer, style="Panel.TFrame", padding=20)
+        side.grid(row=2, column=1, sticky="nsew")
+        side.columnconfigure(0, weight=1)
+
+        ttk.Label(side, text="Latest Activity", style="Panel.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(side, textvariable=self.activity_title_var, style="Panel.TLabel", wraplength=300, justify="left").grid(
+            row=1, column=0, sticky="w", pady=(10, 6)
+        )
+        ttk.Label(side, textvariable=self.activity_detail_var, style="PanelHint.TLabel", wraplength=300, justify="left").grid(
+            row=2, column=0, sticky="w"
+        )
+
+        latest = ttk.Frame(side, style="Panel.TFrame")
+        latest.grid(row=3, column=0, sticky="ew", pady=(18, 8))
+        ttk.Label(latest, textvariable=self.latest_status_var, style="Panel.TLabel", wraplength=300, justify="left").pack(anchor="w")
+        ttk.Label(latest, textvariable=self.latest_scan_var, style="PanelHint.TLabel", wraplength=300, justify="left").pack(anchor="w", pady=(8, 0))
+        ttk.Label(latest, textvariable=self.latest_xlsx_var, style="PanelHint.TLabel", wraplength=300, justify="left").pack(anchor="w", pady=(6, 0))
+        ttk.Label(latest, textvariable=self.latest_manifest_var, style="PanelHint.TLabel", wraplength=300, justify="left").pack(anchor="w", pady=(6, 0))
+
+        quick_actions = ttk.Frame(side, style="Panel.TFrame")
+        quick_actions.grid(row=4, column=0, sticky="ew", pady=(18, 10))
+        ttk.Label(quick_actions, text="Quick Open", style="Panel.TLabel").pack(anchor="w")
+        self.open_scan_button = ttk.Button(quick_actions, text="Open Latest CSV", style="Secondary.TButton", command=self.open_latest_csv)
+        self.open_scan_button.pack(fill="x", pady=(10, 0))
+        self.open_xlsx_button = ttk.Button(quick_actions, text="Open Latest XLSX", style="Secondary.TButton", command=self.open_latest_xlsx)
+        self.open_xlsx_button.pack(fill="x", pady=(8, 0))
+        self.open_manifest_button = ttk.Button(quick_actions, text="Open Latest Manifest", style="Secondary.TButton", command=self.open_latest_manifest)
+        self.open_manifest_button.pack(fill="x", pady=(8, 0))
+
+        tips = ttk.Frame(side, style="Panel.TFrame")
+        tips.grid(row=5, column=0, sticky="ew", pady=(18, 0))
+        ttk.Label(tips, text="Workflow Notes", style="Panel.TLabel").pack(anchor="w")
+        ttk.Label(
+            tips,
+            text=(
+                "Use this main window for inventory scans. Open the email-copy window when you want "
+                "a dedicated source-to-destination flow with a manifest report."
+            ),
+            style="PanelHint.TLabel",
+            wraplength=300,
+            justify="left",
+        ).pack(anchor="w", pady=(8, 0))
 
         self.sync_xlsx_state()
         self.sync_action_buttons()
+        self.sync_result_buttons()
+
+    def build_metric_card(self, parent, column: int, label: str, value: str) -> None:
+        card = ttk.Frame(parent, style="Card.TFrame", padding=16)
+        card.grid(row=0, column=column, sticky="ew", padx=(0 if column == 0 else 8, 0))
+        ttk.Label(card, text=label, style="MetricValue.TLabel").pack(anchor="w")
+        ttk.Label(card, text=value, style="MetricLabel.TLabel").pack(anchor="w", pady=(6, 0))
 
     def add_path_row(self, parent, row: int, label: str, variable: tk.StringVar, command) -> None:
         ttk.Label(parent, text=label, style="Body.TLabel").grid(row=row, column=0, sticky="w", pady=6, padx=(0, 12))
@@ -433,6 +533,29 @@ class ContentListApp:
         if self.open_latest_button is not None:
             has_latest = self.last_scan_output is not None or self.last_email_result is not None
             self.open_latest_button.configure(state="normal" if has_latest else "disabled")
+
+    def sync_result_buttons(self) -> None:
+        if self.open_scan_button is not None:
+            has_csv = self.last_scan_output is not None and self.last_scan_output.exists()
+            self.open_scan_button.configure(state="normal" if has_csv else "disabled")
+        if self.open_xlsx_button is not None:
+            has_xlsx = self.last_scan_xlsx is not None and self.last_scan_xlsx.exists()
+            self.open_xlsx_button.configure(state="normal" if has_xlsx else "disabled")
+        if self.open_manifest_button is not None:
+            has_manifest = self.last_email_result is not None and self.last_email_result.manifest_path.exists()
+            self.open_manifest_button.configure(state="normal" if has_manifest else "disabled")
+
+    def set_activity(self, title: str, detail: str) -> None:
+        self.activity_title_var.set(title)
+        self.activity_detail_var.set(detail)
+        self.sync_result_buttons()
+        self.refresh_latest_labels()
+
+    def refresh_latest_labels(self) -> None:
+        self.latest_scan_var.set(f"Latest CSV: {self.last_scan_output if self.last_scan_output else 'none'}")
+        self.latest_xlsx_var.set(f"Latest XLSX: {self.last_scan_xlsx if self.last_scan_xlsx else 'none'}")
+        manifest = self.last_email_result.manifest_path if self.last_email_result is not None else None
+        self.latest_manifest_var.set(f"Latest manifest: {manifest if manifest else 'none'}")
 
     def choose_source(self) -> None:
         chosen = filedialog.askdirectory(initialdir=self.source_var.get() or os.getcwd(), mustexist=True)
@@ -467,6 +590,18 @@ class ContentListApp:
         if self.last_email_result is not None:
             open_in_file_manager(self.last_email_result.dest_dir)
 
+    def open_latest_csv(self) -> None:
+        if self.last_scan_output is not None:
+            open_in_file_manager(self.last_scan_output)
+
+    def open_latest_xlsx(self) -> None:
+        if self.last_scan_xlsx is not None:
+            open_in_file_manager(self.last_scan_xlsx)
+
+    def open_latest_manifest(self) -> None:
+        if self.last_email_result is not None:
+            open_in_file_manager(self.last_email_result.manifest_path)
+
     def append_summary(self, text: str) -> None:
         self.summary.configure(state="normal")
         self.summary.delete("1.0", "end")
@@ -500,6 +635,7 @@ class ContentListApp:
         self.progress.configure(maximum=1)
         self.progress_var.set(0)
         self.status_var.set("Collecting files...")
+        self.latest_status_var.set("Last action: scan in progress")
         self.append_summary("Preparing scan...")
 
         thread = threading.Thread(
@@ -558,14 +694,22 @@ class ContentListApp:
                     result = payload
                     self.last_scan_output = result.output_path
                     self.last_scan_xlsx = result.xlsx_path
+                    self.set_activity(
+                        "Content list scan completed",
+                        f"CSV: {result.output_path}\nXLSX: {result.xlsx_path if result.xlsx_path else 'not created'}\nFiles: {result.files}",
+                    )
                     self.status_var.set("Complete.")
+                    self.latest_status_var.set("Last action: content-list scan completed")
                     self.append_summary(build_scan_summary(result))
                     self.progress_var.set(self.progress["maximum"])
                     self.sync_action_buttons()
+                    self.sync_result_buttons()
                 elif kind == "error":
                     self.running = False
                     self.status_var.set("Failed.")
+                    self.latest_status_var.set("Last action: scan failed")
                     self.sync_action_buttons()
+                    self.sync_result_buttons()
                     messagebox.showerror("Scan failed", str(payload))
         except queue.Empty:
             pass
