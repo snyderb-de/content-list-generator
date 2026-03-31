@@ -1,22 +1,12 @@
 package main
 
 import (
-	"bufio"
-	"context"
-	"crypto/sha256"
-	"encoding/csv"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -26,7 +16,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/xuri/excelize/v2"
 )
 
 type stage int
@@ -93,41 +82,12 @@ func (a actionItem) FilterValue() string { return a.title }
 func (a actionItem) Title() string       { return a.title }
 func (a actionItem) Description() string { return a.description }
 
-type summaryEntry struct {
-	Label string
-	Count uint64
-	Bytes uint64
-}
-
 type scanProgressMsg struct {
 	files       uint64
 	directories uint64
 	bytes       uint64
 	filtered    uint64
 	elapsed     time.Duration
-}
-
-type scanDoneMsg struct {
-	files           uint64
-	directories     uint64
-	bytes           uint64
-	errors          uint64
-	filtered        uint64
-	outputPath      string
-	xlsxPath        string
-	elapsed         time.Duration
-	topByCount      []summaryEntry
-	topBySize       []summaryEntry
-	hashWorkers     int
-	hashing         bool
-	excludeHidden   bool
-	excludeSystem   bool
-	createXLSX      bool
-	preserveZeros   bool
-	filteredHidden  uint64
-	filteredSystem  uint64
-	filteredExts    uint64
-	filteredSamples []string
 }
 
 type scanErrorMsg struct {
@@ -140,32 +100,6 @@ type emailCopyDoneMsg struct {
 	manifestPath string
 	copied       uint64
 	elapsed      time.Duration
-}
-
-type scanOptions struct {
-	Hashing          bool
-	ExcludeHidden    bool
-	ExcludeSystem    bool
-	CreateXLSX       bool
-	PreserveZeros    bool
-	ExcludedExts     map[string]struct{}
-	ExcludedExtsText string
-}
-
-type scanWork struct {
-	index    uint64
-	path     string
-	relative string
-	name     string
-	ext      string
-	size     uint64
-}
-
-type scanResult struct {
-	index uint64
-	work  scanWork
-	hash  string
-	err   error
 }
 
 type model struct {
@@ -198,14 +132,6 @@ type model struct {
 	scanStartedAt  time.Time
 }
 
-type scannerStats struct {
-	files       atomic.Uint64
-	directories atomic.Uint64
-	bytes       atomic.Uint64
-	errors      atomic.Uint64
-	filtered    atomic.Uint64
-}
-
 type sourceKeyMap struct {
 	Choose key.Binding
 	Up     key.Binding
@@ -214,31 +140,6 @@ type sourceKeyMap struct {
 var sourceKeys = sourceKeyMap{
 	Choose: key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "open / choose")),
 	Up:     key.NewBinding(key.WithKeys("backspace", "h"), key.WithHelp("backspace", "up")),
-}
-
-var emailExtensions = map[string]struct{}{
-	".dbx":            {},
-	".eml":            {},
-	".emlx":           {},
-	".emlxpart":       {},
-	".mbox":           {},
-	".mbx":            {},
-	".msg":            {},
-	".olk14msgsource": {},
-	".ost":            {},
-	".pst":            {},
-	".rge":            {},
-	".tbb":            {},
-	".wdseml":         {},
-}
-
-func sortedEmailExtensions() []string {
-	values := make([]string, 0, len(emailExtensions))
-	for ext := range emailExtensions {
-		values = append(values, ext)
-	}
-	slices.Sort(values)
-	return values
 }
 
 func main() {
@@ -1159,317 +1060,6 @@ func waitForProgress() tea.Cmd {
 	})
 }
 
-type globalProgress struct {
-	files       uint64
-	directories uint64
-	bytes       uint64
-	filtered    uint64
-	startedAt   time.Time
-}
-
-var scanProgressState atomic.Value
-
-func currentProgress() globalProgress {
-	if value := scanProgressState.Load(); value != nil {
-		return value.(globalProgress)
-	}
-	return globalProgress{startedAt: time.Now()}
-}
-
-func setProgress(files, directories, bytes, filtered uint64, startedAt time.Time) {
-	scanProgressState.Store(globalProgress{
-		files:       files,
-		directories: directories,
-		bytes:       bytes,
-		filtered:    filtered,
-		startedAt:   startedAt,
-	})
-}
-
-type reportWriter interface {
-	WriteHeader() error
-	WriteRow([]string) error
-	Finalize(uint64) error
-	Close() error
-}
-
-type csvReportWriter struct {
-	file   *os.File
-	buffer *bufio.Writer
-	writer *csv.Writer
-}
-
-func newReportWriter(outputPath string) (reportWriter, error) {
-	if err := os.MkdirAll(filepath.Dir(outputPath), 0o755); err != nil {
-		return nil, err
-	}
-	file, err := os.Create(outputPath)
-	if err != nil {
-		return nil, err
-	}
-	buffer := bufio.NewWriterSize(file, 1<<20)
-	return &csvReportWriter{
-		file:   file,
-		buffer: buffer,
-		writer: csv.NewWriter(buffer),
-	}, nil
-}
-
-func (w *csvReportWriter) WriteHeader() error {
-	return w.writer.Write([]string{
-		"File Name",
-		"Extension",
-		"Size in Bytes",
-		"Size in Human Readable",
-		"Path From Root Folder",
-		"SHA256 Hash",
-	})
-}
-
-func (w *csvReportWriter) WriteRow(values []string) error {
-	return w.writer.Write(values)
-}
-
-func (w *csvReportWriter) Finalize(_ uint64) error {
-	w.writer.Flush()
-	if err := w.writer.Error(); err != nil {
-		return err
-	}
-	return w.buffer.Flush()
-}
-
-func (w *csvReportWriter) Close() error {
-	if err := w.file.Close(); err != nil {
-		return err
-	}
-	return nil
-}
-
-func runScan(sourceDir, outputPath string, options scanOptions) (scanDoneMsg, error) {
-	startedAt := time.Now()
-	setProgress(0, 0, 0, 0, startedAt)
-
-	reportWriter, err := newReportWriter(outputPath)
-	if err != nil {
-		return scanDoneMsg{}, err
-	}
-	defer reportWriter.Close()
-
-	if err := reportWriter.WriteHeader(); err != nil {
-		return scanDoneMsg{}, err
-	}
-
-	stats := &scannerStats{}
-	hashWorkers := 1
-	if options.Hashing {
-		hashWorkers = max(2, runtime.NumCPU())
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	workCh := make(chan scanWork, hashWorkers*4)
-	resultCh := make(chan scanResult, hashWorkers*4)
-	walkErrCh := make(chan error, 1)
-	typeTotals := make(map[string]summaryEntry)
-	pending := make(map[uint64]scanResult)
-	filteredHidden := uint64(0)
-	filteredSystem := uint64(0)
-	filteredExts := uint64(0)
-	filteredSamples := make([]string, 0, 8)
-	var expected uint64
-
-	var workerWG sync.WaitGroup
-	for range hashWorkers {
-		workerWG.Add(1)
-		go func() {
-			defer workerWG.Done()
-			for work := range workCh {
-				hashValue := ""
-				var resultErr error
-				if options.Hashing {
-					hashValue, resultErr = hashFile(work.path)
-				}
-				select {
-				case resultCh <- scanResult{index: work.index, work: work, hash: hashValue, err: resultErr}:
-				case <-ctx.Done():
-					return
-				}
-			}
-		}()
-	}
-
-	go func() {
-		workerWG.Wait()
-		close(resultCh)
-	}()
-
-	go func() {
-		defer close(workCh)
-		var index uint64
-		walkErrCh <- filepath.WalkDir(sourceDir, func(path string, d fs.DirEntry, walkErr error) error {
-			if walkErr != nil {
-				stats.errors.Add(1)
-				return nil
-			}
-
-			if d.IsDir() {
-				if path != sourceDir && options.ExcludeHidden && isHiddenName(d.Name()) {
-					stats.filtered.Add(1)
-					filteredHidden += 1
-					filteredSamples = appendFilteredSample(filteredSamples, fmt.Sprintf("%s -> hidden directory", filepath.ToSlash(path)))
-					setProgress(stats.files.Load(), stats.directories.Load(), stats.bytes.Load(), stats.filtered.Load(), startedAt)
-					return filepath.SkipDir
-				}
-				stats.directories.Add(1)
-				setProgress(stats.files.Load(), stats.directories.Load(), stats.bytes.Load(), stats.filtered.Load(), startedAt)
-				return nil
-			}
-
-			info, err := d.Info()
-			if err != nil {
-				stats.errors.Add(1)
-				return nil
-			}
-			if !info.Mode().IsRegular() {
-				return nil
-			}
-
-			if reason, skipped := shouldSkipFile(path, d.Name(), options); skipped {
-				stats.filtered.Add(1)
-				switch reason {
-				case "hidden path":
-					filteredHidden += 1
-				case "system file":
-					filteredSystem += 1
-				case "excluded extension":
-					filteredExts += 1
-				}
-				filteredSamples = appendFilteredSample(filteredSamples, fmt.Sprintf("%s -> %s", filepath.ToSlash(path), reason))
-				setProgress(stats.files.Load(), stats.directories.Load(), stats.bytes.Load(), stats.filtered.Load(), startedAt)
-				return nil
-			}
-
-			relative, err := filepath.Rel(sourceDir, path)
-			if err != nil {
-				stats.errors.Add(1)
-				return nil
-			}
-
-			work := scanWork{
-				index:    index,
-				path:     path,
-				relative: filepath.ToSlash(relative),
-				name:     filepath.Base(path),
-				ext:      normalizeExt(filepath.Ext(path)),
-				size:     uint64(info.Size()),
-			}
-			index++
-
-			select {
-			case workCh <- work:
-				return nil
-			case <-ctx.Done():
-				return ctx.Err()
-			}
-		})
-	}()
-
-	for result := range resultCh {
-		pending[result.index] = result
-		for {
-			ready, ok := pending[expected]
-			if !ok {
-				break
-			}
-			delete(pending, expected)
-			expected++
-
-			if ready.err != nil {
-				stats.errors.Add(1)
-				setProgress(stats.files.Load(), stats.directories.Load(), stats.bytes.Load(), stats.filtered.Load(), startedAt)
-				continue
-			}
-
-			if err := reportWriter.WriteRow([]string{
-				ready.work.name,
-				ready.work.ext,
-				fmt.Sprintf("%d", ready.work.size),
-				humanBytes(ready.work.size),
-				ready.work.relative,
-				ready.hash,
-			}); err != nil {
-				cancel()
-				return scanDoneMsg{}, err
-			}
-
-			stats.files.Add(1)
-			stats.bytes.Add(ready.work.size)
-
-			key := summaryKey(ready.work.ext)
-			entry := typeTotals[key]
-			entry.Label = key
-			entry.Count++
-			entry.Bytes += ready.work.size
-			typeTotals[key] = entry
-
-			setProgress(stats.files.Load(), stats.directories.Load(), stats.bytes.Load(), stats.filtered.Load(), startedAt)
-		}
-	}
-
-	if walkErr := <-walkErrCh; walkErr != nil && !errors.Is(walkErr, context.Canceled) {
-		return scanDoneMsg{}, walkErr
-	}
-	if err := reportWriter.Finalize(stats.files.Load()); err != nil {
-		return scanDoneMsg{}, err
-	}
-
-	xlsxPath := ""
-	if options.CreateXLSX {
-		xlsxPath = strings.TrimSuffix(outputPath, filepath.Ext(outputPath)) + ".xlsx"
-		if err := convertCSVToXLSX(outputPath, xlsxPath, options.PreserveZeros); err != nil {
-			return scanDoneMsg{}, err
-		}
-	}
-
-	return scanDoneMsg{
-		files:           stats.files.Load(),
-		directories:     stats.directories.Load(),
-		bytes:           stats.bytes.Load(),
-		errors:          stats.errors.Load(),
-		filtered:        stats.filtered.Load(),
-		outputPath:      outputPath,
-		xlsxPath:        xlsxPath,
-		elapsed:         time.Since(startedAt),
-		topByCount:      summarizeByCount(typeTotals, 8),
-		topBySize:       summarizeBySize(typeTotals, 8),
-		hashWorkers:     hashWorkers,
-		hashing:         options.Hashing,
-		excludeHidden:   options.ExcludeHidden,
-		excludeSystem:   options.ExcludeSystem,
-		createXLSX:      options.CreateXLSX,
-		preserveZeros:   options.PreserveZeros,
-		filteredHidden:  filteredHidden,
-		filteredSystem:  filteredSystem,
-		filteredExts:    filteredExts,
-		filteredSamples: filteredSamples,
-	}, nil
-}
-
-func hashFile(path string) (string, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer file.Close()
-
-	hash := sha256.New()
-	if _, err := io.CopyBuffer(hash, file, make([]byte, 1<<20)); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(hash.Sum(nil)), nil
-}
-
 func ensureOutputPath(outputPath string) (bool, error) {
 	parent := filepath.Dir(outputPath)
 	if parent == "." {
@@ -1506,205 +1096,6 @@ func ensureOutputPath(outputPath string) (bool, error) {
 
 func isSupportedOutputPath(outputPath string) bool {
 	return strings.ToLower(filepath.Ext(outputPath)) == ".csv"
-}
-
-func copyEmailFiles(sourceDir, destDir string) (string, uint64, error) {
-	if err := os.MkdirAll(destDir, 0o755); err != nil {
-		return "", 0, err
-	}
-
-	timestamp := time.Now().Format("2006-01-02T15-04-05")
-	manifestPath := filepath.Join(destDir, fmt.Sprintf("email-copy-manifest-%s.csv", timestamp))
-
-	manifestFile, err := os.Create(manifestPath)
-	if err != nil {
-		return "", 0, err
-	}
-	defer manifestFile.Close()
-
-	writer := csv.NewWriter(manifestFile)
-	defer writer.Flush()
-
-	if err := writer.Write([]string{
-		"Source Path",
-		"Destination Path",
-		"Relative Path",
-		"File Name",
-		"Extension",
-		"Size in Bytes",
-	}); err != nil {
-		return "", 0, err
-	}
-
-	var copied uint64
-	err = filepath.WalkDir(sourceDir, func(path string, d fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return nil
-		}
-		if d.IsDir() {
-			return nil
-		}
-
-		ext := strings.ToLower(filepath.Ext(d.Name()))
-		if _, ok := emailExtensions[ext]; !ok {
-			return nil
-		}
-
-		relative, err := filepath.Rel(sourceDir, path)
-		if err != nil {
-			return nil
-		}
-		targetPath := filepath.Join(destDir, relative)
-		if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
-			return err
-		}
-		if err := copyFile(path, targetPath); err != nil {
-			return err
-		}
-
-		info, err := os.Stat(path)
-		if err != nil {
-			return nil
-		}
-
-		if err := writer.Write([]string{
-			path,
-			targetPath,
-			filepath.ToSlash(relative),
-			filepath.Base(path),
-			ext,
-			fmt.Sprintf("%d", info.Size()),
-		}); err != nil {
-			return err
-		}
-
-		copied++
-		return nil
-	})
-	if err != nil {
-		return "", 0, err
-	}
-	writer.Flush()
-	if err := writer.Error(); err != nil {
-		return "", 0, err
-	}
-
-	return manifestPath, copied, nil
-}
-
-func copyFile(sourcePath, destPath string) error {
-	sourceFile, err := os.Open(sourcePath)
-	if err != nil {
-		return err
-	}
-	defer sourceFile.Close()
-
-	destFile, err := os.Create(destPath)
-	if err != nil {
-		return err
-	}
-	defer destFile.Close()
-
-	if _, err := io.Copy(destFile, sourceFile); err != nil {
-		return err
-	}
-	if err := destFile.Sync(); err != nil {
-		return err
-	}
-
-	info, err := os.Stat(sourcePath)
-	if err == nil {
-		_ = os.Chmod(destPath, info.Mode())
-	}
-	return nil
-}
-
-func convertCSVToXLSX(csvPath, xlsxPath string, preserveZeros bool) error {
-	file, err := os.Open(csvPath)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	reader := csv.NewReader(file)
-	rows, err := reader.ReadAll()
-	if err != nil {
-		return err
-	}
-
-	workbook := excelize.NewFile()
-	defer workbook.Close()
-
-	sheet := workbook.GetSheetName(workbook.GetActiveSheetIndex())
-	streamWriter, err := workbook.NewStreamWriter(sheet)
-	if err != nil {
-		return err
-	}
-
-	textStyleID := 0
-	if preserveZeros {
-		textStyleID, err = workbook.NewStyle(&excelize.Style{NumFmt: 49})
-		if err != nil {
-			return err
-		}
-	}
-
-	for rowIndex, row := range rows {
-		cellName, err := excelize.CoordinatesToCellName(1, rowIndex+1)
-		if err != nil {
-			return err
-		}
-
-		cells := make([]interface{}, 0, len(row))
-		for colIndex, value := range row {
-			if preserveZeros {
-				cells = append(cells, excelize.Cell{StyleID: textStyleID, Value: value})
-				continue
-			}
-			if rowIndex > 0 && colIndex == 2 {
-				cells = append(cells, parseUintString(value))
-				continue
-			}
-			cells = append(cells, value)
-		}
-
-		if err := streamWriter.SetRow(cellName, cells); err != nil {
-			return err
-		}
-	}
-
-	if err := streamWriter.Flush(); err != nil {
-		return err
-	}
-
-	if len(rows) > 0 {
-		lastCell, err := excelize.CoordinatesToCellName(6, len(rows))
-		if err == nil {
-			showRows := true
-			_ = workbook.AddTable(sheet, &excelize.Table{
-				Range:             "A1:" + lastCell,
-				Name:              "ContentList",
-				StyleName:         "TableStyleMedium2",
-				ShowFirstColumn:   false,
-				ShowLastColumn:    false,
-				ShowRowStripes:    &showRows,
-				ShowColumnStripes: false,
-			})
-		}
-	}
-
-	return workbook.SaveAs(xlsxPath)
-}
-
-func parseUintString(value string) interface{} {
-	var parsed uint64
-	for _, char := range value {
-		if char < '0' || char > '9' {
-			return value
-		}
-		parsed = parsed*10 + uint64(char-'0')
-	}
-	return parsed
 }
 
 func parseExcludedExtensions(input string) (map[string]struct{}, error) {

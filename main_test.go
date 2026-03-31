@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/csv"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -259,5 +260,113 @@ func TestCopyEmailFilesPreservesStructureAndWritesManifest(t *testing.T) {
 	}
 	if rows[2][4] != ".pst" {
 		t.Fatalf("expected extension .pst, got %q", rows[2][4])
+	}
+}
+
+func TestRunScanMatchesGoldenFixture(t *testing.T) {
+	workspace := t.TempDir()
+	output := filepath.Join(workspace, "report.csv")
+	source := filepath.Join("testdata", "parity", "source")
+
+	done, err := runScan(source, output, scanOptions{
+		Hashing:       true,
+		ExcludeHidden: true,
+		ExcludeSystem: true,
+		ExcludedExts: map[string]struct{}{
+			"log": {},
+		},
+	})
+	if err != nil {
+		t.Fatalf("runScan failed: %v", err)
+	}
+	if done.files != 5 || done.filtered != 3 {
+		t.Fatalf("unexpected counts: files=%d filtered=%d", done.files, done.filtered)
+	}
+
+	actualRows := readCSVRows(t, output)
+	expectedRows := readCSVRows(t, filepath.Join("testdata", "parity", "expected-scan-hash.csv"))
+	assertRowsEqual(t, actualRows, expectedRows)
+}
+
+func TestCopyEmailFilesMatchesGoldenFixture(t *testing.T) {
+	workspace := t.TempDir()
+	source := filepath.Join("testdata", "parity", "source")
+	dest := filepath.Join(workspace, "emails")
+
+	manifestPath, copied, err := copyEmailFiles(source, dest)
+	if err != nil {
+		t.Fatalf("copyEmailFiles failed: %v", err)
+	}
+
+	type expectedManifest struct {
+		Copied int                 `json:"copied"`
+		Rows   []map[string]string `json:"rows"`
+	}
+	var expected expectedManifest
+	raw, err := os.ReadFile(filepath.Join("testdata", "parity", "expected-email-manifest.json"))
+	if err != nil {
+		t.Fatalf("read expected manifest: %v", err)
+	}
+	if err := json.Unmarshal(raw, &expected); err != nil {
+		t.Fatalf("unmarshal expected manifest: %v", err)
+	}
+	if int(copied) != expected.Copied {
+		t.Fatalf("expected %d copied files, got %d", expected.Copied, copied)
+	}
+
+	rows := readCSVRows(t, manifestPath)
+	if len(rows) != len(expected.Rows)+1 {
+		t.Fatalf("expected %d rows including header, got %d", len(expected.Rows)+1, len(rows))
+	}
+	for index, expectedRow := range expected.Rows {
+		actual := map[string]string{
+			"Relative Path": rows[index+1][2],
+			"File Name":     rows[index+1][3],
+			"Extension":     rows[index+1][4],
+			"Size in Bytes": rows[index+1][5],
+		}
+		if actual["Relative Path"] == "" || actual["File Name"] == "" {
+			t.Fatalf("expected populated manifest row at index %d", index)
+		}
+		for key, expectedValue := range expectedRow {
+			if actual[key] != expectedValue {
+				t.Fatalf("row %d field %s mismatch: got %q want %q", index, key, actual[key], expectedValue)
+			}
+		}
+		if _, err := os.Stat(filepath.Join(dest, actual["Relative Path"])); err != nil {
+			t.Fatalf("expected copied file %s: %v", actual["Relative Path"], err)
+		}
+	}
+}
+
+func readCSVRows(t *testing.T, path string) [][]string {
+	t.Helper()
+	file, err := os.Open(path)
+	if err != nil {
+		t.Fatalf("open csv %s: %v", path, err)
+	}
+	defer file.Close()
+
+	rows, err := csv.NewReader(file).ReadAll()
+	if err != nil {
+		t.Fatalf("read csv %s: %v", path, err)
+	}
+	return rows
+}
+
+func assertRowsEqual(t *testing.T, actual, expected [][]string) {
+	t.Helper()
+	if len(actual) != len(expected) {
+		t.Fatalf("row count mismatch: got %d want %d", len(actual), len(expected))
+	}
+	for rowIndex := range expected {
+		if len(actual[rowIndex]) != len(expected[rowIndex]) {
+			t.Fatalf("column count mismatch at row %d: got %d want %d", rowIndex, len(actual[rowIndex]), len(expected[rowIndex]))
+		}
+		for colIndex := range expected[rowIndex] {
+			if actual[rowIndex][colIndex] != expected[rowIndex][colIndex] {
+				t.Fatalf("cell mismatch at row %d col %d: got %q want %q", rowIndex, colIndex, actual[rowIndex][colIndex], expected[rowIndex][colIndex])
+			}
+		}
 	}
 }

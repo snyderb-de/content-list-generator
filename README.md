@@ -12,9 +12,12 @@ Both apps include two first-class workflows:
 
 ## Architecture
 
-- `main.go` is the main Go terminal app.
+- `core.go` contains the Go scan/email engine and shared non-UI logic.
+- `main.go` is the Go TUI entry point and interaction layer.
+- `python/content_list_core.py` contains the Python scan/email engine and shared non-GUI logic.
 - `python/content_list_generator.py` is the Windows-native Python full app and CLI entry point.
 - `scripts/copy_email_files.py` is now a thin compatibility wrapper that launches the Python app's integrated email-copy mode instead of owning separate logic.
+- `testdata/parity/` contains shared golden fixtures used by both Go and Python tests.
 
 ## Content List Workflow
 
@@ -157,6 +160,21 @@ The automated coverage now includes:
 - integrated email-copy output
 - manifest/report generation
 - Python non-GUI core behavior
+- shared fixture-driven parity checks for Go and Python
+
+One-command local verification:
+
+```bash
+./scripts/dev_check.sh
+```
+
+Quick local launchers:
+
+```bash
+./scripts/run_local.sh go
+./scripts/run_local.sh python
+./scripts/run_local.sh python-cli -- --help
+```
 
 ## Release Builds
 
@@ -167,3 +185,9 @@ Use the release script to rebuild the distributable artifacts:
 ```
 
 This writes release binaries to `dist/` and the local Go binary to `bin/content-list-generator`.
+
+For a local convenience package that bundles the Python app files and rebuilds the local Go binary:
+
+```bash
+./scripts/package_local.sh
+```

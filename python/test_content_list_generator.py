@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import json
 import sys
 import unittest
 import zipfile
@@ -12,7 +13,7 @@ CURRENT_DIR = Path(__file__).resolve().parent
 if str(CURRENT_DIR) not in sys.path:
     sys.path.insert(0, str(CURRENT_DIR))
 
-import content_list_generator as clg
+import content_list_core as core
 
 
 class ContentListGeneratorTests(unittest.TestCase):
@@ -23,7 +24,7 @@ class ContentListGeneratorTests(unittest.TestCase):
             source.mkdir()
             (source / "0007.txt").write_text("hello\n", encoding="utf-8")
 
-            result = clg.run_scan(
+            result = core.run_scan(
                 source,
                 workspace / "report.csv",
                 hashing=True,
@@ -53,7 +54,7 @@ class ContentListGeneratorTests(unittest.TestCase):
             )
             xlsx_path = workspace / "output.xlsx"
 
-            clg.convert_csv_to_xlsx(csv_path, xlsx_path, preserve_zeros=True)
+            core.convert_csv_to_xlsx(csv_path, xlsx_path, preserve_zeros=True)
 
             with zipfile.ZipFile(xlsx_path, "r") as archive:
                 sheet_xml = archive.read("xl/worksheets/sheet1.xml").decode("utf-8")
@@ -69,7 +70,7 @@ class ContentListGeneratorTests(unittest.TestCase):
             (source / "Inbox" / "nested" / "archive.pst").write_text("archive", encoding="utf-8")
             (source / "Inbox" / "ignore.txt").write_text("ignore", encoding="utf-8")
 
-            result = clg.copy_email_files(source, dest)
+            result = core.copy_email_files(source, dest)
 
             self.assertEqual(result.copied, 2)
             self.assertTrue((dest / "Inbox" / "mail.eml").exists())
@@ -78,9 +79,57 @@ class ContentListGeneratorTests(unittest.TestCase):
 
             with result.manifest_path.open("r", newline="", encoding="utf-8") as handle:
                 rows = list(csv.reader(handle))
-            self.assertEqual(rows[0], clg.EMAIL_MANIFEST_HEADERS)
+            self.assertEqual(rows[0], core.EMAIL_MANIFEST_HEADERS)
             self.assertEqual(rows[1][2], "Inbox/mail.eml")
             self.assertEqual(rows[2][4], ".pst")
+
+    def test_run_scan_matches_golden_fixture(self) -> None:
+        repo_root = CURRENT_DIR.parent
+        source = repo_root / "testdata" / "parity" / "source"
+        expected_path = repo_root / "testdata" / "parity" / "expected-scan-hash.csv"
+
+        with TemporaryDirectory() as tmp:
+            output_path = Path(tmp) / "report.csv"
+            result = core.run_scan(
+                source,
+                output_path,
+                hashing=True,
+                include_hidden=False,
+                include_system=False,
+                excluded_exts={"log"},
+                create_xlsx=False,
+                preserve_zeros=False,
+            )
+
+            self.assertEqual(result.files, 5)
+            self.assertEqual(result.filtered, 3)
+            self.assertEqual(output_path.read_text(encoding="utf-8"), expected_path.read_text(encoding="utf-8"))
+
+    def test_copy_email_matches_golden_fixture(self) -> None:
+        repo_root = CURRENT_DIR.parent
+        source = repo_root / "testdata" / "parity" / "source"
+        expected = json.loads((repo_root / "testdata" / "parity" / "expected-email-manifest.json").read_text(encoding="utf-8"))
+
+        with TemporaryDirectory() as tmp:
+            dest = Path(tmp) / "emails"
+            result = core.copy_email_files(source, dest)
+
+            self.assertEqual(result.copied, expected["copied"])
+
+            with result.manifest_path.open("r", newline="", encoding="utf-8") as handle:
+                rows = list(csv.DictReader(handle))
+            normalized = [
+                {
+                    "Relative Path": row["Relative Path"],
+                    "File Name": row["File Name"],
+                    "Extension": row["Extension"],
+                    "Size in Bytes": row["Size in Bytes"],
+                }
+                for row in rows
+            ]
+            self.assertEqual(normalized, expected["rows"])
+            for row in normalized:
+                self.assertTrue((dest / row["Relative Path"]).exists())
 
 
 if __name__ == "__main__":
