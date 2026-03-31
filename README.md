@@ -1,42 +1,84 @@
 # Content List Generator
 
-Fast terminal app for exporting a recursive file inventory to CSV.
+Content List Generator now ships as two full apps with matching core behavior:
 
-Built with Go and Charm's TUI stack:
+- Go TUI app for the cross-platform terminal workflow
+- Python Tkinter app as the Windows-native full-app path
 
-- Bubble Tea
-- Bubbles
-- Lip Gloss
-- Glamour
+Both apps include two first-class workflows:
 
-## What it captures
+- Generate a recursive content list to CSV, with optional XLSX export
+- Copy email-related files into a chosen destination with a manifest report
 
-- File Name
-- Extension
-- Size in Bytes
-- Size in Human Readable form
-- Path From Root Folder
-- SHA-256 hash (optional)
+## Architecture
 
-## Current features
+- `main.go` is the main Go terminal app.
+- `python/content_list_generator.py` is the Windows-native Python full app and CLI entry point.
+- `scripts/copy_email_files.py` is now a thin compatibility wrapper that launches the Python app's integrated email-copy mode instead of owning separate logic.
 
-- Source folder browser
-- Output folder browser
-- Output file naming with overwrite confirmation
+## Content List Workflow
+
+Both full apps support:
+
+- Source folder selection
+- Output folder selection
+- Output CSV naming with overwrite confirmation
 - Optional SHA-256 hashing
 - Optional hidden file exclusion
 - Optional common system file exclusion
 - Comma-separated extension exclusions
-- Optional post-scan XLSX copy generation
+- Optional XLSX generation after the CSV scan
 - Optional XLSX text-preservation mode for leading zeros
-- Optional post-scan email-file copy into a dedicated subfolder with manifest
 - Completion summaries by extension count and total size
-- Completion summaries for filtered reasons and sample filtered paths
-- Parallel hashing when hashes are enabled
 
-## Why CSV
+The CSV columns are:
 
-CSV is still a real table, but unlike an in-memory grid it scales cleanly to very large scans. This app streams rows directly to disk, so 500K+ files does not require 500K rows to live in RAM first.
+- File Name
+- Extension
+- Size in Bytes
+- Size in Human Readable
+- Path From Root Folder
+- SHA256 Hash
+
+## Email Copy Workflow
+
+Email copy is now a sub-feature inside both full apps rather than the primary UX of a standalone script.
+
+The dedicated email-copy flow in both apps:
+
+- asks for a source folder
+- asks where to copy the email files
+- preserves the original relative folder structure from the chosen source root
+- writes a manifest report in the destination folder
+
+The manifest columns are:
+
+- Source Path
+- Destination Path
+- Relative Path
+- File Name
+- Extension
+- Size in Bytes
+
+Supported extensions:
+
+- `.dbx`
+- `.eml`
+- `.emlx`
+- `.emlxpart`
+- `.mbox`
+- `.mbx`
+- `.msg`
+- `.olk14msgsource`
+- `.ost`
+- `.pst`
+- `.rge`
+- `.tbb`
+- `.wdseml`
+
+## Why CSV First
+
+CSV is still the safest default for large scans because rows are streamed directly to disk instead of being held in memory as a giant in-app table.
 
 ## Build
 
@@ -44,41 +86,26 @@ CSV is still a real table, but unlike an in-memory grid it scales cleanly to ver
 go build -o ./bin/content-list-generator .
 ```
 
-## Run
+## Run The Go App
 
 ```bash
 ./bin/content-list-generator
 ```
 
-## TUI flow
+The Go app opens to a main menu where you choose either:
 
-1. Browse to the source folder
-2. Press `space` to choose the current source folder
-3. Browse to the output folder
-4. Press `space` to choose the current output folder
-5. Enter the output `.csv` file name
-6. Configure hashing, exclusions, optional XLSX conversion, and optional email-file copy
-7. Start the scan
-8. If the file already exists, press `y` to overwrite or `n` to go back
+- `Generate Content List`
+- `Copy Email Files`
 
-## Python backup
-
-There is also a no-dependency Python backup at [python/content_list_generator.py](/Users/baghead/code/content-list-generator/python/content_list_generator.py).
-By default it launches a Tkinter desktop GUI with native folder pickers on systems where Tkinter is available.
-
-Run it with:
+## Run The Python App
 
 ```bash
 python3 ./python/content_list_generator.py
 ```
 
-For scripted or terminal-only use, force CLI mode:
+By default the Python app launches the desktop GUI when Tkinter is available and no explicit CLI arguments are provided.
 
-```bash
-python3 ./python/content_list_generator.py --cli
-```
-
-It can also run non-interactively:
+CLI scan mode:
 
 ```bash
 python3 ./python/content_list_generator.py --cli \
@@ -86,37 +113,57 @@ python3 ./python/content_list_generator.py --cli \
   --output-dir /path/to/output \
   --output-name report.csv \
   --hash \
+  --xlsx \
+  --preserve-zeros \
   --exclude-exts tmp,log \
   --overwrite
 ```
 
-## Release builds
-
-Use the build script to produce release binaries, including Windows:
+CLI email-copy mode:
 
 ```bash
-./scripts/build_releases.sh
+python3 ./python/content_list_generator.py --cli \
+  --mode email-copy \
+  --source /path/to/source \
+  --dest /path/to/destination
 ```
 
-Artifacts are written to `dist/`.
-
-## Notes on large scans
-
-- Hashing is optional because it is the slowest step.
-- The scan is recursive.
-- Rows are written as they are found.
-- CSV is the primary fast scan format.
-- If enabled, XLSX is created after the CSV scan completes.
-- If enabled, email-related files are copied after the scan into an output subfolder with a CSV manifest.
-
-## Email Copy Utility
-
-There is also a standalone helper at [copy_email_files.py](/Users/baghead/code/content-list-generator/scripts/copy_email_files.py).
-
-Run it with:
+Compatibility wrapper:
 
 ```bash
 ./scripts/copy_email_files.py
 ```
 
-If you later want a second output mode for truly huge inventories, SQLite is the natural next step.
+## Testing
+
+Go:
+
+```bash
+go test ./...
+```
+
+Python:
+
+```bash
+python3 -m unittest discover -s ./python -p 'test_*.py'
+python3 -m py_compile ./python/content_list_generator.py ./scripts/copy_email_files.py
+```
+
+The automated coverage now includes:
+
+- CSV scan output
+- XLSX generation
+- leading-zero preservation in XLSX
+- integrated email-copy output
+- manifest/report generation
+- Python non-GUI core behavior
+
+## Release Builds
+
+Use the release script to rebuild the distributable artifacts:
+
+```bash
+./scripts/build_releases.sh
+```
+
+This writes release binaries to `dist/` and the local Go binary to `bin/content-list-generator`.

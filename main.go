@@ -32,11 +32,15 @@ import (
 type stage int
 
 const (
-	stagePickSource stage = iota
+	stageHome stage = iota
+	stagePickSource
 	stagePickOutputDir
 	stageSetOutput
 	stageConfirmOverwrite
 	stageScanning
+	stageEmailPickSource
+	stageEmailPickDest
+	stageEmailCopying
 	stageDone
 	stageFailed
 )
@@ -49,21 +53,24 @@ const (
 	focusSystem
 	focusXLSX
 	focusPreserveZeros
-	focusEmailCopy
 	focusStart
 	focusCount
 )
 
+type flowMode int
+
+const (
+	flowScan flowMode = iota
+	flowEmailCopy
+)
+
 const introMarkdown = `# Content List Generator
 
-Fast recursive inventory export for very large folders.
+Fast recursive folder tools for very large collections.
 
-- Browse to a source folder
-- Browse to an output folder
-- Name the output CSV
-- Filter hidden files or common system clutter
-- Optionally convert the CSV to XLSX after the scan
-- Stream rows directly to disk
+- Generate a recursive CSV inventory, with optional XLSX export
+- Copy email-related files into a chosen destination while preserving folders
+- Choose each workflow from the main app
 
 CSV is the safest default for huge scans because the app never builds the whole table in memory.`
 
@@ -75,6 +82,16 @@ type dirItem struct {
 func (d dirItem) FilterValue() string { return d.name }
 func (d dirItem) Title() string       { return d.name }
 func (d dirItem) Description() string { return d.path }
+
+type actionItem struct {
+	title       string
+	description string
+	flow        flowMode
+}
+
+func (a actionItem) FilterValue() string { return a.title }
+func (a actionItem) Title() string       { return a.title }
+func (a actionItem) Description() string { return a.description }
 
 type summaryEntry struct {
 	Label string
@@ -98,9 +115,6 @@ type scanDoneMsg struct {
 	filtered        uint64
 	outputPath      string
 	xlsxPath        string
-	emailCopyDir    string
-	emailManifest   string
-	emailCopied     uint64
 	elapsed         time.Duration
 	topByCount      []summaryEntry
 	topBySize       []summaryEntry
@@ -110,7 +124,6 @@ type scanDoneMsg struct {
 	excludeSystem   bool
 	createXLSX      bool
 	preserveZeros   bool
-	copyEmailFiles  bool
 	filteredHidden  uint64
 	filteredSystem  uint64
 	filteredExts    uint64
@@ -121,13 +134,20 @@ type scanErrorMsg struct {
 	err error
 }
 
+type emailCopyDoneMsg struct {
+	sourceDir    string
+	destDir      string
+	manifestPath string
+	copied       uint64
+	elapsed      time.Duration
+}
+
 type scanOptions struct {
 	Hashing          bool
 	ExcludeHidden    bool
 	ExcludeSystem    bool
 	CreateXLSX       bool
 	PreserveZeros    bool
-	CopyEmailFiles   bool
 	ExcludedExts     map[string]struct{}
 	ExcludedExtsText string
 }
@@ -161,14 +181,17 @@ type model struct {
 	excludeSystem  bool
 	createXLSX     bool
 	preserveZeros  bool
-	copyEmailFiles bool
 	spinner        spinner.Model
+	activeFlow     flowMode
 	sourceDir      string
 	outputDir      string
 	outputPath     string
+	emailSourceDir string
+	emailDestDir   string
 	pendingPath    string
 	err            error
 	done           scanDoneMsg
+	emailDone      emailCopyDoneMsg
 	progress       scanProgressMsg
 	glamourIntro   string
 	quitting       bool
@@ -209,6 +232,15 @@ var emailExtensions = map[string]struct{}{
 	".wdseml":         {},
 }
 
+func sortedEmailExtensions() []string {
+	values := make([]string, 0, len(emailExtensions))
+	for ext := range emailExtensions {
+		values = append(values, ext)
+	}
+	slices.Sort(values)
+	return values
+}
+
 func main() {
 	startDir, err := os.Getwd()
 	if err != nil {
@@ -235,8 +267,8 @@ func main() {
 	spin.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
 
 	m := model{
-		stage:          stagePickSource,
-		list:           newSourceList(startDir),
+		stage:          stageHome,
+		list:           newActionList(),
 		outputInput:    outputInput,
 		excludeInput:   excludeInput,
 		settingsFocus:  focusFileName,
@@ -245,10 +277,12 @@ func main() {
 		excludeSystem:  false,
 		createXLSX:     false,
 		preserveZeros:  false,
-		copyEmailFiles: false,
 		spinner:        spin,
+		activeFlow:     flowScan,
 		sourceDir:      startDir,
 		outputDir:      startDir,
+		emailSourceDir: startDir,
+		emailDestDir:   startDir,
 		glamourIntro:   intro,
 	}
 	m.syncSettingsFocus()
@@ -262,6 +296,34 @@ func main() {
 
 func newSourceList(currentDir string) list.Model {
 	return newDirectoryList(currentDir, "Source Folder")
+}
+
+func newActionList() list.Model {
+	items := []list.Item{
+		actionItem{
+			title:       "Generate Content List",
+			description: "Scan a folder to CSV, with optional hashing, filters, and XLSX export.",
+			flow:        flowScan,
+		},
+		actionItem{
+			title:       "Copy Email Files",
+			description: "Copy supported email files into a chosen destination and save a manifest report.",
+			flow:        flowEmailCopy,
+		},
+	}
+
+	delegate := list.NewDefaultDelegate()
+	delegate.ShowDescription = true
+	delegate.SetSpacing(1)
+
+	l := list.New(items, delegate, 0, 0)
+	l.Title = "Main Menu"
+	l.SetShowStatusBar(false)
+	l.SetFilteringEnabled(false)
+	l.SetShowHelp(true)
+	l.SetShowPagination(false)
+	l.Styles.Title = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("39"))
+	return l
 }
 
 func newDirectoryList(currentDir, titlePrefix string) list.Model {
@@ -309,6 +371,16 @@ func (m model) Init() tea.Cmd {
 	return nil
 }
 
+func (m model) resetToHome() model {
+	m.stage = stageHome
+	m.activeFlow = flowScan
+	m.list = newActionList()
+	m.list.SetSize(m.width-8, boundedListHeight(m.height))
+	m.err = nil
+	m.pendingPath = ""
+	return m
+}
+
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -320,6 +392,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.KeyMsg:
 		switch m.stage {
+		case stageHome:
+			return m.updateHomeStage(msg)
 		case stagePickSource:
 			return m.updateSourceStage(msg)
 		case stagePickOutputDir:
@@ -333,7 +407,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.quitting = true
 				return m, tea.Quit
 			}
+		case stageEmailPickSource:
+			return m.updateEmailSourceStage(msg)
+		case stageEmailPickDest:
+			return m.updateEmailDestStage(msg)
+		case stageEmailCopying:
+			if msg.String() == "ctrl+c" || msg.String() == "q" {
+				m.quitting = true
+				return m, tea.Quit
+			}
 		case stageDone, stageFailed:
+			if m.activeFlow == flowEmailCopy && msg.String() == "enter" {
+				m = m.resetToHome()
+				return m, nil
+			}
 			if msg.String() == "enter" || msg.String() == "q" || msg.String() == "ctrl+c" {
 				m.quitting = true
 				return m, tea.Quit
@@ -349,9 +436,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.progress = msg
 		return m, waitForProgress()
 	case scanDoneMsg:
+		m.activeFlow = flowScan
 		m.stage = stageDone
 		m.done = msg
 		m.outputPath = msg.outputPath
+		return m, nil
+	case emailCopyDoneMsg:
+		m.activeFlow = flowEmailCopy
+		m.stage = stageDone
+		m.emailDone = msg
 		return m, nil
 	case scanErrorMsg:
 		m.stage = stageFailed
@@ -360,6 +453,37 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+func (m model) updateHomeStage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "enter":
+		selected, ok := m.list.SelectedItem().(actionItem)
+		if !ok {
+			return m, nil
+		}
+		switch selected.flow {
+		case flowScan:
+			m.activeFlow = flowScan
+			m.stage = stagePickSource
+			m.list = newSourceList(m.sourceDir)
+			m.list.SetSize(m.width-8, boundedListHeight(m.height))
+			return m, nil
+		case flowEmailCopy:
+			m.activeFlow = flowEmailCopy
+			m.stage = stageEmailPickSource
+			m.list = newDirectoryList(m.emailSourceDir, "Email Copy Source Folder")
+			m.list.SetSize(m.width-8, boundedListHeight(m.height))
+			return m, nil
+		}
+	case "q", "ctrl+c":
+		m.quitting = true
+		return m, tea.Quit
+	}
+
+	var cmd tea.Cmd
+	m.list, cmd = m.list.Update(msg)
+	return m, cmd
 }
 
 func (m model) updateSourceStage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -396,6 +520,9 @@ func (m model) updateSourceStage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.stage = stagePickOutputDir
 		m.list = newDirectoryList(m.outputDir, "Output Folder")
 		m.list.SetSize(m.width-8, boundedListHeight(m.height))
+		return m, nil
+	case msg.String() == "esc":
+		m = m.resetToHome()
 		return m, nil
 	case msg.String() == "q" || msg.String() == "ctrl+c":
 		m.quitting = true
@@ -455,6 +582,96 @@ func (m model) updateOutputDirStage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+func (m model) updateEmailSourceStage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, sourceKeys.Up):
+		parent := filepath.Dir(m.emailSourceDir)
+		if parent != m.emailSourceDir {
+			m.emailSourceDir = parent
+			m.list = newDirectoryList(parent, "Email Copy Source Folder")
+			m.list.SetSize(m.width-8, boundedListHeight(m.height))
+		}
+		return m, nil
+	case key.Matches(msg, sourceKeys.Choose):
+		selected, ok := m.list.SelectedItem().(dirItem)
+		if !ok {
+			m.emailDestDir = m.emailSourceDir
+			m.stage = stageEmailPickDest
+			m.list = newDirectoryList(m.emailDestDir, "Email Copy Destination")
+			m.list.SetSize(m.width-8, boundedListHeight(m.height))
+			return m, nil
+		}
+		if selected.name == ".." {
+			m.emailSourceDir = selected.path
+			m.list = newDirectoryList(selected.path, "Email Copy Source Folder")
+			m.list.SetSize(m.width-8, boundedListHeight(m.height))
+			return m, nil
+		}
+		m.emailSourceDir = selected.path
+		m.list = newDirectoryList(selected.path, "Email Copy Source Folder")
+		m.list.SetSize(m.width-8, boundedListHeight(m.height))
+		return m, nil
+	case msg.String() == " ":
+		m.emailDestDir = m.emailSourceDir
+		m.stage = stageEmailPickDest
+		m.list = newDirectoryList(m.emailDestDir, "Email Copy Destination")
+		m.list.SetSize(m.width-8, boundedListHeight(m.height))
+		return m, nil
+	case msg.String() == "esc":
+		m = m.resetToHome()
+		return m, nil
+	case msg.String() == "q" || msg.String() == "ctrl+c":
+		m.quitting = true
+		return m, tea.Quit
+	}
+
+	var cmd tea.Cmd
+	m.list, cmd = m.list.Update(msg)
+	return m, cmd
+}
+
+func (m model) updateEmailDestStage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, sourceKeys.Up):
+		parent := filepath.Dir(m.emailDestDir)
+		if parent != m.emailDestDir {
+			m.emailDestDir = parent
+			m.list = newDirectoryList(parent, "Email Copy Destination")
+			m.list.SetSize(m.width-8, boundedListHeight(m.height))
+		}
+		return m, nil
+	case key.Matches(msg, sourceKeys.Choose):
+		selected, ok := m.list.SelectedItem().(dirItem)
+		if !ok {
+			return m.beginEmailCopy()
+		}
+		if selected.name == ".." {
+			m.emailDestDir = selected.path
+			m.list = newDirectoryList(selected.path, "Email Copy Destination")
+			m.list.SetSize(m.width-8, boundedListHeight(m.height))
+			return m, nil
+		}
+		m.emailDestDir = selected.path
+		m.list = newDirectoryList(selected.path, "Email Copy Destination")
+		m.list.SetSize(m.width-8, boundedListHeight(m.height))
+		return m, nil
+	case msg.String() == " ":
+		return m.beginEmailCopy()
+	case msg.String() == "esc":
+		m.stage = stageEmailPickSource
+		m.list = newDirectoryList(m.emailSourceDir, "Email Copy Source Folder")
+		m.list.SetSize(m.width-8, boundedListHeight(m.height))
+		return m, nil
+	case msg.String() == "q" || msg.String() == "ctrl+c":
+		m.quitting = true
+		return m, tea.Quit
+	}
+
+	var cmd tea.Cmd
+	m.list, cmd = m.list.Update(msg)
+	return m, cmd
+}
+
 func (m model) updateOutputStage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c", "q":
@@ -496,9 +713,6 @@ func (m model) updateOutputStage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.preserveZeros = !m.preserveZeros
 			}
 			return m, nil
-		case focusEmailCopy:
-			m.copyEmailFiles = !m.copyEmailFiles
-			return m, nil
 		}
 	case "enter":
 		switch m.settingsFocus {
@@ -521,9 +735,6 @@ func (m model) updateOutputStage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.createXLSX {
 				m.preserveZeros = !m.preserveZeros
 			}
-			return m, nil
-		case focusEmailCopy:
-			m.copyEmailFiles = !m.copyEmailFiles
 			return m, nil
 		case focusFileName, focusExcludeExts:
 			m.settingsFocus = (m.settingsFocus + 1) % focusCount
@@ -565,7 +776,6 @@ func (m model) updateOutputStage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				ExcludeSystem:    m.excludeSystem,
 				CreateXLSX:       m.createXLSX,
 				PreserveZeros:    m.preserveZeros,
-				CopyEmailFiles:   m.copyEmailFiles,
 				ExcludedExts:     excludedMap,
 				ExcludedExtsText: strings.TrimSpace(m.excludeInput.Value()),
 			})
@@ -597,7 +807,6 @@ func (m model) updateConfirmOverwriteStage(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 			ExcludeSystem:    m.excludeSystem,
 			CreateXLSX:       m.createXLSX,
 			PreserveZeros:    m.preserveZeros,
-			CopyEmailFiles:   m.copyEmailFiles,
 			ExcludedExts:     excludedMap,
 			ExcludedExtsText: strings.TrimSpace(m.excludeInput.Value()),
 		})
@@ -615,6 +824,7 @@ func (m model) updateConfirmOverwriteStage(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 
 func (m model) beginScan(outputPath string, options scanOptions) (tea.Model, tea.Cmd) {
 	m.stage = stageScanning
+	m.activeFlow = flowScan
 	m.err = nil
 	m.pendingPath = ""
 	m.outputPath = outputPath
@@ -623,6 +833,17 @@ func (m model) beginScan(outputPath string, options scanOptions) (tea.Model, tea
 		m.spinner.Tick,
 		startScan(m.sourceDir, outputPath, options),
 		waitForProgress(),
+	)
+}
+
+func (m model) beginEmailCopy() (tea.Model, tea.Cmd) {
+	m.stage = stageEmailCopying
+	m.activeFlow = flowEmailCopy
+	m.err = nil
+	m.scanStartedAt = time.Now()
+	return m, tea.Batch(
+		m.spinner.Tick,
+		startEmailCopy(m.emailSourceDir, m.emailDestDir),
 	)
 }
 
@@ -645,6 +866,8 @@ func (m model) View() string {
 	}
 
 	switch m.stage {
+	case stageHome:
+		return m.viewHome()
 	case stagePickSource:
 		return m.viewSourcePicker()
 	case stagePickOutputDir:
@@ -655,13 +878,34 @@ func (m model) View() string {
 		return m.viewConfirmOverwrite()
 	case stageScanning:
 		return m.viewScanning()
+	case stageEmailPickSource:
+		return m.viewEmailSourcePicker()
+	case stageEmailPickDest:
+		return m.viewEmailDestPicker()
+	case stageEmailCopying:
+		return m.viewEmailCopying()
 	case stageDone:
+		if m.activeFlow == flowEmailCopy {
+			return m.viewEmailDone()
+		}
 		return m.viewDone()
 	case stageFailed:
 		return m.viewError()
 	default:
 		return ""
 	}
+}
+
+func (m model) viewHome() string {
+	body := lipgloss.JoinVertical(
+		lipgloss.Left,
+		styleDoc(m.glamourIntro),
+		"",
+		styleHint("Choose a workflow. Press enter to open it."),
+		"",
+		renderListWithFade(m.list.View()),
+	)
+	return styleFrame(body, m.width)
 }
 
 func (m model) viewSourcePicker() string {
@@ -709,7 +953,6 @@ func (m model) viewOutputForm() string {
 		focusedToggle(m.settingsFocus == focusSystem, "Exclude common system files", m.excludeSystem),
 		focusedToggle(m.settingsFocus == focusXLSX, "Create XLSX after scan", m.createXLSX),
 		focusedToggle(m.settingsFocus == focusPreserveZeros, "Preserve leading zeros in XLSX", m.preserveZeros && m.createXLSX),
-		focusedToggle(m.settingsFocus == focusEmailCopy, "Copy email files after scan", m.copyEmailFiles),
 		focusedAction(m.settingsFocus == focusStart, "Start scan"),
 		"",
 		styleHint("Tab or arrows move between controls. Space toggles a switch. Enter activates the focused control."),
@@ -735,7 +978,6 @@ func (m model) viewScanning() string {
 		styleLabel(fmt.Sprintf("Exclude system: %s", onOff(m.excludeSystem))),
 		styleLabel(fmt.Sprintf("Create XLSX: %s", onOff(m.createXLSX))),
 		styleLabel(fmt.Sprintf("Preserve zeros in XLSX: %s", onOff(m.preserveZeros && m.createXLSX))),
-		styleLabel(fmt.Sprintf("Copy email files: %s", onOff(m.copyEmailFiles))),
 		styleLabel(fmt.Sprintf("Excluded exts: %s", valueOrDefault(strings.TrimSpace(m.excludeInput.Value()), "none"))),
 		"",
 		styleStat("Files", formatUint(m.progress.files)),
@@ -745,6 +987,49 @@ func (m model) viewScanning() string {
 		styleStat("Elapsed", m.progress.elapsed.Round(time.Second).String()),
 		"",
 		styleHint("Rows are streamed directly to CSV, so huge scans stay memory-safe."),
+	)
+	return styleFrame(body, m.width)
+}
+
+func (m model) viewEmailSourcePicker() string {
+	body := lipgloss.JoinVertical(
+		lipgloss.Left,
+		styleTitle("Choose Email Copy Source Folder"),
+		"",
+		styleHint("Navigate folders with arrows. Press enter to open a folder. Press space to choose the current folder."),
+		"",
+		renderListWithFade(m.list.View()),
+		"",
+		styleHint(fmt.Sprintf("Current source folder: %s", m.emailSourceDir)),
+	)
+	return styleFrame(body, m.width)
+}
+
+func (m model) viewEmailDestPicker() string {
+	body := lipgloss.JoinVertical(
+		lipgloss.Left,
+		styleTitle("Choose Email Copy Destination"),
+		"",
+		styleLabel(fmt.Sprintf("Source folder: %s", m.emailSourceDir)),
+		styleHint("Navigate folders with arrows. Press enter to open a folder. Press space to choose the current folder as the destination."),
+		"",
+		renderListWithFade(m.list.View()),
+		"",
+		styleHint(fmt.Sprintf("Current destination: %s", m.emailDestDir)),
+	)
+	return styleFrame(body, m.width)
+}
+
+func (m model) viewEmailCopying() string {
+	body := lipgloss.JoinVertical(
+		lipgloss.Left,
+		styleTitle(fmt.Sprintf("%s Copying Email Files...", m.spinner.View())),
+		"",
+		styleLabel(fmt.Sprintf("Source: %s", m.emailSourceDir)),
+		styleLabel(fmt.Sprintf("Destination: %s", m.emailDestDir)),
+		styleLabel(fmt.Sprintf("Extensions: %s", strings.Join(sortedEmailExtensions(), ", "))),
+		"",
+		styleHint("Relative folders from the source root are preserved in the destination."),
 	)
 	return styleFrame(body, m.width)
 }
@@ -776,9 +1061,6 @@ func (m model) viewDone() string {
 		"",
 		styleStat("Output", m.done.outputPath),
 		styleStat("XLSX copy", valueOrDefault(m.done.xlsxPath, "not created")),
-		styleStat("Email copy dir", valueOrDefault(m.done.emailCopyDir, "not created")),
-		styleStat("Email manifest", valueOrDefault(m.done.emailManifest, "not created")),
-		styleStat("Email files copied", formatUint(m.done.emailCopied)),
 		styleStat("Files", formatUint(m.done.files)),
 		styleStat("Directories", formatUint(m.done.directories)),
 		styleStat("Bytes", humanBytes(m.done.bytes)),
@@ -791,7 +1073,6 @@ func (m model) viewDone() string {
 		styleStat("Hash workers", fmt.Sprintf("%d", m.done.hashWorkers)),
 		styleStat("Create XLSX", onOff(m.done.createXLSX)),
 		styleStat("Preserve zeros", onOff(m.done.preserveZeros)),
-		styleStat("Copy email files", onOff(m.done.copyEmailFiles)),
 		"",
 		countSummary,
 		"",
@@ -804,14 +1085,36 @@ func (m model) viewDone() string {
 	return styleFrame(body, m.width)
 }
 
-func (m model) viewError() string {
+func (m model) viewEmailDone() string {
 	body := lipgloss.JoinVertical(
 		lipgloss.Left,
-		styleTitle("Scan Failed"),
+		styleTitle("Email Copy Complete"),
+		"",
+		styleStat("Source", m.emailDone.sourceDir),
+		styleStat("Destination", m.emailDone.destDir),
+		styleStat("Manifest", m.emailDone.manifestPath),
+		styleStat("Copied", formatUint(m.emailDone.copied)),
+		styleStat("Elapsed", m.emailDone.elapsed.Round(time.Millisecond).String()),
+		"",
+		styleHint("Press enter to return to the main menu."),
+	)
+	return styleFrame(body, m.width)
+}
+
+func (m model) viewError() string {
+	hint := "Press enter to exit."
+	title := "Scan Failed"
+	if m.activeFlow == flowEmailCopy {
+		title = "Email Copy Failed"
+		hint = "Press enter to return to the main menu."
+	}
+	body := lipgloss.JoinVertical(
+		lipgloss.Left,
+		styleTitle(title),
 		"",
 		styleError(m.err.Error()),
 		"",
-		styleHint("Press enter to exit."),
+		styleHint(hint),
 	)
 	return styleFrame(body, m.width)
 }
@@ -823,6 +1126,23 @@ func startScan(sourceDir, outputPath string, options scanOptions) tea.Cmd {
 			return scanErrorMsg{err: err}
 		}
 		return done
+	}
+}
+
+func startEmailCopy(sourceDir, destDir string) tea.Cmd {
+	return func() tea.Msg {
+		startedAt := time.Now()
+		manifestPath, copied, err := copyEmailFiles(sourceDir, destDir)
+		if err != nil {
+			return scanErrorMsg{err: err}
+		}
+		return emailCopyDoneMsg{
+			sourceDir:    sourceDir,
+			destDir:      destDir,
+			manifestPath: manifestPath,
+			copied:       copied,
+			elapsed:      time.Since(startedAt),
+		}
 	}
 }
 
@@ -1112,20 +1432,6 @@ func runScan(sourceDir, outputPath string, options scanOptions) (scanDoneMsg, er
 		}
 	}
 
-	emailCopyDir := ""
-	emailManifest := ""
-	emailCopied := uint64(0)
-	if options.CopyEmailFiles {
-		baseName := strings.TrimSuffix(filepath.Base(outputPath), filepath.Ext(outputPath))
-		emailCopyDir = filepath.Join(filepath.Dir(outputPath), baseName+"-email-files")
-		manifestPath, copiedCount, err := copyEmailFiles(sourceDir, emailCopyDir)
-		if err != nil {
-			return scanDoneMsg{}, err
-		}
-		emailManifest = manifestPath
-		emailCopied = copiedCount
-	}
-
 	return scanDoneMsg{
 		files:           stats.files.Load(),
 		directories:     stats.directories.Load(),
@@ -1134,9 +1440,6 @@ func runScan(sourceDir, outputPath string, options scanOptions) (scanDoneMsg, er
 		filtered:        stats.filtered.Load(),
 		outputPath:      outputPath,
 		xlsxPath:        xlsxPath,
-		emailCopyDir:    emailCopyDir,
-		emailManifest:   emailManifest,
-		emailCopied:     emailCopied,
 		elapsed:         time.Since(startedAt),
 		topByCount:      summarizeByCount(typeTotals, 8),
 		topBySize:       summarizeBySize(typeTotals, 8),
@@ -1146,7 +1449,6 @@ func runScan(sourceDir, outputPath string, options scanOptions) (scanDoneMsg, er
 		excludeSystem:   options.ExcludeSystem,
 		createXLSX:      options.CreateXLSX,
 		preserveZeros:   options.PreserveZeros,
-		copyEmailFiles:  options.CopyEmailFiles,
 		filteredHidden:  filteredHidden,
 		filteredSystem:  filteredSystem,
 		filteredExts:    filteredExts,
