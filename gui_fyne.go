@@ -24,9 +24,9 @@ func launchGUI(startDir string) error {
 	window.Resize(fyne.NewSize(1040, 780))
 
 	tabs := container.NewAppTabs(
-		container.NewTabItem("Content List", buildScanTab(window, startDir)),
-		container.NewTabItem("Email Copy", buildEmailTab(window, startDir)),
-		container.NewTabItem("About", buildAboutTab()),
+		container.NewTabItem("Content List", container.NewVScroll(buildScanTab(window, startDir))),
+		container.NewTabItem("Copy Email Files", container.NewVScroll(buildEmailTab(window, startDir))),
+		container.NewTabItem("About", container.NewVScroll(buildAboutTab())),
 	)
 	tabs.SetTabLocation(container.TabLocationTop)
 
@@ -75,10 +75,6 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 	openOutputButton := widget.NewButton("Open Output Folder", func() {
 		openPathInFileManager(outputEntry.Text)
 	})
-	openLatestButton := widget.NewButton("Open Latest Result", func() {})
-	openLatestButton.Disable()
-
-	latestPath := ""
 	setRunning := func(running bool) {
 		startButton.Disable()
 		useSourceButton.Disable()
@@ -152,11 +148,6 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 						dialog.ShowError(err, window)
 						return
 					}
-					latestPath = done.outputPath
-					if done.xlsxPath != "" {
-						latestPath = done.xlsxPath
-					}
-					openLatestButton.Enable()
 					statusLabel.SetText(fmt.Sprintf("Scan complete. Wrote %d files.", done.files))
 					resultLabel.SetText(strings.Join([]string{
 						fmt.Sprintf("Output: %s", done.outputPath),
@@ -188,11 +179,6 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 	}
 
 	startButton.OnTapped = startScan
-	openLatestButton.OnTapped = func() {
-		if latestPath != "" {
-			openPathInFileManager(latestPath)
-		}
-	}
 
 	form := widget.NewForm(
 		widget.NewFormItem("Source folder", pathInputRow(window, sourceEntry, "Choose Source Folder", true)),
@@ -214,28 +200,20 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 		startButton,
 		useSourceButton,
 		openOutputButton,
-		openLatestButton,
 	)
 
-	resultCard := widget.NewCard("Latest Scan Result", "The Go GUI uses the same core engine as the TUI.", container.NewVScroll(resultLabel))
+	resultCard := widget.NewCard("Scan Result", "The Go GUI uses the same core engine as the TUI.", resultLabel)
 
-	return container.NewBorder(
-		container.NewVBox(
-			widget.NewRichTextFromMarkdown("## Go Desktop GUI\n\nUse this mode on macOS/Linux when you want a native window on top of the same scan engine as the TUI."),
-			statusLabel,
-		),
-		nil,
-		nil,
-		nil,
-		container.NewVScroll(container.NewVBox(
-			form,
-			widget.NewSeparator(),
-			options,
-			widget.NewSeparator(),
-			actions,
-			widget.NewSeparator(),
-			resultCard,
-		)),
+	return container.NewVBox(
+		statusLabel,
+		widget.NewSeparator(),
+		form,
+		widget.NewSeparator(),
+		options,
+		widget.NewSeparator(),
+		actions,
+		widget.NewSeparator(),
+		resultCard,
 	)
 }
 
@@ -248,7 +226,7 @@ func buildEmailTab(window fyne.Window, startDir string) fyne.CanvasObject {
 
 	statusLabel := widget.NewLabel("Ready.")
 	statusLabel.Wrapping = fyne.TextWrapWord
-	resultLabel := widget.NewLabel("Run an email copy to see the manifest and destination summary here.")
+	resultLabel := widget.NewLabel("Run Copy Email Files to see the manifest and destination summary here.")
 	resultLabel.Wrapping = fyne.TextWrapWord
 
 	startButton := widget.NewButton("Copy Email Files", nil)
@@ -258,7 +236,7 @@ func buildEmailTab(window fyne.Window, startDir string) fyne.CanvasObject {
 	openDestButton := widget.NewButton("Open Destination", func() {
 		openPathInFileManager(destEntry.Text)
 	})
-	openManifestButton := widget.NewButton("Open Latest Manifest", func() {})
+	openManifestButton := widget.NewButton("Open Manifest", func() {})
 	openManifestButton.Disable()
 
 	latestManifest := ""
@@ -287,13 +265,13 @@ func buildEmailTab(window fyne.Window, startDir string) fyne.CanvasObject {
 			fyne.Do(func() {
 				setRunning(false)
 				if err != nil {
-					statusLabel.SetText("Email copy failed.")
+					statusLabel.SetText("Copy Email Files failed.")
 					dialog.ShowError(err, window)
 					return
 				}
 				latestManifest = manifestPath
 				openManifestButton.Enable()
-				statusLabel.SetText(fmt.Sprintf("Email copy complete. Copied %d files.", copied))
+				statusLabel.SetText(fmt.Sprintf("Copy Email Files complete. Copied %d files.", copied))
 				resultLabel.SetText(strings.Join([]string{
 					fmt.Sprintf("Source: %s", sourceDir),
 					fmt.Sprintf("Destination: %s", destDir),
@@ -326,26 +304,20 @@ func buildEmailTab(window fyne.Window, startDir string) fyne.CanvasObject {
 		openManifestButton,
 	)
 
-	resultCard := widget.NewCard("Latest Email Copy Result", "Relative folders are preserved from the chosen source root.", container.NewVScroll(resultLabel))
+	resultCard := widget.NewCard("Copy Email Files Result", "Relative folders are preserved from the chosen source root.", resultLabel)
 
-	return container.NewBorder(
-		container.NewVBox(
-			widget.NewRichTextFromMarkdown("## Email Copy\n\nThis desktop flow preserves the original relative folder structure and writes a manifest report in the destination."),
-			statusLabel,
-		),
-		nil,
-		nil,
-		nil,
-		container.NewVScroll(container.NewVBox(
-			form,
-			widget.NewSeparator(),
-			widget.NewLabel("Extensions"),
-			widget.NewLabel(strings.Join(sortedEmailExtensions(), ", ")),
-			widget.NewSeparator(),
-			actions,
-			widget.NewSeparator(),
-			resultCard,
-		)),
+	return container.NewVBox(
+		widget.NewRichTextFromMarkdown("## Copy Email Files\n\nThis desktop flow preserves the original relative folder structure and writes a manifest report in the destination."),
+		statusLabel,
+		widget.NewSeparator(),
+		form,
+		widget.NewSeparator(),
+		widget.NewLabel("Extensions"),
+		widget.NewLabel(strings.Join(sortedEmailExtensions(), ", ")),
+		widget.NewSeparator(),
+		actions,
+		widget.NewSeparator(),
+		resultCard,
 	)
 }
 
