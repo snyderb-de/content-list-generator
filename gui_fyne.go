@@ -36,14 +36,18 @@ func launchGUI(startDir string) error {
 }
 
 func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
+	defaultSource := startDir
+	defaultOutput := startDir
+	defaultFilename := defaultOutputFilename(startDir)
+
 	sourceEntry := widget.NewEntry()
-	sourceEntry.SetText(startDir)
+	sourceEntry.SetText(defaultSource)
 
 	outputEntry := widget.NewEntry()
-	outputEntry.SetText(startDir)
+	outputEntry.SetText(defaultOutput)
 
 	fileEntry := widget.NewEntry()
-	fileEntry.SetText(defaultOutputFilename(startDir))
+	fileEntry.SetText(defaultFilename)
 
 	excludeEntry := widget.NewEntry()
 	excludeEntry.SetPlaceHolder("tmp,log")
@@ -65,6 +69,8 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 
 	statusLabel := widget.NewLabel("Ready.")
 	statusLabel.Wrapping = fyne.TextWrapWord
+	progressBar := widget.NewProgressBarInfinite()
+	progressBar.Hide()
 	resultLabel := widget.NewLabel("Run a scan to see the result summary here.")
 	resultLabel.Wrapping = fyne.TextWrapWord
 
@@ -72,16 +78,35 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 	useSourceButton := widget.NewButton("Use Source As Output", func() {
 		outputEntry.SetText(sourceEntry.Text)
 	})
+	resetButton := widget.NewButton("Reset", func() {
+		sourceEntry.SetText(defaultSource)
+		outputEntry.SetText(defaultOutput)
+		fileEntry.SetText(defaultFilename)
+		excludeEntry.SetText("")
+		hashCheck.SetChecked(false)
+		hiddenCheck.SetChecked(false)
+		systemCheck.SetChecked(false)
+		xlsxCheck.SetChecked(false)
+		zeroCheck.SetChecked(false)
+		progressBar.Hide()
+		statusLabel.SetText("Ready.")
+		resultLabel.SetText("Run a scan to see the result summary here.")
+	})
 	openOutputButton := widget.NewButton("Open Output Folder", func() {
 		openPathInFileManager(outputEntry.Text)
 	})
 	setRunning := func(running bool) {
-		startButton.Disable()
-		useSourceButton.Disable()
-		if !running {
-			startButton.Enable()
-			useSourceButton.Enable()
+		if running {
+			startButton.Disable()
+			useSourceButton.Disable()
+			resetButton.Disable()
+			progressBar.Show()
+			return
 		}
+		startButton.Enable()
+		useSourceButton.Enable()
+		resetButton.Enable()
+		progressBar.Hide()
 	}
 
 	startScan := func() {
@@ -199,6 +224,7 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 	actions := container.NewHBox(
 		startButton,
 		useSourceButton,
+		resetButton,
 		openOutputButton,
 	)
 
@@ -206,6 +232,7 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 
 	return container.NewVBox(
 		statusLabel,
+		progressBar,
 		widget.NewSeparator(),
 		form,
 		widget.NewSeparator(),
@@ -218,20 +245,32 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 }
 
 func buildEmailTab(window fyne.Window, startDir string) fyne.CanvasObject {
+	defaultSource := startDir
+	defaultDest := startDir
 	sourceEntry := widget.NewEntry()
-	sourceEntry.SetText(startDir)
+	sourceEntry.SetText(defaultSource)
 
 	destEntry := widget.NewEntry()
-	destEntry.SetText(startDir)
+	destEntry.SetText(defaultDest)
 
 	statusLabel := widget.NewLabel("Ready.")
 	statusLabel.Wrapping = fyne.TextWrapWord
+	progressBar := widget.NewProgressBar()
+	progressBar.Min = 0
+	progressBar.Max = 1
 	resultLabel := widget.NewLabel("Run Copy Email Files to see the manifest and destination summary here.")
 	resultLabel.Wrapping = fyne.TextWrapWord
 
 	startButton := widget.NewButton("Copy Email Files", nil)
 	useSourceButton := widget.NewButton("Use Source As Destination", func() {
 		destEntry.SetText(sourceEntry.Text)
+	})
+	resetButton := widget.NewButton("Reset", func() {
+		sourceEntry.SetText(defaultSource)
+		destEntry.SetText(defaultDest)
+		progressBar.SetValue(0)
+		statusLabel.SetText("Ready.")
+		resultLabel.SetText("Run Copy Email Files to see the manifest and destination summary here.")
 	})
 	openDestButton := widget.NewButton("Open Destination", func() {
 		openPathInFileManager(destEntry.Text)
@@ -241,12 +280,15 @@ func buildEmailTab(window fyne.Window, startDir string) fyne.CanvasObject {
 
 	latestManifest := ""
 	setRunning := func(running bool) {
-		startButton.Disable()
-		useSourceButton.Disable()
-		if !running {
-			startButton.Enable()
-			useSourceButton.Enable()
+		if running {
+			startButton.Disable()
+			useSourceButton.Disable()
+			resetButton.Disable()
+			return
 		}
+		startButton.Enable()
+		useSourceButton.Enable()
+		resetButton.Enable()
 	}
 
 	startButton.OnTapped = func() {
@@ -256,12 +298,28 @@ func buildEmailTab(window fyne.Window, startDir string) fyne.CanvasObject {
 			dialog.ShowError(fmt.Errorf("source folder and destination folder are required"), window)
 			return
 		}
+		progressBar.SetValue(0)
 
 		setRunning(true)
 		statusLabel.SetText("Copying email files...")
 		go func() {
 			started := time.Now()
-			manifestPath, copied, err := copyEmailFiles(sourceDir, destDir)
+			manifestPath, copied, err := copyEmailFilesWithProgress(sourceDir, destDir, func(progress emailCopyProgress) {
+				fyne.Do(func() {
+					total := float64(max(1, int(progress.Total)))
+					progressBar.Max = total
+					progressBar.SetValue(float64(progress.Copied))
+					if progress.Total == 0 {
+						statusLabel.SetText("No supported email files were found in the source folder.")
+						return
+					}
+					if progress.CurrentRel != "" {
+						statusLabel.SetText(fmt.Sprintf("Copying %d/%d: %s", progress.Copied, progress.Total, progress.CurrentRel))
+						return
+					}
+					statusLabel.SetText(fmt.Sprintf("Preparing to copy %d email files...", progress.Total))
+				})
+			})
 			fyne.Do(func() {
 				setRunning(false)
 				if err != nil {
@@ -300,6 +358,7 @@ func buildEmailTab(window fyne.Window, startDir string) fyne.CanvasObject {
 	actions := container.NewHBox(
 		startButton,
 		useSourceButton,
+		resetButton,
 		openDestButton,
 		openManifestButton,
 	)
@@ -309,6 +368,7 @@ func buildEmailTab(window fyne.Window, startDir string) fyne.CanvasObject {
 	return container.NewVBox(
 		widget.NewRichTextFromMarkdown("## Copy Email Files\n\nThis desktop flow preserves the original relative folder structure and writes a manifest report in the destination."),
 		statusLabel,
+		progressBar,
 		widget.NewSeparator(),
 		form,
 		widget.NewSeparator(),
@@ -340,7 +400,7 @@ func buildAboutTab() fyne.CanvasObject {
 
 func pathInputRow(window fyne.Window, entry *widget.Entry, title string, mustExist bool) fyne.CanvasObject {
 	browse := widget.NewButton("Browse", func() {
-		dialog.ShowFolderOpen(func(uri fyne.ListableURI, err error) {
+		openDialog := dialog.NewFolderOpen(func(uri fyne.ListableURI, err error) {
 			if err != nil {
 				dialog.ShowError(err, window)
 				return
@@ -350,6 +410,8 @@ func pathInputRow(window fyne.Window, entry *widget.Entry, title string, mustExi
 			}
 			entry.SetText(uri.Path())
 		}, window)
+		openDialog.Resize(fyne.NewSize(1000, 750))
+		openDialog.Show()
 	})
 	return container.NewBorder(nil, nil, nil, browse, entry)
 }

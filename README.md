@@ -12,6 +12,12 @@ Both apps support:
 - leading-zero preservation in XLSX
 - integrated email-file copy with manifest output
 
+Packaged launchers are created in the OS bundle folders:
+
+- macOS: `dist/smoke/macos/run-content-list-generator-gui.sh`
+- Linux: `dist/smoke/linux/run-content-list-generator-gui.sh`
+- Windows: `dist/smoke/windows-python/run-content-list-generator.cmd`
+
 ## Start Here
 
 Install and run instructions:

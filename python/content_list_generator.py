@@ -21,6 +21,7 @@ except Exception:  # pragma: no cover
 
 from content_list_core import (
     EMAIL_EXTENSIONS,
+    EmailCopyProgress,
     EmailCopyResult,
     build_scan_summary,
     collect_files,
@@ -76,6 +77,15 @@ def open_in_file_manager(path: Path) -> None:
         os.startfile(str(target))  # type: ignore[attr-defined]
         return
     subprocess.run(["xdg-open", str(target)], check=False)
+
+
+def choose_directory(parent, title: str, initialdir: str, mustexist: bool) -> str:
+    return filedialog.askdirectory(
+        parent=parent,
+        title=title,
+        initialdir=initialdir or os.getcwd(),
+        mustexist=mustexist,
+    )
 
 def run_cli_scan(args: argparse.Namespace) -> int:
     source_dir = Path(args.source or prompt("Source folder", os.getcwd())).expanduser().resolve()
@@ -155,8 +165,8 @@ class EmailCopyWindow:
         self.parent = parent
         self.window = tk.Toplevel(parent.root)
         self.window.title("Copy Email Files")
-        self.window.geometry("760x380")
-        self.window.minsize(700, 340)
+        self.window.geometry("950x520")
+        self.window.minsize(860, 440)
         self.window.configure(bg="#f3f5f8")
         self.window.transient(parent.root)
         self.window.grab_set()
@@ -167,41 +177,41 @@ class EmailCopyWindow:
         self.source_var = tk.StringVar(value=parent.source_var.get() or os.getcwd())
         self.dest_var = tk.StringVar(value=parent.output_dir_var.get() or os.getcwd())
         self.status_var = tk.StringVar(value="Choose the source and destination folders.")
+        self.progress_var = tk.DoubleVar(value=0)
         self.start_button: ttk.Button | None = None
+        self.reset_button: ttk.Button | None = None
+        self.source_entry: ttk.Entry | None = None
+        self.dest_entry: ttk.Entry | None = None
+        self.progress: ttk.Progressbar | None = None
 
         self.build_ui()
+        self.window.after(50, self.focus_source_entry)
         self.window.after(100, self.pump_queue)
 
     def build_ui(self) -> None:
-        outer = self.build_scrollable_root(self.window)
+        outer = self.parent.build_scrollable_root(self.window)
 
         ttk.Label(outer, text="Copy Email Files", style="Title.TLabel").pack(anchor="w")
         ttk.Label(
             outer,
             text="This sub-window preserves the relative folder structure from the selected source root and writes a manifest report in the destination.",
             style="Hint.TLabel",
-            wraplength=660,
+            wraplength=820,
             justify="left",
         ).pack(anchor="w", pady=(6, 18))
 
-        content = ttk.Frame(outer, style="App.TFrame")
-        content.pack(fill="both", expand=True)
-        content.columnconfigure(0, weight=5)
-        content.columnconfigure(1, weight=3)
-        content.rowconfigure(0, weight=1)
-
-        card = ttk.Frame(content, style="Card.TFrame", padding=20)
-        card.grid(row=0, column=0, sticky="nsew", padx=(0, 12))
+        card = ttk.Frame(outer, style="Card.TFrame", padding=20)
+        card.pack(fill="both", expand=True)
         card.columnconfigure(1, weight=1)
 
-        self.parent.add_path_row(card, 0, "Source folder", self.source_var, self.choose_source)
-        self.parent.add_path_row(card, 1, "Destination folder", self.dest_var, self.choose_dest)
+        self.source_entry = self.parent.add_path_row(card, 0, "Source folder", self.source_var, self.choose_source)
+        self.dest_entry = self.parent.add_path_row(card, 1, "Destination folder", self.dest_var, self.choose_dest)
 
         ttk.Label(
             card,
             text="Included extensions: " + ", ".join(sorted(EMAIL_EXTENSIONS)),
             style="Body.TLabel",
-            wraplength=620,
+            wraplength=820,
             justify="left",
         ).grid(row=2, column=0, columnspan=3, sticky="w", pady=(12, 14))
 
@@ -210,23 +220,44 @@ class EmailCopyWindow:
         self.start_button = ttk.Button(actions, text="Start Copy", style="Primary.TButton", command=self.start_copy)
         self.start_button.pack(side="left")
         ttk.Button(actions, text="Use Main Output Folder", style="Secondary.TButton", command=self.use_main_output).pack(side="left", padx=(10, 0))
+        self.reset_button = ttk.Button(actions, text="Reset", style="Secondary.TButton", command=self.reset_fields)
+        self.reset_button.pack(side="left", padx=(10, 0))
         ttk.Button(actions, text="Cancel", style="Secondary.TButton", command=self.window.destroy).pack(side="left", padx=(10, 0))
 
+        self.progress = ttk.Progressbar(card, style="Modern.Horizontal.TProgressbar", variable=self.progress_var, mode="determinate")
+        self.progress.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(14, 8))
         ttk.Label(card, textvariable=self.status_var, style="Body.TLabel", wraplength=620, justify="left").grid(
-            row=4, column=0, columnspan=3, sticky="w", pady=(14, 0)
+            row=5, column=0, columnspan=3, sticky="w", pady=(4, 0)
         )
 
+    def focus_source_entry(self) -> None:
+        if self.source_entry is not None and self.source_entry.winfo_exists():
+            self.source_entry.focus_force()
+            self.source_entry.icursor("end")
+
     def choose_source(self) -> None:
-        chosen = filedialog.askdirectory(initialdir=self.source_var.get() or os.getcwd(), mustexist=True)
+        chosen = choose_directory(self.window, "Choose Source Folder", self.source_var.get(), True)
         if chosen:
             self.source_var.set(chosen)
             self.status_var.set("Source selected. Now choose the destination folder.")
+            if self.dest_entry is not None:
+                self.dest_entry.focus_force()
+                self.dest_entry.icursor("end")
 
     def choose_dest(self) -> None:
-        chosen = filedialog.askdirectory(initialdir=self.dest_var.get() or os.getcwd(), mustexist=False)
+        chosen = choose_directory(self.window, "Choose Destination Folder", self.dest_var.get(), False)
         if chosen:
             self.dest_var.set(chosen)
             self.status_var.set("Destination selected. Click Start Copy when you're ready.")
+
+    def reset_fields(self) -> None:
+        self.source_var.set(self.parent.source_var.get() or os.getcwd())
+        self.dest_var.set(self.parent.output_dir_var.get() or os.getcwd())
+        self.status_var.set("Choose the source and destination folders.")
+        self.progress_var.set(0)
+        if self.progress is not None:
+            self.progress.configure(maximum=1)
+        self.focus_source_entry()
 
     def use_main_output(self) -> None:
         self.dest_var.set(self.parent.output_dir_var.get() or os.getcwd())
@@ -243,15 +274,23 @@ class EmailCopyWindow:
             return
 
         self.running = True
+        self.progress_var.set(0)
+        if self.progress is not None:
+            self.progress.configure(maximum=1)
         self.status_var.set("Copying email files...")
         if self.start_button is not None:
             self.start_button.configure(state="disabled")
+        if self.reset_button is not None:
+            self.reset_button.configure(state="disabled")
         thread = threading.Thread(target=self.run_copy_thread, args=(source, dest), daemon=True)
         thread.start()
 
     def run_copy_thread(self, source: Path, dest: Path) -> None:
         try:
-            result = copy_email_files(source, dest)
+            def on_progress(progress: EmailCopyProgress) -> None:
+                self.message_queue.put(("progress", progress))
+
+            result = copy_email_files(source, dest, progress_callback=on_progress)
             self.message_queue.put(("done", result))
         except Exception as exc:  # pragma: no cover
             self.message_queue.put(("error", str(exc)))
@@ -264,10 +303,13 @@ class EmailCopyWindow:
                     self.running = False
                     if self.start_button is not None:
                         self.start_button.configure(state="normal")
+                    if self.reset_button is not None:
+                        self.reset_button.configure(state="normal")
                     result: EmailCopyResult = payload
                     self.parent.status_var.set(
                         f"Copy Email Files complete. Copied {result.copied} files to {result.dest_dir}."
                     )
+                    self.progress_var.set(self.progress["maximum"])
                     self.parent.append_summary(
                         "\n".join(
                             [
@@ -286,10 +328,26 @@ class EmailCopyWindow:
                     )
                     self.window.destroy()
                     return
+                if kind == "progress":
+                    progress: EmailCopyProgress = payload
+                    total = max(1, progress.total)
+                    if self.progress is not None:
+                        self.progress.configure(maximum=total)
+                    self.progress_var.set(progress.copied)
+                    if progress.total == 0:
+                        self.status_var.set("No supported email files were found in the source folder.")
+                    elif progress.current_relative:
+                        self.status_var.set(
+                            f"Copying {progress.copied}/{progress.total}: {progress.current_relative}"
+                        )
+                    else:
+                        self.status_var.set(f"Preparing to copy {progress.total} email files...")
                 if kind == "error":
                     self.running = False
                     if self.start_button is not None:
                         self.start_button.configure(state="normal")
+                    if self.reset_button is not None:
+                        self.reset_button.configure(state="normal")
                     self.status_var.set("Copy failed.")
                     messagebox.showerror("Copy failed", str(payload))
         except queue.Empty:
@@ -324,9 +382,15 @@ class ContentListApp:
         self.generate_button: ttk.Button | None = None
         self.email_button: ttk.Button | None = None
         self.open_folder_button: ttk.Button | None = None
+        self.reset_button: ttk.Button | None = None
+        self.source_entry: ttk.Entry | None = None
+        self.output_entry: ttk.Entry | None = None
+        self.file_entry: ttk.Entry | None = None
+        self.exclude_entry: ttk.Entry | None = None
 
         self.configure_style()
         self.build_ui()
+        self.root.after(50, self.focus_source_entry)
         self.root.after(100, self.pump_queue)
 
     def configure_style(self) -> None:
@@ -377,10 +441,10 @@ class ContentListApp:
             style="CardHint.TLabel",
         ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(4, 14))
 
-        self.add_path_row(main_card, 2, "Source folder", self.source_var, self.choose_source)
-        self.add_path_row(main_card, 3, "Output folder", self.output_dir_var, self.choose_output)
-        self.add_entry_row(main_card, 4, "Output file name", self.output_name_var)
-        self.add_entry_row(main_card, 5, "Exclude extensions", self.exclude_var, "Example: tmp,log,bak")
+        self.source_entry = self.add_path_row(main_card, 2, "Source folder", self.source_var, self.choose_source)
+        self.output_entry = self.add_path_row(main_card, 3, "Output folder", self.output_dir_var, self.choose_output)
+        self.file_entry = self.add_entry_row(main_card, 4, "Output file name", self.output_name_var)
+        self.exclude_entry = self.add_entry_row(main_card, 5, "Exclude extensions", self.exclude_var, "Example: tmp,log,bak")
 
         options = ttk.Frame(main_card, style="Card.TFrame")
         options.grid(row=6, column=0, columnspan=3, sticky="ew", pady=(14, 6))
@@ -402,6 +466,8 @@ class ContentListApp:
         self.email_button = ttk.Button(actions, text="Copy Email Files", style="Secondary.TButton", command=self.open_email_copy_window)
         self.email_button.pack(side="left", padx=(10, 0))
         ttk.Button(actions, text="Use Source As Output", style="Secondary.TButton", command=self.copy_source_to_output).pack(side="left", padx=(10, 0))
+        self.reset_button = ttk.Button(actions, text="Reset", style="Secondary.TButton", command=self.reset_fields)
+        self.reset_button.pack(side="left", padx=(10, 0))
         self.open_folder_button = ttk.Button(actions, text="Open Output Folder", style="Secondary.TButton", command=self.open_output_folder)
         self.open_folder_button.pack(side="left", padx=(10, 0))
 
@@ -457,18 +523,25 @@ class ContentListApp:
 
         return inner
 
-    def add_path_row(self, parent, row: int, label: str, variable: tk.StringVar, command) -> None:
+    def focus_source_entry(self) -> None:
+        if self.source_entry is not None and self.source_entry.winfo_exists():
+            self.source_entry.focus_force()
+            self.source_entry.icursor("end")
+
+    def add_path_row(self, parent, row: int, label: str, variable: tk.StringVar, command) -> ttk.Entry:
         ttk.Label(parent, text=label, style="Body.TLabel").grid(row=row, column=0, sticky="w", pady=6, padx=(0, 12))
         entry = ttk.Entry(parent, textvariable=variable)
         entry.grid(row=row, column=1, sticky="ew", pady=6)
         ttk.Button(parent, text="Browse", style="Secondary.TButton", command=command).grid(row=row, column=2, padx=(12, 0), pady=6)
+        return entry
 
-    def add_entry_row(self, parent, row: int, label: str, variable: tk.StringVar, hint: str = "") -> None:
+    def add_entry_row(self, parent, row: int, label: str, variable: tk.StringVar, hint: str = "") -> ttk.Entry:
         ttk.Label(parent, text=label, style="Body.TLabel").grid(row=row, column=0, sticky="w", pady=6, padx=(0, 12))
         entry = ttk.Entry(parent, textvariable=variable)
         entry.grid(row=row, column=1, columnspan=2, sticky="ew", pady=6)
         if hint:
             ttk.Label(parent, text=hint, style="Hint.TLabel").grid(row=row + 1, column=1, columnspan=2, sticky="w")
+        return entry
 
     def sync_xlsx_state(self) -> None:
         state = "normal" if self.xlsx_var.get() else "disabled"
@@ -484,21 +557,42 @@ class ContentListApp:
             self.email_button.configure(state=running_state)
         if self.open_folder_button is not None:
             self.open_folder_button.configure(state="normal")
+        if self.reset_button is not None:
+            self.reset_button.configure(state=running_state)
 
     def choose_source(self) -> None:
-        chosen = filedialog.askdirectory(initialdir=self.source_var.get() or os.getcwd(), mustexist=True)
+        chosen = choose_directory(self.root, "Choose Source Folder", self.source_var.get(), True)
         if chosen:
             self.source_var.set(chosen)
             if not self.output_name_var.get().strip():
                 self.output_name_var.set(default_output_name(Path(chosen)))
 
     def choose_output(self) -> None:
-        chosen = filedialog.askdirectory(initialdir=self.output_dir_var.get() or os.getcwd(), mustexist=False)
+        chosen = choose_directory(self.root, "Choose Output Folder", self.output_dir_var.get(), False)
         if chosen:
             self.output_dir_var.set(chosen)
 
     def copy_source_to_output(self) -> None:
         self.output_dir_var.set(self.source_var.get())
+
+    def reset_fields(self) -> None:
+        cwd = Path(os.getcwd())
+        self.source_var.set(str(cwd))
+        self.output_dir_var.set(str(cwd))
+        self.output_name_var.set(default_output_name(cwd))
+        self.exclude_var.set("")
+        self.hash_var.set(False)
+        self.hidden_var.set(False)
+        self.system_var.set(False)
+        self.xlsx_var.set(False)
+        self.preserve_zeros_var.set(False)
+        self.progress_var.set(0)
+        self.status_var.set("Ready.")
+        self.append_summary("")
+        if self.progress is not None:
+            self.progress.configure(maximum=1)
+        self.sync_xlsx_state()
+        self.focus_source_entry()
 
     def open_email_copy_window(self) -> None:
         if self.running:

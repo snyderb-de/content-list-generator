@@ -18,6 +18,7 @@ cp python/content_list_core.py "$OUT_DIR/python/"
 cp python/content_list_generator.py "$OUT_DIR/python/"
 cp scripts/copy_email_files.py "$OUT_DIR/scripts/"
 cp README.md "$OUT_DIR/"
+cp INSTALL.md "$OUT_DIR/"
 cp SMOKE_TEST_PLAN.md "$OUT_DIR/"
 
 cat > "$OUT_DIR/run-content-list-generator.cmd" <<'EOF'

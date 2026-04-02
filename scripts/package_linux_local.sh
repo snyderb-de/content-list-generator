@@ -20,6 +20,7 @@ cd "$ROOT_DIR"
 go build -o "$OUT_DIR/content-list-generator-tui" .
 go build -tags gui -o "$OUT_DIR/content-list-generator-gui" .
 cp README.md "$OUT_DIR/"
+cp INSTALL.md "$OUT_DIR/"
 cp SMOKE_TEST_PLAN.md "$OUT_DIR/"
 
 cat > "$OUT_DIR/README-LOCAL.txt" <<'EOF'
@@ -37,6 +38,26 @@ Launch the GUI:
 Launch the TUI:
 ./content-list-generator-tui
 EOF
+
+cat > "$OUT_DIR/run-content-list-generator-gui.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+DIR="$(cd "$(dirname "$0")" && pwd)"
+exec "$DIR/content-list-generator-gui" --gui "$@"
+EOF
+
+cat > "$OUT_DIR/run-content-list-generator-tui.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+DIR="$(cd "$(dirname "$0")" && pwd)"
+exec "$DIR/content-list-generator-tui" "$@"
+EOF
+
+chmod +x \
+  "$OUT_DIR/content-list-generator-tui" \
+  "$OUT_DIR/content-list-generator-gui" \
+  "$OUT_DIR/run-content-list-generator-gui.sh" \
+  "$OUT_DIR/run-content-list-generator-tui.sh"
 
 tar -czf "$ARCHIVE" -C "$OUT_DIR" .
 echo "Built Linux local smoke bundle:"

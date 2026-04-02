@@ -263,6 +263,45 @@ func TestCopyEmailFilesPreservesStructureAndWritesManifest(t *testing.T) {
 	}
 }
 
+func TestCopyEmailFilesRejectsNestedDestination(t *testing.T) {
+	workspace := t.TempDir()
+	source := filepath.Join(workspace, "source")
+	dest := filepath.Join(source, "copied-emails")
+	if err := os.MkdirAll(source, 0o755); err != nil {
+		t.Fatalf("mkdir source: %v", err)
+	}
+
+	if _, _, err := copyEmailFiles(source, dest); err == nil {
+		t.Fatalf("expected nested destination to be rejected")
+	}
+}
+
+func TestCopyEmailFilesIncludesOlk15Message(t *testing.T) {
+	workspace := t.TempDir()
+	source := filepath.Join(workspace, "source")
+	dest := filepath.Join(workspace, "dest")
+	if err := os.MkdirAll(filepath.Join(source, "Inbox"), 0o755); err != nil {
+		t.Fatalf("mkdir source: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "Inbox", "note.olk15Message"), []byte("olk"), 0o644); err != nil {
+		t.Fatalf("write olk15Message: %v", err)
+	}
+
+	manifestPath, copied, err := copyEmailFiles(source, dest)
+	if err != nil {
+		t.Fatalf("copyEmailFiles failed: %v", err)
+	}
+	if copied != 1 {
+		t.Fatalf("expected 1 copied file, got %d", copied)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "Inbox", "note.olk15Message")); err != nil {
+		t.Fatalf("expected .olk15Message file to be copied: %v", err)
+	}
+	if _, err := os.Stat(manifestPath); err != nil {
+		t.Fatalf("expected manifest to exist: %v", err)
+	}
+}
+
 func TestRunScanMatchesGoldenFixture(t *testing.T) {
 	workspace := t.TempDir()
 	output := filepath.Join(workspace, "report.csv")

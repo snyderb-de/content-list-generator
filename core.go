@@ -85,6 +85,14 @@ type scannerStats struct {
 	filtered    atomic.Uint64
 }
 
+type emailCopyProgress struct {
+	Phase      string
+	Matched    uint64
+	Copied     uint64
+	Total      uint64
+	CurrentRel string
+}
+
 var emailExtensions = map[string]struct{}{
 	".dbx":            {},
 	".eml":            {},
@@ -94,6 +102,7 @@ var emailExtensions = map[string]struct{}{
 	".mbx":            {},
 	".msg":            {},
 	".olk14msgsource": {},
+	".olk15message":   {},
 	".ost":            {},
 	".pst":            {},
 	".rge":            {},
@@ -419,6 +428,24 @@ func hashFile(path string) (string, error) {
 }
 
 func copyEmailFiles(sourceDir, destDir string) (string, uint64, error) {
+	return copyEmailFilesWithProgress(sourceDir, destDir, nil)
+}
+
+func copyEmailFilesWithProgress(sourceDir, destDir string, progress func(emailCopyProgress)) (string, uint64, error) {
+	sourceAbs, err := filepath.Abs(sourceDir)
+	if err != nil {
+		return "", 0, err
+	}
+	destAbs, err := filepath.Abs(destDir)
+	if err != nil {
+		return "", 0, err
+	}
+	if sourceAbs == destAbs {
+		return "", 0, fmt.Errorf("destination folder must be different from the source folder")
+	}
+	if isPathWithin(destAbs, sourceAbs) {
+		return "", 0, fmt.Errorf("destination folder cannot be inside the source folder")
+	}
 	if err := os.MkdirAll(destDir, 0o755); err != nil {
 		return "", 0, err
 	}
@@ -446,8 +473,8 @@ func copyEmailFiles(sourceDir, destDir string) (string, uint64, error) {
 		return "", 0, err
 	}
 
-	var copied uint64
-	err = filepath.WalkDir(sourceDir, func(path string, d fs.DirEntry, walkErr error) error {
+	matches := make([]string, 0, 256)
+	err = filepath.WalkDir(sourceAbs, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil || d.IsDir() {
 			return nil
 		}
@@ -457,21 +484,34 @@ func copyEmailFiles(sourceDir, destDir string) (string, uint64, error) {
 			return nil
 		}
 
-		relative, err := filepath.Rel(sourceDir, path)
+		matches = append(matches, path)
+		return nil
+	})
+	if err != nil {
+		return "", 0, err
+	}
+	if progress != nil {
+		progress(emailCopyProgress{Phase: "copying", Matched: uint64(len(matches)), Total: uint64(len(matches))})
+	}
+
+	var copied uint64
+	for _, path := range matches {
+		relative, err := filepath.Rel(sourceAbs, path)
 		if err != nil {
-			return nil
+			continue
 		}
-		targetPath := filepath.Join(destDir, relative)
+		ext := strings.ToLower(filepath.Ext(path))
+		targetPath := filepath.Join(destAbs, relative)
 		if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
-			return err
+			return "", 0, err
 		}
 		if err := copyFile(path, targetPath); err != nil {
-			return err
+			return "", 0, err
 		}
 
 		info, err := os.Stat(path)
 		if err != nil {
-			return nil
+			continue
 		}
 
 		if err := writer.Write([]string{
@@ -482,14 +522,19 @@ func copyEmailFiles(sourceDir, destDir string) (string, uint64, error) {
 			ext,
 			fmt.Sprintf("%d", info.Size()),
 		}); err != nil {
-			return err
+			return "", 0, err
 		}
 
 		copied++
-		return nil
-	})
-	if err != nil {
-		return "", 0, err
+		if progress != nil {
+			progress(emailCopyProgress{
+				Phase:      "copying",
+				Matched:    uint64(len(matches)),
+				Copied:     copied,
+				Total:      uint64(len(matches)),
+				CurrentRel: filepath.ToSlash(relative),
+			})
+		}
 	}
 	writer.Flush()
 	if err := writer.Error(); err != nil {
@@ -497,6 +542,14 @@ func copyEmailFiles(sourceDir, destDir string) (string, uint64, error) {
 	}
 
 	return manifestPath, copied, nil
+}
+
+func isPathWithin(candidate, root string) bool {
+	rel, err := filepath.Rel(root, candidate)
+	if err != nil {
+		return false
+	}
+	return rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 func copyFile(sourcePath, destPath string) error {

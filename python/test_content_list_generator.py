@@ -83,6 +83,28 @@ class ContentListGeneratorTests(unittest.TestCase):
             self.assertEqual(rows[1][2], "Inbox/mail.eml")
             self.assertEqual(rows[2][4], ".pst")
 
+    def test_copy_email_files_rejects_nested_destination(self) -> None:
+        with TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            source = workspace / "source"
+            source.mkdir()
+
+            with self.assertRaisesRegex(ValueError, "inside the source folder"):
+                core.copy_email_files(source, source / "copied-emails")
+
+    def test_copy_email_files_includes_olk15message(self) -> None:
+        with TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            source = workspace / "source"
+            dest = workspace / "dest"
+            (source / "Inbox").mkdir(parents=True)
+            (source / "Inbox" / "note.olk15Message").write_text("olk", encoding="utf-8")
+
+            result = core.copy_email_files(source, dest)
+
+            self.assertEqual(result.copied, 1)
+            self.assertTrue((dest / "Inbox" / "note.olk15Message").exists())
+
     def test_run_scan_matches_golden_fixture(self) -> None:
         repo_root = CURRENT_DIR.parent
         source = repo_root / "testdata" / "parity" / "source"

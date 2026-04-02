@@ -23,6 +23,7 @@ EMAIL_EXTENSIONS = {
     ".mbx",
     ".msg",
     ".olk14msgsource",
+    ".olk15message",
     ".ost",
     ".pst",
     ".rge",
@@ -80,6 +81,15 @@ class EmailCopyResult:
     manifest_path: Path
     copied: int
     elapsed: float
+
+
+@dataclass
+class EmailCopyProgress:
+    phase: str
+    matched: int
+    copied: int
+    total: int
+    current_relative: str = ""
 
 
 def normalize_exts(raw: str) -> set[str]:
@@ -480,14 +490,34 @@ def collect_email_matches(source_dir: Path) -> list[Path]:
     return matches
 
 
-def copy_email_files(source_dir: Path, dest_dir: Path) -> EmailCopyResult:
+def is_path_within(candidate: Path, root: Path) -> bool:
+    try:
+        candidate.relative_to(root)
+        return candidate != root
+    except ValueError:
+        return False
+
+
+def copy_email_files(
+    source_dir: Path,
+    dest_dir: Path,
+    progress_callback: Callable[[EmailCopyProgress], None] | None = None,
+) -> EmailCopyResult:
     if not source_dir.is_dir():
         raise ValueError(f"Source folder does not exist: {source_dir}")
+    source_dir = source_dir.resolve()
+    dest_dir = dest_dir.resolve()
+    if source_dir == dest_dir:
+        raise ValueError("Destination folder must be different from the source folder.")
+    if is_path_within(dest_dir, source_dir):
+        raise ValueError("Destination folder cannot be inside the source folder.")
 
     started = time.time()
     dest_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = dest_dir / default_manifest_name()
     matches = collect_email_matches(source_dir)
+    if progress_callback is not None:
+        progress_callback(EmailCopyProgress(phase="copying", matched=len(matches), copied=0, total=len(matches)))
     copied = 0
 
     with manifest_path.open("w", newline="", encoding="utf-8") as handle:
@@ -510,6 +540,16 @@ def copy_email_files(source_dir: Path, dest_dir: Path) -> EmailCopyResult:
                 ]
             )
             copied += 1
+            if progress_callback is not None:
+                progress_callback(
+                    EmailCopyProgress(
+                        phase="copying",
+                        matched=len(matches),
+                        copied=copied,
+                        total=len(matches),
+                        current_relative=relative.as_posix(),
+                    )
+                )
 
     return EmailCopyResult(
         source_dir=source_dir,

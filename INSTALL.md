@@ -32,6 +32,13 @@ cd content-list-generator
 
 ## macOS
 
+Fastest packaged path after building the local bundle:
+
+```bash
+./scripts/package_macos_local.sh
+./dist/smoke/macos/run-content-list-generator-gui.sh
+```
+
 Build the Go GUI:
 
 ```bash
@@ -58,6 +65,13 @@ Fallback TUI:
 
 ## Linux
 
+Fastest packaged path after building the local bundle:
+
+```bash
+./scripts/package_linux_local.sh
+./dist/smoke/linux/run-content-list-generator-gui.sh
+```
+
 Build the Go GUI:
 
 ```bash
@@ -83,6 +97,13 @@ Fallback TUI:
 ```
 
 ## Windows
+
+Fastest packaged path after building the Windows bundle:
+
+```bat
+scripts\package_windows_python_bundle.sh
+dist\smoke\windows-python\run-content-list-generator.cmd
+```
 
 Run the Python GUI:
 
@@ -124,16 +145,34 @@ macOS local bundle:
 ./scripts/package_macos_local.sh
 ```
 
+Packaged launchers end up in:
+
+```bash
+./dist/smoke/macos/
+```
+
 Linux local bundle:
 
 ```bash
 ./scripts/package_linux_local.sh
 ```
 
+Packaged launchers end up in:
+
+```bash
+./dist/smoke/linux/
+```
+
 Windows Python smoke bundle:
 
 ```bash
 ./scripts/package_windows_python_bundle.sh
+```
+
+Packaged launchers end up in:
+
+```text
+dist\smoke\windows-python\
 ```
 
 Combined helper:
