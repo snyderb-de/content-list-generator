@@ -32,6 +32,13 @@ cd content-list-generator
 
 ## macOS
 
+Simplest launch commands from the repo root:
+
+```bash
+./run-go-gui.sh
+./run-python-gui.sh
+```
+
 Fastest packaged path after building the local bundle:
 
 ```bash
@@ -64,6 +71,13 @@ Fallback TUI:
 ```
 
 ## Linux
+
+Simplest launch commands from the repo root:
+
+```bash
+./run-go-gui.sh
+./run-python-gui.sh
+```
 
 Fastest packaged path after building the local bundle:
 

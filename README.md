@@ -12,6 +12,11 @@ Both apps support:
 - leading-zero preservation in XLSX
 - integrated email-file copy with manifest output
 
+Repo-root launchers:
+
+- `./run-go-gui.sh`
+- `./run-python-gui.sh`
+
 Packaged launchers are created in the OS bundle folders:
 
 - macOS: `dist/smoke/macos/run-content-list-generator-gui.sh`
