@@ -1,2 +1,1 @@
-# No third-party Python packages are required right now.
-# The Windows app uses the Python standard library, including tkinter.
+customtkinter>=5.2,<6

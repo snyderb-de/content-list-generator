@@ -50,7 +50,7 @@ macOS and Linux:
 Windows, portable Python GUI path:
 
 - install Python 3 with Tkinter
-- no third-party Python packages are required right now; see `requirements.txt`
+- install the Python dependency with `pip install -r requirements.txt`
 - place these files in `%USERPROFILE%\scripts\`:
   - `content_list_generator.py`
   - `content_list_core.py`

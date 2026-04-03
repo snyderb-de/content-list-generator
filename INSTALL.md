@@ -15,7 +15,7 @@ Windows, Python GUI path:
 
 - Python 3 installed
 - Tkinter available with Python
-- no third-party Python packages are required right now
+- install dependencies with `pip install -r requirements.txt`
 
 ## Clone The Repo
 
@@ -81,6 +81,12 @@ releases/linux/
 Windows has two supported install paths.
 
 ### Path A: Portable Python GUI
+
+Install the Python dependency first:
+
+```bash
+pip install -r requirements.txt
+```
 
 Put these files in:
 
