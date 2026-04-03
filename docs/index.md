@@ -11,8 +11,9 @@ Content List Generator helps people create a simple file list from a folder and 
 
 - Desktop app for macOS and Linux: Go GUI
 - Desktop app for Windows: Python GUI with a `.bat` launcher
-- Alternate Windows release artifacts: Go `.exe` files in `dist/`
+- Alternate Windows release artifacts: Go `.exe` files in `releases/windows-go/`
 - Open source release: planned
+- License decision: TODO decide before public release
 - Attribution requirement: TODO decide before public release
 
 ## Start Here
@@ -32,8 +33,17 @@ From the repo root:
 ./run-python-gui.sh
 ```
 
+Windows Desktop launcher:
+
+```bat
+run-python-gui.bat
+```
+
 ## Notes
 
 - The content-list workflow saves a CSV file and can also save an Excel copy.
 - The email-copy workflow looks for supported email file types, copies matching files, keeps the original folder layout, and saves a report.
-- The Windows portable bundle keeps the Python app under `python/` and a compatibility helper under `scripts/copy_email_files.py`.
+- The Windows Desktop launcher expects the Python files in `%USERPROFILE%\scripts\`.
+- The packaged Windows bundle keeps those Python files together under `releases/windows-python/scripts/` so they can be copied into `%USERPROFILE%\scripts\`.
+- Release outputs now live under `releases/`, and local build outputs live under `build/`.
+- The main repo TODO list lives in `TODO.md` at the repo root.

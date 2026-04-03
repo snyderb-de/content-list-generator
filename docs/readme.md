@@ -18,7 +18,22 @@ Content List Generator is a desktop tool for two everyday jobs:
 
 - macOS and Linux: Go GUI
 - Windows: Python GUI with a `.bat` launcher
-- Alternate Windows release artifacts: Go `.exe` builds in `dist/`
+- Alternate Windows release artifacts: Go `.exe` builds in `releases/windows-go/`
+
+## Windows Portable Layout
+
+- Put `content_list_generator.py`, `content_list_core.py`, and `copy_email_files.py` in `%USERPROFILE%\scripts\`
+- Put the launcher `.bat` on the user's Desktop
+- The Desktop launcher looks in `%USERPROFILE%\scripts\` first
+- The packaged Windows Python release lives in `releases/windows-python/`
+
+## Repo Layout
+
+- `build/` local build outputs
+- `releases/` release-ready artifacts by platform
+- `testing/` local manual testing workspace
+- `docs/` project docs and dashboard content
+- `testdata/` tracked automated test fixtures
 
 ## Written By
 

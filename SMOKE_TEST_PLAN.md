@@ -102,8 +102,8 @@ App to test:
 
 Launch:
 
-```bash
-python .\python\content_list_generator.py
+```bat
+run-python-gui.bat
 ```
 
 Steps:
@@ -113,12 +113,11 @@ Steps:
 3. Choose an empty temp folder as the output location.
 4. Run the content-list workflow with the common settings above.
 5. Confirm the CSV and XLSX were created.
-6. Confirm the right-side latest-activity area updates.
-7. Use the quick-open buttons for the latest CSV and XLSX.
-8. Open the email-copy sub-window.
-9. Copy into a fresh destination folder.
-10. Confirm the manifest is created and the main window updates.
-11. Use the quick-open manifest action.
+6. Confirm the summary area updates with the completed results.
+7. Open the email-copy sub-window.
+8. Copy into a fresh destination folder.
+9. Confirm the manifest is created and the main window updates.
+10. Confirm the progress bar and status text update during the copy.
 
 ## Pass / Fail
 

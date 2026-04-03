@@ -2,101 +2,111 @@
 
 Written by Bryan Snyder
 
-Content List Generator ships as:
+Content List Generator is maintained as two feature-parity desktop apps:
 
-- a Go desktop GUI for macOS and Linux
-- a Python desktop GUI for Windows
-- built Go Windows `.exe` artifacts in `dist/` for teams that prefer a standalone executable path
+- Go GUI for macOS and Linux
+- Python GUI for Windows
+- alternate Go Windows `.exe` artifacts for teams that want a standalone executable path
 
-Both apps support:
+Both app paths support:
 
 - recursive content-list export to CSV
 - optional XLSX generation
 - leading-zero preservation in XLSX
 - integrated email-file copy with manifest output
 
-Repo-root launchers:
+## Repo Layout
 
-- `./run-go-gui.sh`
-- `./run-python-gui.sh`
-- `run-python-gui.bat`
+- `docs/` long-form project docs and GitHub Pages content
+- `python/` Python app source and Python-side tests
+- `scripts/` build, release, parity, and local run helpers
+- `build/` local build outputs
+- `releases/` release-ready artifacts and packaged outputs
+- `testing/` local manual testing workspace
+- `testdata/` tracked automated test fixtures
 
-Packaged launchers are created in the OS bundle folders:
-
-- macOS: `dist/smoke/macos/run-content-list-generator-gui.sh`
-- Linux: `dist/smoke/linux/run-content-list-generator-gui.sh`
-- Windows: `dist/smoke/windows-python/run-content-list-generator.bat`
-
-## Windows Paths
-
-Portable Windows GUI bundle:
-
-- repo root launcher: `run-python-gui.bat`
-- packaged launcher: `dist/smoke/windows-python/run-content-list-generator.bat`
-- keep the whole bundle together if you copy it into a user folder
-- bundle contents include:
-  - `python/content_list_generator.py`
-  - `python/content_list_core.py`
-  - `scripts/copy_email_files.py`
-  - the `.bat` and `.cmd` launchers
-- the Windows bundle `scripts/` folder currently contains `copy_email_files.py`, which remains as a compatibility helper; users do not need to create that folder themselves
-
-Built Go Windows executables:
-
-- `dist/content-list-generator-windows-amd64.exe`
-- `dist/content-list-generator-windows-arm64.exe`
-- created by `./scripts/build_releases.sh`
-- Windows default GUI path is still the Python bundle above
-
-## Start Here
-
-GitHub Pages source:
-
-- [docs/index.md](./docs/index.md)
-
-Install and run instructions:
-
-- [INSTALL.md](./INSTALL.md)
-
-Manual smoke-test guide:
-
-- [SMOKE_TEST_PLAN.md](./SMOKE_TEST_PLAN.md)
-
-## Fast Commands
-
-Full local checks:
+## Clone And Run
 
 ```bash
+git clone <repo-url>
+cd content-list-generator
 ./scripts/dev_check.sh
 ```
 
-Cross-language parity checks:
+Repo-root launchers:
+
+- macOS/Linux Go GUI: `./run-go-gui.sh`
+- macOS/Linux Python GUI: `./run-python-gui.sh`
+- Windows Python GUI launcher: `run-python-gui.bat`
+
+## Install By OS
+
+macOS and Linux:
+
+- install Go
+- run `./run-go-gui.sh` from the repo root for the Go GUI
+- local binaries are written to `build/`
+
+Windows, portable Python GUI path:
+
+- install Python 3 with Tkinter
+- no third-party Python packages are required right now; see `requirements.txt`
+- place these files in `%USERPROFILE%\scripts\`:
+  - `content_list_generator.py`
+  - `content_list_core.py`
+  - `copy_email_files.py`
+- place `run-python-gui.bat` on the user's Desktop, or use `releases/windows-python/run-content-list-generator.bat`
+- the launcher looks in `%USERPROFILE%\scripts\` first, so it still works when launched from the Desktop
+
+Windows, Go executable path:
+
+- run `./scripts/build_releases.sh`
+- use the built artifacts in `releases/windows-go/`
+- current Windows Go artifacts:
+  - `releases/windows-go/content-list-generator-windows-amd64.exe`
+  - `releases/windows-go/content-list-generator-windows-arm64.exe`
+
+## Build And Add Feature
+
+Recommended local workflow:
 
 ```bash
-./scripts/parity_check.sh
-```
-
-Local run helpers:
-
-```bash
-./scripts/run_local.sh go
+git clone <repo-url>
+cd content-list-generator
+./scripts/dev_check.sh
 ./scripts/run_local.sh go-gui
 ./scripts/run_local.sh python
-./scripts/run_local.sh python-cli -- --help
 ```
 
-Smoke-package helpers:
+Useful commands:
 
 ```bash
+go test ./...
+go test -tags gui ./...
+python3 -m unittest discover -s ./python -p 'test_*.py'
+python3 -m py_compile python/content_list_core.py python/content_list_generator.py scripts/copy_email_files.py
+```
+
+Release helpers:
+
+```bash
+./scripts/build_releases.sh
 ./scripts/package_macos_local.sh
 ./scripts/package_linux_local.sh
 ./scripts/package_windows_python_bundle.sh
 ./scripts/package_smoke_assets.sh
 ```
 
-## Project Notes
+## Release Outputs
 
-- macOS/Linux default shipped app: Go GUI
-- Windows default shipped app: Python GUI
-- Go TUI remains available as a fallback path
-- shared parity fixtures live under `testdata/parity/`
+- macOS release artifacts live in `releases/macos/`
+- Linux release artifacts live in `releases/linux/`
+- Windows Python release artifacts live in `releases/windows-python/`
+- Windows Go release artifacts live in `releases/windows-go/`
+
+## Project Docs
+
+- install and run: [INSTALL.md](./INSTALL.md)
+- smoke test plan: [SMOKE_TEST_PLAN.md](./SMOKE_TEST_PLAN.md)
+- project TODO list: [TODO.md](./TODO.md)
+- docs index: [docs/index.md](./docs/index.md)

@@ -19,6 +19,11 @@ run-python-gui.bat
 ./scripts/dev_check.sh
 ```
 
+## Local Build Outputs
+
+- Go local binaries are written to `build/`
+- helper-built release outputs are written to `releases/`
+
 ## Go Tests
 
 ```bash
@@ -36,6 +41,7 @@ python3 -m py_compile python/content_list_core.py python/content_list_generator.
 ## Packaging Helpers
 
 ```bash
+./scripts/build_releases.sh
 ./scripts/package_macos_local.sh
 ./scripts/package_linux_local.sh
 ./scripts/package_windows_python_bundle.sh

@@ -1,7 +1,21 @@
 @echo off
 setlocal
 
-set "SCRIPT=%~dp0python\content_list_generator.py"
+set "SCRIPT=%USERPROFILE%\scripts\content_list_generator.py"
+if not exist "%SCRIPT%" set "SCRIPT=%~dp0scripts\content_list_generator.py"
+if not exist "%SCRIPT%" set "SCRIPT=%~dp0python\content_list_generator.py"
+
+if not exist "%SCRIPT%" (
+  echo Could not find content_list_generator.py.
+  echo Expected location:
+  echo   %USERPROFILE%\scripts\content_list_generator.py
+  echo.
+  echo Copy these files into %USERPROFILE%\scripts\:
+  echo   content_list_generator.py
+  echo   content_list_core.py
+  echo   copy_email_files.py
+  exit /b 1
+)
 
 where py >nul 2>&1
 if %ERRORLEVEL%==0 (

@@ -2,16 +2,22 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-OUT_DIR="$ROOT_DIR/dist/smoke/macos"
-ARCHIVE="$ROOT_DIR/dist/content-list-generator-macos-local.tar.gz"
+OUT_DIR="$ROOT_DIR/releases/macos"
+BUILD_DIR="$ROOT_DIR/build"
+ARCHIVE="$OUT_DIR/content-list-generator-macos.tar.gz"
+TMP_ARCHIVE="$BUILD_DIR/content-list-generator-macos.tar.gz"
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "This helper is intended to run on macOS." >&2
   exit 1
 fi
 
-rm -rf "$OUT_DIR"
-mkdir -p "$OUT_DIR"
+mkdir -p "$OUT_DIR" "$BUILD_DIR"
+find "$OUT_DIR" -mindepth 1 -maxdepth 1 \
+  ! -name '.gitkeep' \
+  ! -name 'content-list-generator-darwin-arm64' \
+  -exec rm -rf {} +
+rm -f "$ARCHIVE" "$TMP_ARCHIVE"
 
 cd "$ROOT_DIR"
 
@@ -23,8 +29,8 @@ cp README.md "$OUT_DIR/"
 cp INSTALL.md "$OUT_DIR/"
 cp SMOKE_TEST_PLAN.md "$OUT_DIR/"
 
-cat > "$OUT_DIR/README-LOCAL.txt" <<'EOF'
-Local macOS smoke bundle
+cat > "$OUT_DIR/README-PACKAGE.txt" <<'EOF'
+Local macOS package
 
 Included:
 - content-list-generator-gui
@@ -59,6 +65,7 @@ chmod +x \
   "$OUT_DIR/run-content-list-generator-gui.sh" \
   "$OUT_DIR/run-content-list-generator-tui.sh"
 
-tar -czf "$ARCHIVE" -C "$OUT_DIR" .
-echo "Built macOS local smoke bundle:"
+tar -czf "$TMP_ARCHIVE" -C "$OUT_DIR" .
+mv "$TMP_ARCHIVE" "$ARCHIVE"
+echo "Built macOS package:"
 echo "  $ARCHIVE"

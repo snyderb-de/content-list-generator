@@ -2,11 +2,17 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-OUT_DIR="$ROOT_DIR/dist/smoke/windows-python"
-ARCHIVE="$ROOT_DIR/dist/content-list-generator-windows-python-smoke.zip"
+OUT_DIR="$ROOT_DIR/releases/windows-python"
+BUILD_DIR="$ROOT_DIR/build"
+ARCHIVE="$OUT_DIR/content-list-generator-windows-python.zip"
+TMP_ARCHIVE="$BUILD_DIR/content-list-generator-windows-python.zip"
 
-rm -rf "$OUT_DIR"
-mkdir -p "$OUT_DIR/python" "$OUT_DIR/scripts"
+mkdir -p "$OUT_DIR" "$BUILD_DIR"
+find "$OUT_DIR" -mindepth 1 -maxdepth 1 \
+  ! -name '.gitkeep' \
+  -exec rm -rf {} +
+mkdir -p "$OUT_DIR/scripts"
+rm -f "$ARCHIVE" "$TMP_ARCHIVE"
 
 cd "$ROOT_DIR"
 
@@ -14,23 +20,39 @@ cd "$ROOT_DIR"
 python3 -m unittest discover -s ./python -p 'test_*.py'
 python3 -m py_compile ./python/content_list_core.py ./python/content_list_generator.py ./scripts/copy_email_files.py
 
-cp python/content_list_core.py "$OUT_DIR/python/"
-cp python/content_list_generator.py "$OUT_DIR/python/"
+cp python/content_list_core.py "$OUT_DIR/scripts/"
+cp python/content_list_generator.py "$OUT_DIR/scripts/"
 cp scripts/copy_email_files.py "$OUT_DIR/scripts/"
 cp README.md "$OUT_DIR/"
 cp INSTALL.md "$OUT_DIR/"
 cp SMOKE_TEST_PLAN.md "$OUT_DIR/"
+cp requirements.txt "$OUT_DIR/"
 
 cat > "$OUT_DIR/run-content-list-generator.cmd" <<'EOF'
 @echo off
 setlocal
-python "%~dp0python\content_list_generator.py"
+set "SCRIPT=%USERPROFILE%\scripts\content_list_generator.py"
+if not exist "%SCRIPT%" set "SCRIPT=%~dp0scripts\content_list_generator.py"
+python "%SCRIPT%"
 EOF
 
 cat > "$OUT_DIR/run-content-list-generator.bat" <<'EOF'
 @echo off
 setlocal
-set "SCRIPT=%~dp0python\content_list_generator.py"
+set "SCRIPT=%USERPROFILE%\scripts\content_list_generator.py"
+if not exist "%SCRIPT%" set "SCRIPT=%~dp0scripts\content_list_generator.py"
+
+if not exist "%SCRIPT%" (
+  echo Could not find content_list_generator.py.
+  echo Expected location:
+  echo   %USERPROFILE%\scripts\content_list_generator.py
+  echo.
+  echo Copy these files into %USERPROFILE%\scripts\:
+  echo   content_list_generator.py
+  echo   content_list_core.py
+  echo   copy_email_files.py
+  exit /b 1
+)
 
 where py >nul 2>&1
 if %ERRORLEVEL%==0 (
@@ -52,26 +74,31 @@ EOF
 cat > "$OUT_DIR/run-email-copy.cmd" <<'EOF'
 @echo off
 setlocal
-python "%~dp0scripts\copy_email_files.py"
+set "SCRIPT=%USERPROFILE%\scripts\copy_email_files.py"
+if not exist "%SCRIPT%" set "SCRIPT=%~dp0scripts\copy_email_files.py"
+python "%SCRIPT%"
 EOF
 
 cat > "$OUT_DIR/run-content-list-generator-cli.cmd" <<'EOF'
 @echo off
 setlocal
-python "%~dp0python\content_list_generator.py" --cli %*
+set "SCRIPT=%USERPROFILE%\scripts\content_list_generator.py"
+if not exist "%SCRIPT%" set "SCRIPT=%~dp0scripts\content_list_generator.py"
+python "%SCRIPT%" --cli %*
 EOF
 
 python3 - <<'PY'
 from pathlib import Path
 import zipfile
 
-root = Path("dist/smoke/windows-python")
-archive = Path("dist/content-list-generator-windows-python-smoke.zip")
+root = Path("releases/windows-python")
+archive = Path("build/content-list-generator-windows-python.zip")
 with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as zf:
     for path in sorted(root.rglob("*")):
         if path.is_file():
             zf.write(path, path.relative_to(root))
 PY
+mv "$TMP_ARCHIVE" "$ARCHIVE"
 
-echo "Built Windows Python smoke bundle:"
+echo "Built Windows Python package:"
 echo "  $ARCHIVE"

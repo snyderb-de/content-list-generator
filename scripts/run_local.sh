@@ -3,19 +3,20 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 MODE="${1:-go}"
+BUILD_DIR="$ROOT_DIR/build"
 
 cd "$ROOT_DIR"
 
 case "$MODE" in
   go)
-    mkdir -p ./bin
-    go build -o ./bin/content-list-generator .
-    exec ./bin/content-list-generator
+    mkdir -p "$BUILD_DIR"
+    go build -o "$BUILD_DIR/content-list-generator" .
+    exec "$BUILD_DIR/content-list-generator"
     ;;
   go-gui)
-    mkdir -p ./bin
-    go build -tags gui -o ./bin/content-list-generator-gui .
-    exec ./bin/content-list-generator-gui --gui
+    mkdir -p "$BUILD_DIR"
+    go build -tags gui -o "$BUILD_DIR/content-list-generator-gui" .
+    exec "$BUILD_DIR/content-list-generator-gui" --gui
     ;;
   python|python-gui)
     exec python3 ./python/content_list_generator.py

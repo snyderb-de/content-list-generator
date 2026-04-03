@@ -13,10 +13,10 @@ case "$(uname -s)" in
     ./scripts/package_linux_local.sh
     ;;
   *)
-    echo "Skipping local Go GUI smoke bundle on this OS."
+    echo "Skipping local Go GUI package on this OS."
     ;;
 esac
 
 ./scripts/package_windows_python_bundle.sh
 
-echo "Smoke packaging complete."
+echo "Release package build complete."
