@@ -1,5 +1,7 @@
 # Content List Generator
 
+Written by Bryan Snyder
+
 Content List Generator ships as:
 
 - a Go desktop GUI for macOS and Linux
@@ -24,6 +26,10 @@ Packaged launchers are created in the OS bundle folders:
 - Windows: `dist/smoke/windows-python/run-content-list-generator.cmd`
 
 ## Start Here
+
+GitHub Pages source:
+
+- [docs/index.md](./docs/index.md)
 
 Install and run instructions:
 

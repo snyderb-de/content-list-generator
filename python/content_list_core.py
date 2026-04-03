@@ -86,10 +86,12 @@ class EmailCopyResult:
 @dataclass
 class EmailCopyProgress:
     phase: str
+    scanned: int
     matched: int
     copied: int
     total: int
     current_relative: str = ""
+    current_name: str = ""
 
 
 def normalize_exts(raw: str) -> set[str]:
@@ -515,9 +517,46 @@ def copy_email_files(
     started = time.time()
     dest_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = dest_dir / default_manifest_name()
-    matches = collect_email_matches(source_dir)
+    matches: list[Path] = []
+    scanned = 0
+    for path in sorted(source_dir.rglob("*")):
+        if not path.is_file():
+            continue
+        scanned += 1
+        if progress_callback is not None:
+            progress_callback(
+                EmailCopyProgress(
+                    phase="scanning",
+                    scanned=scanned,
+                    matched=len(matches),
+                    copied=0,
+                    total=0,
+                    current_name=path.name,
+                )
+            )
+        if path.suffix.lower() in EMAIL_EXTENSIONS:
+            matches.append(path)
+            if progress_callback is not None:
+                progress_callback(
+                    EmailCopyProgress(
+                        phase="scanning",
+                        scanned=scanned,
+                        matched=len(matches),
+                        copied=0,
+                        total=0,
+                        current_name=path.name,
+                    )
+                )
     if progress_callback is not None:
-        progress_callback(EmailCopyProgress(phase="copying", matched=len(matches), copied=0, total=len(matches)))
+        progress_callback(
+            EmailCopyProgress(
+                phase="copying",
+                scanned=scanned,
+                matched=len(matches),
+                copied=0,
+                total=len(matches),
+            )
+        )
     copied = 0
 
     with manifest_path.open("w", newline="", encoding="utf-8") as handle:
@@ -544,10 +583,12 @@ def copy_email_files(
                 progress_callback(
                     EmailCopyProgress(
                         phase="copying",
+                        scanned=scanned,
                         matched=len(matches),
                         copied=copied,
                         total=len(matches),
                         current_relative=relative.as_posix(),
+                        current_name=path.name,
                     )
                 )
 
@@ -562,23 +603,22 @@ def copy_email_files(
 
 def build_scan_summary(result: ScanResult) -> str:
     lines = [
-        "Done",
-        f"Output: {result.output_path}",
-        f"XLSX copy: {result.xlsx_path if result.xlsx_path else 'not created'}",
-        f"Files: {result.files}",
-        f"Bytes: {result.total_bytes} ({human_bytes(result.total_bytes)})",
-        f"Filtered out: {result.filtered}",
-        f"Hidden filtered: {result.filtered_hidden}",
-        f"System filtered: {result.filtered_system}",
-        f"Extension filtered: {result.filtered_exts}",
-        f"Hashing: {'on' if result.hashing else 'off'}",
-        f"Create XLSX: {'on' if result.create_xlsx else 'off'}",
-        f"Preserve zeros: {'on' if result.preserve_zeros and result.create_xlsx else 'off'}",
-        f"Hash workers: {result.hash_workers}",
-        f"Elapsed: {result.elapsed:.2f}s",
+        "Your file list is ready.",
+        f"Saved file list: {result.output_path}",
+        f"Excel copy: {result.xlsx_path if result.xlsx_path else 'not created'}",
+        f"Files included: {result.files}",
+        f"Total size: {result.total_bytes} ({human_bytes(result.total_bytes)})",
+        f"Items skipped: {result.filtered}",
+        f"Hidden items skipped: {result.filtered_hidden}",
+        f"System items skipped: {result.filtered_system}",
+        f"Skipped by file type: {result.filtered_exts}",
+        f"SHA-256 hashes: {'on' if result.hashing else 'off'}",
+        f"Excel copy enabled: {'on' if result.create_xlsx else 'off'}",
+        f"Keep leading zeros in Excel: {'on' if result.preserve_zeros and result.create_xlsx else 'off'}",
+        f"Finished in: {result.elapsed:.2f}s",
         "",
-        *render_top("Top extensions by count", result.top_by_count),
+        *render_top("Most common file types", result.top_by_count),
         "",
-        *render_top("Top extensions by size", result.top_by_size, by_size=True),
+        *render_top("Largest file types by size", result.top_by_size, by_size=True),
     ]
     return "\n".join(lines)

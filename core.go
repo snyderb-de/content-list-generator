@@ -86,11 +86,13 @@ type scannerStats struct {
 }
 
 type emailCopyProgress struct {
-	Phase      string
-	Matched    uint64
-	Copied     uint64
-	Total      uint64
-	CurrentRel string
+	Phase       string
+	Scanned     uint64
+	Matched     uint64
+	Copied      uint64
+	Total       uint64
+	CurrentRel  string
+	CurrentName string
 }
 
 var emailExtensions = map[string]struct{}{
@@ -474,9 +476,19 @@ func copyEmailFilesWithProgress(sourceDir, destDir string, progress func(emailCo
 	}
 
 	matches := make([]string, 0, 256)
+	var scanned uint64
 	err = filepath.WalkDir(sourceAbs, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil || d.IsDir() {
 			return nil
+		}
+		scanned++
+		if progress != nil {
+			progress(emailCopyProgress{
+				Phase:       "scanning",
+				Scanned:     scanned,
+				Matched:     uint64(len(matches)),
+				CurrentName: d.Name(),
+			})
 		}
 
 		ext := strings.ToLower(filepath.Ext(d.Name()))
@@ -485,13 +497,26 @@ func copyEmailFilesWithProgress(sourceDir, destDir string, progress func(emailCo
 		}
 
 		matches = append(matches, path)
+		if progress != nil {
+			progress(emailCopyProgress{
+				Phase:       "scanning",
+				Scanned:     scanned,
+				Matched:     uint64(len(matches)),
+				CurrentName: d.Name(),
+			})
+		}
 		return nil
 	})
 	if err != nil {
 		return "", 0, err
 	}
 	if progress != nil {
-		progress(emailCopyProgress{Phase: "copying", Matched: uint64(len(matches)), Total: uint64(len(matches))})
+		progress(emailCopyProgress{
+			Phase:   "copying",
+			Scanned: scanned,
+			Matched: uint64(len(matches)),
+			Total:   uint64(len(matches)),
+		})
 	}
 
 	var copied uint64
@@ -528,11 +553,13 @@ func copyEmailFilesWithProgress(sourceDir, destDir string, progress func(emailCo
 		copied++
 		if progress != nil {
 			progress(emailCopyProgress{
-				Phase:      "copying",
-				Matched:    uint64(len(matches)),
-				Copied:     copied,
-				Total:      uint64(len(matches)),
-				CurrentRel: filepath.ToSlash(relative),
+				Phase:       "copying",
+				Scanned:     scanned,
+				Matched:     uint64(len(matches)),
+				Copied:      copied,
+				Total:       uint64(len(matches)),
+				CurrentRel:  filepath.ToSlash(relative),
+				CurrentName: filepath.Base(path),
 			})
 		}
 	}
