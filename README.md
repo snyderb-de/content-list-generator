@@ -6,6 +6,7 @@ Content List Generator ships as:
 
 - a Go desktop GUI for macOS and Linux
 - a Python desktop GUI for Windows
+- built Go Windows `.exe` artifacts in `dist/` for teams that prefer a standalone executable path
 
 Both apps support:
 
@@ -18,12 +19,34 @@ Repo-root launchers:
 
 - `./run-go-gui.sh`
 - `./run-python-gui.sh`
+- `run-python-gui.bat`
 
 Packaged launchers are created in the OS bundle folders:
 
 - macOS: `dist/smoke/macos/run-content-list-generator-gui.sh`
 - Linux: `dist/smoke/linux/run-content-list-generator-gui.sh`
-- Windows: `dist/smoke/windows-python/run-content-list-generator.cmd`
+- Windows: `dist/smoke/windows-python/run-content-list-generator.bat`
+
+## Windows Paths
+
+Portable Windows GUI bundle:
+
+- repo root launcher: `run-python-gui.bat`
+- packaged launcher: `dist/smoke/windows-python/run-content-list-generator.bat`
+- keep the whole bundle together if you copy it into a user folder
+- bundle contents include:
+  - `python/content_list_generator.py`
+  - `python/content_list_core.py`
+  - `scripts/copy_email_files.py`
+  - the `.bat` and `.cmd` launchers
+- the Windows bundle `scripts/` folder currently contains `copy_email_files.py`, which remains as a compatibility helper; users do not need to create that folder themselves
+
+Built Go Windows executables:
+
+- `dist/content-list-generator-windows-amd64.exe`
+- `dist/content-list-generator-windows-arm64.exe`
+- created by `./scripts/build_releases.sh`
+- Windows default GUI path is still the Python bundle above
 
 ## Start Here
 

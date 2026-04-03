@@ -32,6 +32,12 @@ From the repo root:
 ./run-python-gui.sh
 ```
 
+On Windows from the repo root:
+
+```bat
+run-python-gui.bat
+```
+
 ## Packaged Bundle Paths
 
 macOS:
@@ -51,8 +57,30 @@ Linux:
 Windows:
 
 ```bat
+run-python-gui.bat
+```
+
+Packaged portable bundle:
+
+```bat
 scripts\package_windows_python_bundle.sh
-dist\smoke\windows-python\run-content-list-generator.cmd
+dist\smoke\windows-python\run-content-list-generator.bat
+```
+
+Portable bundle files to keep together:
+
+- `python\content_list_generator.py`
+- `python\content_list_core.py`
+- `scripts\copy_email_files.py`
+- the included `.bat` and `.cmd` launchers
+
+The Windows bundle `scripts\` folder currently contains only `copy_email_files.py`. Users do not need to create it by hand.
+
+Alternate Go Windows executables:
+
+```bat
+scripts\build_releases.sh
+dist\content-list-generator-windows-amd64.exe
 ```
 
 ## Verify Before Running

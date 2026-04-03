@@ -17,7 +17,8 @@ Content List Generator is a desktop tool for two everyday jobs:
 ## Platforms
 
 - macOS and Linux: Go GUI
-- Windows: Python GUI
+- Windows: Python GUI with a `.bat` launcher
+- Alternate Windows release artifacts: Go `.exe` builds in `dist/`
 
 ## Written By
 

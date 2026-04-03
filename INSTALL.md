@@ -112,14 +112,34 @@ Fallback TUI:
 
 ## Windows
 
-Fastest packaged path after building the Windows bundle:
+Windows has two supported paths.
+
+Portable Python GUI bundle:
+
+```bat
+run-python-gui.bat
+```
+
+Fastest packaged portable path after building the Windows bundle:
 
 ```bat
 scripts\package_windows_python_bundle.sh
-dist\smoke\windows-python\run-content-list-generator.cmd
+dist\smoke\windows-python\run-content-list-generator.bat
 ```
 
-Run the Python GUI:
+Portable bundle files to keep together when copying into a user folder:
+
+- `python\content_list_generator.py`
+- `python\content_list_core.py`
+- `scripts\copy_email_files.py`
+- `run-content-list-generator.bat`
+- `run-content-list-generator.cmd`
+- `run-content-list-generator-cli.cmd`
+- `run-email-copy.cmd`
+
+The portable bundle `scripts\` folder currently contains only `copy_email_files.py`, which is kept as a compatibility helper. Users do not need to create the `scripts\` folder themselves.
+
+Direct Python command:
 
 ```bash
 python .\python\content_list_generator.py
@@ -136,6 +156,19 @@ CLI fallback:
 ```bash
 python .\python\content_list_generator.py --cli
 ```
+
+Built Go Windows executables:
+
+```bat
+scripts\build_releases.sh
+dist\content-list-generator-windows-amd64.exe
+```
+
+Also built:
+
+- `dist\content-list-generator-windows-arm64.exe`
+
+The Windows default GUI path remains the Python bundle. The Go Windows `.exe` files are alternative release artifacts.
 
 ## Verify Before Running
 

@@ -7,6 +7,12 @@
 ./run-python-gui.sh
 ```
 
+Windows repo-root launcher:
+
+```bat
+run-python-gui.bat
+```
+
 ## Local Checks
 
 ```bash

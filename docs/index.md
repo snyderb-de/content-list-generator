@@ -10,7 +10,8 @@ Content List Generator helps people create a simple file list from a folder and 
 ## Project Status
 
 - Desktop app for macOS and Linux: Go GUI
-- Desktop app for Windows: Python GUI
+- Desktop app for Windows: Python GUI with a `.bat` launcher
+- Alternate Windows release artifacts: Go `.exe` files in `dist/`
 - Open source release: planned
 - Attribution requirement: TODO decide before public release
 
@@ -35,3 +36,4 @@ From the repo root:
 
 - The content-list workflow saves a CSV file and can also save an Excel copy.
 - The email-copy workflow looks for supported email file types, copies matching files, keeps the original folder layout, and saves a report.
+- The Windows portable bundle keeps the Python app under `python/` and a compatibility helper under `scripts/copy_email_files.py`.
