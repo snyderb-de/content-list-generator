@@ -43,6 +43,90 @@ type forcedVariantTheme struct {
 }
 
 func (f *forcedVariantTheme) Color(name fyne.ThemeColorName, _ fyne.ThemeVariant) color.Color {
+	switch f.variant {
+	case theme.VariantDark:
+		switch name {
+		case theme.ColorNameBackground:
+			return color.NRGBA{R: 0x18, G: 0x1f, B: 0x27, A: 0xff}
+		case theme.ColorNameButton:
+			return color.NRGBA{R: 0x26, G: 0x35, B: 0x43, A: 0xff}
+		case theme.ColorNameDisabledButton:
+			return color.NRGBA{R: 0x21, G: 0x30, B: 0x3d, A: 0xff}
+		case theme.ColorNameDisabled:
+			return color.NRGBA{R: 0x68, G: 0x7b, B: 0x8d, A: 0xff}
+		case theme.ColorNameForeground:
+			return color.NRGBA{R: 0xeb, G: 0xf1, B: 0xf7, A: 0xff}
+		case theme.ColorNameForegroundOnPrimary:
+			return color.NRGBA{R: 0xf8, G: 0xfb, B: 0xff, A: 0xff}
+		case theme.ColorNameHeaderBackground:
+			return color.NRGBA{R: 0x1b, G: 0x24, B: 0x2e, A: 0xff}
+		case theme.ColorNameHover:
+			return color.NRGBA{R: 0x2d, G: 0x3f, B: 0x52, A: 0xff}
+		case theme.ColorNameInputBackground:
+			return color.NRGBA{R: 0x1a, G: 0x23, B: 0x2d, A: 0xff}
+		case theme.ColorNameInputBorder:
+			return color.NRGBA{R: 0x31, G: 0x42, B: 0x54, A: 0xff}
+		case theme.ColorNameMenuBackground, theme.ColorNameOverlayBackground:
+			return color.NRGBA{R: 0x1d, G: 0x2a, B: 0x35, A: 0xff}
+		case theme.ColorNamePlaceHolder:
+			return color.NRGBA{R: 0x9c, G: 0xae, B: 0xbf, A: 0xff}
+		case theme.ColorNamePressed:
+			return color.NRGBA{R: 0x69, G: 0xa2, B: 0xff, A: 0x66}
+		case theme.ColorNamePrimary, theme.ColorNameFocus, theme.ColorNameHyperlink:
+			return color.NRGBA{R: 0x4d, G: 0x8e, B: 0xf8, A: 0xff}
+		case theme.ColorNameScrollBar:
+			return color.NRGBA{R: 0x69, G: 0xa2, B: 0xff, A: 0xbb}
+		case theme.ColorNameScrollBarBackground:
+			return color.NRGBA{R: 0x18, G: 0x26, B: 0x33, A: 0xff}
+		case theme.ColorNameSelection:
+			return color.NRGBA{R: 0x17, G: 0x34, B: 0x55, A: 0xff}
+		case theme.ColorNameSeparator:
+			return color.NRGBA{R: 0x12, G: 0x20, B: 0x2b, A: 0xff}
+		case theme.ColorNameShadow:
+			return color.NRGBA{R: 0x00, G: 0x00, B: 0x00, A: 0x33}
+		}
+	default:
+		switch name {
+		case theme.ColorNameBackground:
+			return color.NRGBA{R: 0xeb, G: 0xf1, B: 0xf5, A: 0xff}
+		case theme.ColorNameButton:
+			return color.NRGBA{R: 0xee, G: 0xf3, B: 0xf7, A: 0xff}
+		case theme.ColorNameDisabledButton:
+			return color.NRGBA{R: 0xf3, G: 0xf6, B: 0xf9, A: 0xff}
+		case theme.ColorNameDisabled:
+			return color.NRGBA{R: 0x92, G: 0xa1, B: 0xae, A: 0xff}
+		case theme.ColorNameForeground:
+			return color.NRGBA{R: 0x24, G: 0x38, B: 0x49, A: 0xff}
+		case theme.ColorNameForegroundOnPrimary:
+			return color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff}
+		case theme.ColorNameHeaderBackground:
+			return color.NRGBA{R: 0xf2, G: 0xf4, B: 0xf6, A: 0xff}
+		case theme.ColorNameHover:
+			return color.NRGBA{R: 0xe1, G: 0xe8, B: 0xef, A: 0xff}
+		case theme.ColorNameInputBackground:
+			return color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff}
+		case theme.ColorNameInputBorder:
+			return color.NRGBA{R: 0xca, G: 0xd6, B: 0xe0, A: 0xff}
+		case theme.ColorNameMenuBackground, theme.ColorNameOverlayBackground:
+			return color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff}
+		case theme.ColorNamePlaceHolder:
+			return color.NRGBA{R: 0x55, G: 0x67, B: 0x78, A: 0xff}
+		case theme.ColorNamePressed:
+			return color.NRGBA{R: 0x00, G: 0x70, B: 0xeb, A: 0x44}
+		case theme.ColorNamePrimary, theme.ColorNameFocus, theme.ColorNameHyperlink:
+			return color.NRGBA{R: 0x00, G: 0x5b, B: 0xc1, A: 0xff}
+		case theme.ColorNameScrollBar:
+			return color.NRGBA{R: 0x00, G: 0x5b, B: 0xc1, A: 0xbb}
+		case theme.ColorNameScrollBarBackground:
+			return color.NRGBA{R: 0xf3, G: 0xf6, B: 0xf9, A: 0xff}
+		case theme.ColorNameSelection:
+			return color.NRGBA{R: 0xd7, G: 0xe7, B: 0xff, A: 0xff}
+		case theme.ColorNameSeparator:
+			return color.NRGBA{R: 0xf2, G: 0xf4, B: 0xf6, A: 0xff}
+		case theme.ColorNameShadow:
+			return color.NRGBA{R: 0x19, G: 0x1c, B: 0x1e, A: 0x10}
+		}
+	}
 	return f.Theme.Color(name, f.variant)
 }
 
@@ -51,14 +135,66 @@ func launchGUI(startDir string) error {
 	applySavedAppearance(application)
 
 	window := application.NewWindow("Content List Generator")
-	window.Resize(fyne.NewSize(1040, 780))
+	window.Resize(fyne.NewSize(1280, 860))
 
-	tabs := container.NewAppTabs(
-		container.NewTabItem("Content List", container.NewVScroll(buildScanTab(window, startDir))),
-		container.NewTabItem("Copy Email Files", container.NewVScroll(buildEmailTab(window, startDir))),
-		container.NewTabItem("About", container.NewVScroll(buildAboutTab())),
-	)
-	tabs.SetTabLocation(container.TabLocationTop)
+	contentPage := container.NewVScroll(buildScanTab(window, startDir))
+	emailPage := container.NewVScroll(buildEmailTab(window, startDir))
+	aboutPage := container.NewVScroll(buildAboutTab())
+	pages := map[string]fyne.CanvasObject{
+		"content": contentPage,
+		"email":   emailPage,
+		"about":   aboutPage,
+	}
+	contentStack := container.NewStack(contentPage, emailPage, aboutPage)
+
+	var contentButton, emailButton, aboutButton *widget.Button
+	setPage := func(page string) {
+		for name, view := range pages {
+			if name == page {
+				view.Show()
+			} else {
+				view.Hide()
+			}
+		}
+		for name, button := range map[string]*widget.Button{
+			"content": contentButton,
+			"email":   emailButton,
+			"about":   aboutButton,
+		} {
+			if button == nil {
+				continue
+			}
+			if name == page {
+				button.Importance = widget.HighImportance
+			} else {
+				button.Importance = widget.LowImportance
+			}
+			button.Refresh()
+		}
+	}
+
+	brandTitle := widget.NewLabelWithStyle("Content List Generator", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	brandSubtitle := widget.NewLabel("Create file lists, copy email files, and keep a simple record of what was saved.")
+	brandSubtitle.Wrapping = fyne.TextWrapWord
+	brandCard := widget.NewCard("", "", container.NewVBox(brandTitle, brandSubtitle))
+
+	contentButton = widget.NewButtonWithIcon("Content List", theme.DocumentIcon(), func() {
+		setPage("content")
+	})
+	contentButton.Alignment = widget.ButtonAlignLeading
+	contentButton.Importance = widget.HighImportance
+
+	emailButton = widget.NewButtonWithIcon("Copy Email Files", theme.MailComposeIcon(), func() {
+		setPage("email")
+	})
+	emailButton.Alignment = widget.ButtonAlignLeading
+	emailButton.Importance = widget.LowImportance
+
+	aboutButton = widget.NewButtonWithIcon("About", theme.InfoIcon(), func() {
+		setPage("about")
+	})
+	aboutButton.Alignment = widget.ButtonAlignLeading
+	aboutButton.Importance = widget.LowImportance
 
 	darkMode := widget.NewCheck("Dark mode", nil)
 	darkMode.SetChecked(currentAppearanceMode(application) == "dark")
@@ -69,16 +205,27 @@ func launchGUI(startDir string) error {
 		}
 		applyAppearance(application, mode, true)
 	}
+	appearanceCard := widget.NewCard(
+		"Appearance",
+		"The same tools are available in light and dark mode.",
+		container.NewVBox(darkMode),
+	)
 
-	header := container.NewPadded(
-		container.NewHBox(
-			layout.NewSpacer(),
-			widget.NewLabel("Appearance"),
-			darkMode,
+	sidebar := container.NewPadded(
+		container.NewBorder(
+			brandCard,
+			appearanceCard,
+			nil,
+			nil,
+			container.NewVBox(contentButton, emailButton, aboutButton, layout.NewSpacer()),
 		),
 	)
 
-	window.SetContent(container.NewBorder(header, nil, nil, nil, tabs))
+	split := container.NewHSplit(sidebar, container.NewPadded(contentStack))
+	split.SetOffset(0.22)
+
+	window.SetContent(split)
+	setPage("content")
 	window.ShowAndRun()
 	return nil
 }
@@ -154,11 +301,19 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 	progressBar.Hide()
 	resultLabel := widget.NewLabel("Your results will appear here after the file list is finished.")
 	resultLabel.Wrapping = fyne.TextWrapWord
+	filesMetric := widget.NewLabel("0")
+	filesMetric.TextStyle = fyne.TextStyle{Bold: true}
+	skippedMetric := widget.NewLabel("0")
+	skippedMetric.TextStyle = fyne.TextStyle{Bold: true}
+	savedMetric := widget.NewLabel("Waiting")
+	savedMetric.TextStyle = fyne.TextStyle{Bold: true}
 
 	startButton := widget.NewButton("Generate Content List", nil)
+	startButton.Importance = widget.HighImportance
 	useSourceButton := widget.NewButton("Use Source As Output", func() {
 		outputEntry.SetText(sourceEntry.Text)
 	})
+	useSourceButton.Importance = widget.LowImportance
 	resetButton := widget.NewButton("Reset", func() {
 		sourceEntry.SetText(defaultSource)
 		outputEntry.SetText(defaultOutput)
@@ -172,10 +327,15 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 		progressBar.Hide()
 		statusLabel.SetText("Choose a folder to scan, then click Generate Content List.")
 		resultLabel.SetText("Your results will appear here after the file list is finished.")
+		filesMetric.SetText("0")
+		skippedMetric.SetText("0")
+		savedMetric.SetText("Waiting")
 	})
+	resetButton.Importance = widget.LowImportance
 	openOutputButton := widget.NewButton("Open Output Folder", func() {
 		openPathInFileManager(outputEntry.Text)
 	})
+	openOutputButton.Importance = widget.LowImportance
 	setRunning := func(running bool) {
 		if running {
 			startButton.Disable()
@@ -213,6 +373,9 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 		run := func() {
 			setRunning(true)
 			statusLabel.SetText("Getting everything ready...")
+			filesMetric.SetText("0")
+			skippedMetric.SetText("0")
+			savedMetric.SetText("Working")
 			doneCh := make(chan struct{})
 			go func() {
 				ticker := time.NewTicker(250 * time.Millisecond)
@@ -254,6 +417,13 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 						dialog.ShowError(err, window)
 						return
 					}
+					filesMetric.SetText(strconv.FormatUint(done.files, 10))
+					skippedMetric.SetText(strconv.FormatUint(done.filtered, 10))
+					if done.xlsxPath != "" {
+						savedMetric.SetText("CSV + Excel")
+					} else {
+						savedMetric.SetText("CSV")
+					}
 					statusLabel.SetText(fmt.Sprintf("Your file list is ready. %d files were included.", done.files))
 					resultLabel.SetText(strings.Join([]string{
 						fmt.Sprintf("Saved file list: %s", done.outputPath),
@@ -285,20 +455,41 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 
 	startButton.OnTapped = startScan
 
-	form := widget.NewForm(
-		widget.NewFormItem("Folder to scan", pathInputRow(window, sourceEntry, "Choose Source Folder", true)),
-		widget.NewFormItem("Save results to", pathInputRow(window, outputEntry, "Choose Output Folder", false)),
-		widget.NewFormItem("Name for the saved list", fileEntry),
-		widget.NewFormItem("Skip file types (optional)", excludeEntry),
+	pathGrid := container.NewGridWithColumns(
+		2,
+		makeDetailCard(
+			"Folder to scan",
+			"Choose the folder you want the app to scan.",
+			pathInputRow(window, sourceEntry, "Choose Source Folder", true),
+		),
+		makeDetailCard(
+			"Save results to",
+			"Choose where the CSV file should be saved.",
+			pathInputRow(window, outputEntry, "Choose Output Folder", false),
+		),
 	)
 
-	options := container.NewVBox(
-		widget.NewLabel("Options"),
-		hashCheck,
-		hiddenCheck,
-		systemCheck,
-		xlsxCheck,
-		zeroCheck,
+	outputDetails := widget.NewCard(
+		"Output details",
+		"Set the saved file name and any file types you want the app to skip.",
+		container.NewGridWithColumns(
+			2,
+			makeLabeledField("Name for the saved list", "The file name should end in .csv.", fileEntry),
+			makeLabeledField("Skip file types (optional)", "Example: tmp,log,bak", excludeEntry),
+		),
+	)
+
+	options := widget.NewCard(
+		"Options",
+		"Choose any extras you want before you generate the file list.",
+		container.NewGridWithColumns(
+			2,
+			makeCheckCard(hashCheck, "Add SHA-256 hashes (advanced)"),
+			makeCheckCard(hiddenCheck, "Skip hidden files"),
+			makeCheckCard(systemCheck, "Skip common system files"),
+			makeCheckCard(xlsxCheck, "Also save an Excel copy"),
+			makeCheckCard(zeroCheck, "Keep leading zeros in Excel"),
+		),
 	)
 
 	actions := container.NewHBox(
@@ -308,19 +499,33 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 		openOutputButton,
 	)
 
-	resultCard := widget.NewCard("Saved File List", "Use this area to review what was created and where it was saved.", resultLabel)
+	progressCard := widget.NewCard(
+		"Progress",
+		"Watch the scan as the app works through the folder.",
+		container.NewVBox(
+			container.NewGridWithColumns(
+				3,
+				makeMetricCard("Files Included", filesMetric),
+				makeMetricCard("Items Skipped", skippedMetric),
+				makeMetricCard("Saved Output", savedMetric),
+			),
+			progressBar,
+			statusLabel,
+		),
+	)
+
+	resultCard := widget.NewCard("Summary", "Review what was created and where it was saved.", resultLabel)
 
 	return container.NewVBox(
-		widget.NewRichTextFromMarkdown("## Create a Content List\n\nChoose a folder, choose where to save the results, and click **Generate Content List**. This can create a CSV file and, if you want, an Excel copy too."),
-		statusLabel,
-		progressBar,
-		widget.NewSeparator(),
-		form,
-		widget.NewSeparator(),
+		makeHeroCard(
+			"Create a Content List",
+			"Choose a folder, choose where to save the results, and click Generate Content List.",
+		),
+		pathGrid,
+		outputDetails,
 		options,
-		widget.NewSeparator(),
-		actions,
-		widget.NewSeparator(),
+		widget.NewCard("", "", actions),
+		progressCard,
 		resultCard,
 	)
 }
@@ -336,31 +541,50 @@ func buildEmailTab(window fyne.Window, startDir string) fyne.CanvasObject {
 
 	statusLabel := widget.NewLabel("Choose a folder to search, then choose where the copied email files should go.")
 	statusLabel.Wrapping = fyne.TextWrapWord
+	scanProgress := widget.NewProgressBarInfinite()
+	scanProgress.Hide()
 	progressBar := widget.NewProgressBar()
 	progressBar.Min = 0
 	progressBar.Max = 1
+	progressBar.Hide()
 	progressDetails := widget.NewLabel("The app will look for supported email file types first, then copy the matches.")
 	progressDetails.Wrapping = fyne.TextWrapWord
 	resultLabel := widget.NewLabel("Your copy summary will appear here after the job is finished.")
 	resultLabel.Wrapping = fyne.TextWrapWord
+	phaseMetric := widget.NewLabel("Idle")
+	phaseMetric.TextStyle = fyne.TextStyle{Bold: true}
+	scannedMetric := widget.NewLabel("0")
+	scannedMetric.TextStyle = fyne.TextStyle{Bold: true}
+	copiedMetric := widget.NewLabel("0")
+	copiedMetric.TextStyle = fyne.TextStyle{Bold: true}
 
 	startButton := widget.NewButton("Copy Email Files", nil)
+	startButton.Importance = widget.HighImportance
 	useSourceButton := widget.NewButton("Use Source As Destination", func() {
 		destEntry.SetText(sourceEntry.Text)
 	})
+	useSourceButton.Importance = widget.LowImportance
 	resetButton := widget.NewButton("Reset", func() {
 		sourceEntry.SetText(defaultSource)
 		destEntry.SetText(defaultDest)
 		progressBar.SetValue(0)
 		progressBar.Max = 1
+		progressBar.Hide()
+		scanProgress.Hide()
 		statusLabel.SetText("Choose a folder to search, then choose where the copied email files should go.")
 		progressDetails.SetText("The app will look for supported email file types first, then copy the matches.")
 		resultLabel.SetText("Your copy summary will appear here after the job is finished.")
+		phaseMetric.SetText("Idle")
+		scannedMetric.SetText("0")
+		copiedMetric.SetText("0")
 	})
+	resetButton.Importance = widget.LowImportance
 	openDestButton := widget.NewButton("Open Destination", func() {
 		openPathInFileManager(destEntry.Text)
 	})
+	openDestButton.Importance = widget.LowImportance
 	openManifestButton := widget.NewButton("Open Manifest", func() {})
+	openManifestButton.Importance = widget.LowImportance
 	openManifestButton.Disable()
 
 	latestManifest := ""
@@ -389,14 +613,22 @@ func buildEmailTab(window fyne.Window, startDir string) fyne.CanvasObject {
 		setRunning(true)
 		statusLabel.SetText("Looking for supported email files...")
 		progressDetails.SetText("The app checks each file first, then copies the supported email files.")
+		phaseMetric.SetText("Scanning")
+		scannedMetric.SetText("0")
+		copiedMetric.SetText("0")
+		progressBar.Hide()
+		scanProgress.Show()
 		go func() {
 			started := time.Now()
 			manifestPath, copied, err := copyEmailFilesWithProgress(sourceDir, destDir, func(progress emailCopyProgress) {
 				fyne.Do(func() {
 					switch progress.Phase {
 					case "scanning":
-						progressBar.Max = float64(max(1, int(progress.Scanned)))
-						progressBar.SetValue(float64(progress.Scanned))
+						phaseMetric.SetText("Scanning")
+						scannedMetric.SetText(strconv.FormatUint(progress.Scanned, 10))
+						copiedMetric.SetText(strconv.FormatUint(progress.Copied, 10))
+						progressBar.Hide()
+						scanProgress.Show()
 						statusLabel.SetText(fmt.Sprintf(
 							"Checking files... Looked at: %d  Matches found: %d",
 							progress.Scanned,
@@ -408,6 +640,11 @@ func buildEmailTab(window fyne.Window, startDir string) fyne.CanvasObject {
 							progressDetails.SetText("Looking for supported email file types...")
 						}
 					case "copying":
+						phaseMetric.SetText("Copying")
+						scannedMetric.SetText(strconv.FormatUint(progress.Scanned, 10))
+						copiedMetric.SetText(strconv.FormatUint(progress.Copied, 10))
+						scanProgress.Hide()
+						progressBar.Show()
 						total := float64(max(1, int(progress.Total)))
 						progressBar.Max = total
 						progressBar.SetValue(float64(progress.Copied))
@@ -433,12 +670,21 @@ func buildEmailTab(window fyne.Window, startDir string) fyne.CanvasObject {
 			fyne.Do(func() {
 				setRunning(false)
 				if err != nil {
+					scanProgress.Hide()
+					progressBar.Hide()
+					phaseMetric.SetText("Error")
 					statusLabel.SetText("Something went wrong while copying the email files.")
 					dialog.ShowError(err, window)
 					return
 				}
 				latestManifest = manifestPath
 				openManifestButton.Enable()
+				scanProgress.Hide()
+				progressBar.Show()
+				progressBar.Max = 1
+				progressBar.SetValue(1)
+				phaseMetric.SetText("Complete")
+				copiedMetric.SetText(strconv.FormatUint(copied, 10))
 				statusLabel.SetText(fmt.Sprintf("Done. Copied %d email files.", copied))
 				progressDetails.SetText("A report was saved and the original folder layout was kept.")
 				resultLabel.SetText(strings.Join([]string{
@@ -461,9 +707,23 @@ func buildEmailTab(window fyne.Window, startDir string) fyne.CanvasObject {
 		}
 	}
 
-	form := widget.NewForm(
-		widget.NewFormItem("Folder to search", pathInputRow(window, sourceEntry, "Choose Source Folder", true)),
-		widget.NewFormItem("Copy files into", pathInputRow(window, destEntry, "Choose Destination Folder", false)),
+	pathGrid := container.NewGridWithColumns(
+		2,
+		makeDetailCard(
+			"Folder to search",
+			"Choose the folder the app should check for supported email files.",
+			pathInputRow(window, sourceEntry, "Choose Source Folder", true),
+		),
+		makeDetailCard(
+			"Copy files into",
+			"Choose where the copied files and the report should be saved.",
+			pathInputRow(window, destEntry, "Choose Destination Folder", false),
+		),
+	)
+	extensionCard := widget.NewCard(
+		"Supported email file types",
+		"The app checks for these file types before it starts copying.",
+		widget.NewLabel(strings.Join(sortedEmailExtensions(), ", ")),
 	)
 
 	actions := container.NewHBox(
@@ -474,46 +734,96 @@ func buildEmailTab(window fyne.Window, startDir string) fyne.CanvasObject {
 		openManifestButton,
 	)
 
+	progressCard := widget.NewCard(
+		"Progress",
+		"Watch the search first, then the copy.",
+		container.NewVBox(
+			container.NewGridWithColumns(
+				3,
+				makeMetricCard("Current phase", phaseMetric),
+				makeMetricCard("Files checked", scannedMetric),
+				makeMetricCard("Files copied", copiedMetric),
+			),
+			scanProgress,
+			progressBar,
+			statusLabel,
+			progressDetails,
+		),
+	)
 	resultCard := widget.NewCard("Copy Summary", "The copied files keep the same folder layout they had in the original location.", resultLabel)
 
 	return container.NewVBox(
-		widget.NewRichTextFromMarkdown("## Copy Email Files\n\nChoose a folder to search, choose where the copied files should go, and the app will save a report of everything that was copied."),
-		statusLabel,
-		progressBar,
-		progressDetails,
-		widget.NewSeparator(),
-		form,
-		widget.NewSeparator(),
-		widget.NewLabel("Supported email file types"),
-		widget.NewLabel(strings.Join(sortedEmailExtensions(), ", ")),
-		widget.NewSeparator(),
-		actions,
-		widget.NewSeparator(),
+		makeHeroCard(
+			"Copy Email Files",
+			"Choose a folder to search, choose where the copied files should go, and the app will save a report of everything that was copied.",
+		),
+		pathGrid,
+		extensionCard,
+		widget.NewCard("", "", actions),
+		progressCard,
 		resultCard,
 	)
 }
 
 func buildAboutTab() fyne.CanvasObject {
-	body := widget.NewRichTextFromMarkdown(strings.Join([]string{
-		"## About Content List Generator",
+	description := widget.NewLabel("Content List Generator helps you create a simple file list from a folder and copy supported email files into a new location.")
+	description.Wrapping = fyne.TextWrapWord
+	githubLabel := widget.NewLabel("GitHub: " + placeholderGitHubURL)
+	githubLabel.Wrapping = fyne.TextWrapWord
+	openGitHub := widget.NewButton("Open GitHub Link", func() {
+		openURLInBrowser(placeholderGitHubURL)
+	})
+	openGitHub.Importance = widget.LowImportance
+	aboutCard := widget.NewCard(
+		"About Content List Generator",
 		"",
-		"Content List Generator helps you create a simple file list from a folder and copy supported email files into a new location.",
+		container.NewVBox(
+			description,
+			widget.NewLabel("Written by Bryan Snyder"),
+			githubLabel,
+			openGitHub,
+		),
+	)
+	openSourceNote := widget.NewCard(
+		"Open source note",
 		"",
-		"Written by Bryan Snyder.",
-		"",
-		fmt.Sprintf("GitHub: [placeholder link](%s)", placeholderGitHubURL),
-		"",
-		"Open source note:",
-		"",
-		"- This project is being prepared for an open source release.",
-		"- TODO: decide the final attribution requirement before publishing.",
-		"",
-		"Helpful notes:",
-		"",
-		"- The content-list page creates a CSV file and can also make an Excel copy.",
-		"- The email-copy page keeps the original folder layout and saves a report of what was copied.",
-	}, "\n"))
-	return container.New(layout.NewCenterLayout(), container.NewPadded(body))
+		container.NewVBox(
+			widget.NewLabel("This project is being prepared for an open source release."),
+			widget.NewLabel("TODO: decide the final attribution requirement before publishing."),
+		),
+	)
+	return container.NewVBox(aboutCard, openSourceNote)
+}
+
+func makeHeroCard(title, subtitle string) fyne.CanvasObject {
+	titleLabel := widget.NewLabelWithStyle(title, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	subtitleLabel := widget.NewLabel(subtitle)
+	subtitleLabel.Wrapping = fyne.TextWrapWord
+	return widget.NewCard("", "", container.NewVBox(titleLabel, subtitleLabel))
+}
+
+func makeDetailCard(title, subtitle string, content fyne.CanvasObject) fyne.CanvasObject {
+	return widget.NewCard(title, subtitle, content)
+}
+
+func makeLabeledField(title, hint string, field fyne.CanvasObject) fyne.CanvasObject {
+	hintLabel := widget.NewLabel(hint)
+	hintLabel.Wrapping = fyne.TextWrapWord
+	return container.NewVBox(
+		widget.NewLabelWithStyle(title, fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		field,
+		hintLabel,
+	)
+}
+
+func makeCheckCard(check *widget.Check, subtitle string) fyne.CanvasObject {
+	hintLabel := widget.NewLabel(subtitle)
+	hintLabel.Wrapping = fyne.TextWrapWord
+	return widget.NewCard("", "", container.NewVBox(check, hintLabel))
+}
+
+func makeMetricCard(title string, value *widget.Label) fyne.CanvasObject {
+	return widget.NewCard(title, "", value)
 }
 
 func pathInputRow(window fyne.Window, entry *widget.Entry, title string, mustExist bool) fyne.CanvasObject {
@@ -905,6 +1215,23 @@ func openPathInFileManager(path string) {
 		cmd = exec.Command("open", path)
 	case "linux":
 		cmd = exec.Command("xdg-open", path)
+	default:
+		return
+	}
+	_ = cmd.Start()
+}
+
+func openURLInBrowser(url string) {
+	if strings.TrimSpace(url) == "" {
+		return
+	}
+
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", url)
+	case "linux":
+		cmd = exec.Command("xdg-open", url)
 	default:
 		return
 	}

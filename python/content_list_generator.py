@@ -70,48 +70,66 @@ def save_theme_mode(mode: str) -> None:
 def palette_for_mode(mode: str) -> dict[str, str]:
     if mode == "dark":
         return {
-            "app_bg": "#10171f",
-            "hero_bg": "#0c1621",
-            "card_bg": "#18222d",
-            "card_alt_bg": "#101a24",
+            "app_bg": "#0c131b",
+            "sidebar_bg": "#101923",
+            "hero_bg": "#0c1722",
+            "hero_card_bg": "#122130",
+            "card_bg": "#13202b",
+            "card_alt_bg": "#182633",
             "title_fg": "#edf4fb",
             "hero_fg": "#f5f9fd",
-            "hero_muted": "#b9cada",
-            "body_fg": "#e3edf5",
-            "hint_fg": "#9fb2c3",
-            "entry_bg": "#101821",
+            "hero_muted": "#bfd0df",
+            "body_fg": "#ebf1f7",
+            "hint_fg": "#9caebf",
+            "entry_bg": "#0f1822",
             "entry_fg": "#edf4fb",
-            "border": "#2b3947",
-            "progress_trough": "#273644",
-            "progress_fill": "#5aa2ff",
-            "primary_bg": "#2f7ff1",
+            "border": "#263749",
+            "progress_trough": "#243443",
+            "progress_fill": "#5e9fff",
+            "primary_bg": "#4d8ef8",
+            "primary_hover": "#69a2ff",
             "primary_fg": "#f8fbff",
-            "secondary_bg": "#233242",
+            "secondary_bg": "#1b2a38",
+            "secondary_hover": "#213447",
             "secondary_fg": "#edf4fb",
-            "selection_bg": "#2a4a68",
+            "selection_bg": "#204a73",
             "selection_fg": "#f8fbff",
+            "sidebar_active_bg": "#173455",
+            "sidebar_active_fg": "#f6fbff",
+            "sidebar_idle_fg": "#b4c4d3",
+            "chip_bg": "#0f1822",
+            "success_fg": "#9fd2a2",
         }
     return {
-        "app_bg": "#eef3f7",
-        "hero_bg": "#14324a",
+        "app_bg": "#ebf1f5",
+        "sidebar_bg": "#f2f4f6",
+        "hero_bg": "#13324a",
+        "hero_card_bg": "#f7fafc",
         "card_bg": "#ffffff",
-        "card_alt_bg": "#f7fafc",
-        "title_fg": "#12324a",
+        "card_alt_bg": "#f3f6f9",
+        "title_fg": "#14324a",
         "hero_fg": "#ffffff",
-        "hero_muted": "#d7e5f2",
-        "body_fg": "#243746",
-        "hint_fg": "#5b6b79",
+        "hero_muted": "#dce8f3",
+        "body_fg": "#243849",
+        "hint_fg": "#556778",
         "entry_bg": "#ffffff",
         "entry_fg": "#243746",
-        "border": "#d8e1e8",
-        "progress_trough": "#dde6ee",
-        "progress_fill": "#2b7fff",
-        "primary_bg": "#2b7fff",
+        "border": "#cad6e0",
+        "progress_trough": "#d7e1ea",
+        "progress_fill": "#005bc1",
+        "primary_bg": "#005bc1",
+        "primary_hover": "#0070eb",
         "primary_fg": "#ffffff",
-        "secondary_bg": "#ffffff",
-        "secondary_fg": "#243746",
-        "selection_bg": "#d8e8ff",
+        "secondary_bg": "#eef3f7",
+        "secondary_hover": "#e1e8ef",
+        "secondary_fg": "#32485a",
+        "selection_bg": "#d7e7ff",
         "selection_fg": "#12324a",
+        "sidebar_active_bg": "#d6e6ff",
+        "sidebar_active_fg": "#0f4c98",
+        "sidebar_idle_fg": "#526276",
+        "chip_bg": "#eef3f7",
+        "success_fg": "#2d7c48",
     }
 
 
@@ -542,84 +560,158 @@ def run_cli_email_copy(args: argparse.Namespace) -> int:
     return 0
 
 
-class EmailCopyWindow:
-    def __init__(self, parent: "ContentListApp") -> None:
+class EmailCopyPage:
+    def __init__(self, parent: "ContentListApp", host) -> None:
         self.parent = parent
-        self.window = ctk.CTkToplevel(parent.root)
-        self.window.title("Copy Email Files")
-        self.window.geometry("950x520")
-        self.window.minsize(860, 440)
-        self.window.configure(fg_color=themed_color("app_bg"))
-        self.window.transient(parent.root)
-        self.window.grab_set()
+        self.page = parent.build_scrollable_root(host)
+        self.page.pack_forget()
 
         self.message_queue: queue.Queue[tuple[str, object]] = queue.Queue()
         self.running = False
+        self.latest_manifest = ""
 
         self.source_var = tk.StringVar(value=parent.source_var.get() or os.getcwd())
         self.dest_var = tk.StringVar(value=parent.output_dir_var.get() or os.getcwd())
         self.status_var = tk.StringVar(value="Choose a folder to search, then choose where the copied email files should go.")
+        self.detail_var = tk.StringVar(value="The app will first look for supported email file types, then copy the matches and save a report.")
+        self.phase_var = tk.StringVar(value="Idle")
+        self.percent_var = tk.StringVar(value="0%")
+        self.scanned_var = tk.StringVar(value="0")
+        self.matched_var = tk.StringVar(value="0")
+        self.copied_var = tk.StringVar(value="0")
         self.start_button: ctk.CTkButton | None = None
         self.reset_button: ctk.CTkButton | None = None
         self.source_entry: ctk.CTkEntry | None = None
         self.dest_entry: ctk.CTkEntry | None = None
         self.progress: ctk.CTkProgressBar | None = None
+        self.summary_box: ctk.CTkTextbox | None = None
+        self.manifest_button: ctk.CTkButton | None = None
 
         self.build_ui()
-        self.window.after(50, self.focus_source_entry)
-        self.window.after(100, self.pump_queue)
+        self.page.after(100, self.pump_queue)
 
     def build_ui(self) -> None:
-        outer = self.parent.build_scrollable_root(self.window)
+        outer = self.page
         outer.grid_columnconfigure(0, weight=1)
+        outer.grid_columnconfigure(1, weight=1)
 
+        hero = ctk.CTkFrame(outer, fg_color=themed_color("hero_card_bg"), corner_radius=22)
+        hero.grid(row=0, column=0, columnspan=2, sticky="ew", padx=28, pady=(28, 0))
+        hero.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(
-            outer,
+            hero,
             text="Copy Email Files",
             font=ctk.CTkFont(size=30, weight="bold"),
             text_color=themed_color("title_fg"),
-        ).grid(row=0, column=0, sticky="w")
+        ).grid(row=0, column=0, sticky="w", padx=28, pady=(24, 0))
         ctk.CTkLabel(
-            outer,
+            hero,
             text="Choose a folder to search, choose where the copied files should go, and the app will save a report of everything that was copied.",
             text_color=themed_color("hint_fg"),
-            font=ctk.CTkFont(size=13),
-            wraplength=820,
+            font=ctk.CTkFont(size=14),
+            wraplength=760,
             justify="left",
-        ).grid(row=1, column=0, sticky="w", pady=(6, 18))
+        ).grid(row=1, column=0, sticky="w", padx=28, pady=(8, 24))
 
-        card = ctk.CTkFrame(outer, fg_color=themed_color("card_bg"), corner_radius=18)
-        card.grid(row=2, column=0, sticky="nsew")
-        card.grid_columnconfigure(1, weight=1)
-        outer.grid_rowconfigure(2, weight=1)
+        hero_status = ctk.CTkFrame(hero, fg_color=themed_color("card_bg"), corner_radius=18)
+        hero_status.grid(row=0, column=1, rowspan=2, sticky="ne", padx=24, pady=24)
+        ctk.CTkLabel(hero_status, textvariable=self.phase_var, font=ctk.CTkFont(size=12, weight="bold"), text_color=themed_color("hint_fg")).pack(anchor="e", padx=18, pady=(14, 0))
+        ctk.CTkLabel(hero_status, textvariable=self.percent_var, font=ctk.CTkFont(size=28, weight="bold"), text_color=themed_color("body_fg")).pack(anchor="e", padx=18, pady=(4, 14))
 
-        self.source_entry = self.parent.add_path_row(card, 0, "Folder to search", self.source_var, self.choose_source)
-        self.dest_entry = self.parent.add_path_row(card, 1, "Copy files into", self.dest_var, self.choose_dest)
+        input_card = ctk.CTkFrame(outer, fg_color=themed_color("card_bg"), corner_radius=22)
+        input_card.grid(row=1, column=0, sticky="nsew", padx=(28, 10), pady=(18, 0))
+        input_card.grid_columnconfigure(0, weight=1)
 
+        ctk.CTkLabel(input_card, text="Folders", font=ctk.CTkFont(size=20, weight="bold"), text_color=themed_color("body_fg")).grid(row=0, column=0, sticky="w", padx=24, pady=(22, 4))
         ctk.CTkLabel(
-            card,
-            text="Supported email file types: " + ", ".join(sorted(EMAIL_EXTENSIONS)),
-            text_color=themed_color("body_fg"),
+            input_card,
+            text="The copied files keep the same folder structure they had in the folder you search.",
             font=ctk.CTkFont(size=13),
-            wraplength=820,
+            text_color=themed_color("hint_fg"),
+            wraplength=660,
             justify="left",
-        ).grid(row=2, column=0, columnspan=3, sticky="w", pady=(12, 14))
+        ).grid(row=1, column=0, sticky="w", padx=24, pady=(0, 16))
 
-        actions = ctk.CTkFrame(card, fg_color="transparent")
-        actions.grid(row=3, column=0, columnspan=3, sticky="w")
-        self.start_button = self.parent.make_primary_button(actions, "Start Copy", self.start_copy)
+        source_card = self.parent.make_field_card(input_card, "Folder to search", self.source_var, self.choose_source)
+        source_card.grid(row=2, column=0, padx=24, pady=(0, 14), sticky="ew")
+        self.source_entry = source_card.entry
+        dest_card = self.parent.make_field_card(input_card, "Copy files into", self.dest_var, self.choose_dest)
+        dest_card.grid(row=3, column=0, padx=24, pady=(0, 18), sticky="ew")
+        self.dest_entry = dest_card.entry
+
+        actions = ctk.CTkFrame(input_card, fg_color="transparent")
+        actions.grid(row=4, column=0, sticky="ew", padx=24, pady=(0, 22))
+        self.start_button = self.parent.make_primary_button(actions, "Copy Email Files", self.start_copy)
         self.start_button.pack(side="left")
         self.parent.make_secondary_button(actions, "Use Main Output Folder", self.use_main_output).pack(side="left", padx=(10, 0))
         self.reset_button = self.parent.make_secondary_button(actions, "Reset", self.reset_fields)
         self.reset_button.pack(side="left", padx=(10, 0))
-        self.parent.make_secondary_button(actions, "Cancel", self.window.destroy).pack(side="left", padx=(10, 0))
+        self.parent.make_secondary_button(actions, "Back to Content List", lambda: self.parent.show_page("content")).pack(side="left", padx=(10, 0))
 
-        self.progress = ctk.CTkProgressBar(card, progress_color=themed_color("progress_fill"))
-        self.progress.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(14, 8))
+        side_card = ctk.CTkFrame(outer, fg_color=themed_color("card_bg"), corner_radius=22)
+        side_card.grid(row=1, column=1, sticky="nsew", padx=(10, 28), pady=(18, 0))
+        side_card.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(side_card, text="Supported email file types", font=ctk.CTkFont(size=20, weight="bold"), text_color=themed_color("body_fg")).grid(row=0, column=0, sticky="w", padx=24, pady=(22, 6))
+        chip_box = ctk.CTkFrame(side_card, fg_color=themed_color("chip_bg"), corner_radius=18)
+        chip_box.grid(row=1, column=0, sticky="ew", padx=24)
+        chip_text = "\n".join(sorted(EMAIL_EXTENSIONS))
+        ctk.CTkLabel(
+            chip_box,
+            text=chip_text,
+            font=ctk.CTkFont(size=13, family="Menlo"),
+            text_color=themed_color("body_fg"),
+            justify="left",
+        ).pack(anchor="w", padx=18, pady=16)
+        ctk.CTkLabel(
+            side_card,
+            text="The app checks folders for these file types first, then copies the matches and writes a report.",
+            text_color=themed_color("hint_fg"),
+            font=ctk.CTkFont(size=12),
+            wraplength=260,
+            justify="left",
+        ).grid(row=2, column=0, sticky="w", padx=24, pady=(14, 18))
+
+        stats = ctk.CTkFrame(side_card, fg_color="transparent")
+        stats.grid(row=3, column=0, sticky="ew", padx=24, pady=(0, 22))
+        stats.grid_columnconfigure((0, 1, 2), weight=1)
+        self.parent.make_metric_card(stats, "Files Checked", self.scanned_var).grid(row=0, column=0, sticky="ew", padx=(0, 8))
+        self.parent.make_metric_card(stats, "Matches Found", self.matched_var, accent=True).grid(row=0, column=1, sticky="ew", padx=4)
+        self.parent.make_metric_card(stats, "Files Copied", self.copied_var, accent=True).grid(row=0, column=2, sticky="ew", padx=(8, 0))
+
+        progress_card = ctk.CTkFrame(outer, fg_color=themed_color("card_bg"), corner_radius=22)
+        progress_card.grid(row=2, column=0, columnspan=2, sticky="ew", padx=28, pady=(18, 0))
+        progress_card.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(progress_card, text="Progress", font=ctk.CTkFont(size=18, weight="bold"), text_color=themed_color("body_fg")).grid(row=0, column=0, sticky="w", padx=24, pady=(20, 8))
+        self.progress = ctk.CTkProgressBar(progress_card, progress_color=themed_color("progress_fill"), mode="determinate")
+        self.progress.grid(row=1, column=0, sticky="ew", padx=24)
         self.progress.set(0)
-        ctk.CTkLabel(card, textvariable=self.status_var, text_color=themed_color("body_fg"), wraplength=620, justify="left").grid(
-            row=5, column=0, columnspan=3, sticky="w", pady=(4, 0)
+        ctk.CTkLabel(progress_card, textvariable=self.status_var, text_color=themed_color("body_fg"), wraplength=980, justify="left").grid(row=2, column=0, sticky="w", padx=24, pady=(12, 0))
+        ctk.CTkLabel(progress_card, textvariable=self.detail_var, text_color=themed_color("hint_fg"), wraplength=980, justify="left").grid(row=3, column=0, sticky="w", padx=24, pady=(6, 18))
+
+        summary_card = ctk.CTkFrame(outer, fg_color=themed_color("card_bg"), corner_radius=22)
+        summary_card.grid(row=3, column=0, columnspan=2, sticky="nsew", padx=28, pady=(18, 28))
+        summary_card.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(summary_card, text="Copy Summary", font=ctk.CTkFont(size=18, weight="bold"), text_color=themed_color("body_fg")).grid(row=0, column=0, sticky="w", padx=24, pady=(20, 8))
+        self.summary_box = ctk.CTkTextbox(
+            summary_card,
+            height=180,
+            wrap="word",
+            fg_color=themed_color("card_alt_bg"),
+            text_color=themed_color("body_fg"),
+            border_width=0,
+            font=("Menlo", 11),
         )
+        self.summary_box.grid(row=1, column=0, sticky="nsew", padx=24, pady=(0, 18))
+        self.summary_box.insert("1.0", "Your copy summary will appear here after the job is finished.")
+        self.summary_box.configure(state="disabled")
+
+        footer_actions = ctk.CTkFrame(summary_card, fg_color="transparent")
+        footer_actions.grid(row=2, column=0, sticky="e", padx=24, pady=(0, 20))
+        self.manifest_button = self.parent.make_secondary_button(footer_actions, "Open Manifest", self.open_manifest)
+        self.manifest_button.pack(side="left")
+        self.manifest_button.configure(state="disabled")
+        self.parent.make_secondary_button(footer_actions, "Open Destination", self.open_destination).pack(side="left", padx=(10, 0))
 
     def focus_source_entry(self) -> None:
         if self.source_entry is not None and self.source_entry.winfo_exists():
@@ -627,7 +719,7 @@ class EmailCopyWindow:
             self.source_entry.icursor("end")
 
     def choose_source(self) -> None:
-        chosen = choose_directory(self.window, "Choose Source Folder", self.source_var.get(), True, self.parent.colors)
+        chosen = choose_directory(self.parent.root, "Choose Source Folder", self.source_var.get(), True, self.parent.colors)
         if chosen:
             self.source_var.set(chosen)
             self.status_var.set("Folder selected. Now choose where the copied files should go.")
@@ -636,7 +728,7 @@ class EmailCopyWindow:
                 self.dest_entry.icursor("end")
 
     def choose_dest(self) -> None:
-        chosen = choose_directory(self.window, "Choose Destination Folder", self.dest_var.get(), False, self.parent.colors)
+        chosen = choose_directory(self.parent.root, "Choose Destination Folder", self.dest_var.get(), False, self.parent.colors)
         if chosen:
             self.dest_var.set(chosen)
             self.status_var.set("Destination selected. Click Start Copy when you're ready.")
@@ -645,8 +737,19 @@ class EmailCopyWindow:
         self.source_var.set(self.parent.source_var.get() or os.getcwd())
         self.dest_var.set(self.parent.output_dir_var.get() or os.getcwd())
         self.status_var.set("Choose a folder to search, then choose where the copied email files should go.")
+        self.detail_var.set("The app will first look for supported email file types, then copy the matches and save a report.")
+        self.phase_var.set("Idle")
+        self.percent_var.set("0%")
+        self.scanned_var.set("0")
+        self.matched_var.set("0")
+        self.copied_var.set("0")
+        self.latest_manifest = ""
         if self.progress is not None:
+            self.set_progress_mode("determinate")
             self.progress.set(0)
+        if self.manifest_button is not None:
+            self.manifest_button.configure(state="disabled")
+        self.set_summary("Your copy summary will appear here after the job is finished.")
         self.focus_source_entry()
 
     def use_main_output(self) -> None:
@@ -665,12 +768,23 @@ class EmailCopyWindow:
 
         self.running = True
         if self.progress is not None:
+            self.set_progress_mode("indeterminate")
             self.progress.set(0)
+            self.progress.start()
+        self.phase_var.set("Scanning")
+        self.percent_var.set("Scanning")
         self.status_var.set("Looking for supported email files...")
+        self.detail_var.set("Checking folders for supported email file types before the copy begins.")
+        self.scanned_var.set("0")
+        self.matched_var.set("0")
+        self.copied_var.set("0")
+        self.set_summary("Preparing the copy job...")
         if self.start_button is not None:
             self.start_button.configure(state="disabled")
         if self.reset_button is not None:
             self.reset_button.configure(state="disabled")
+        if self.manifest_button is not None:
+            self.manifest_button.configure(state="disabled")
         thread = threading.Thread(target=self.run_copy_thread, args=(source, dest), daemon=True)
         thread.start()
 
@@ -695,11 +809,33 @@ class EmailCopyWindow:
                     if self.reset_button is not None:
                         self.reset_button.configure(state="normal")
                     result: EmailCopyResult = payload
+                    self.latest_manifest = str(result.manifest_path)
+                    self.phase_var.set("Complete")
+                    self.percent_var.set("100%")
                     self.parent.status_var.set(
                         f"Done. Copied {result.copied} email files to {result.dest_dir}."
                     )
                     if self.progress is not None:
+                        self.progress.stop()
+                        self.set_progress_mode("determinate")
                         self.progress.set(1)
+                    if self.manifest_button is not None:
+                        self.manifest_button.configure(state="normal")
+                    self.set_summary(
+                        "\n".join(
+                            [
+                                "Copy Email Files Complete",
+                                f"Searched folder: {result.source_dir}",
+                                f"Copied files to: {result.dest_dir}",
+                                f"Report saved to: {result.manifest_path}",
+                                f"Email files copied: {result.copied}",
+                                f"Finished in: {result.elapsed:.2f}s",
+                                "",
+                                "Supported email file types:",
+                                ", ".join(sorted(EMAIL_EXTENSIONS)),
+                            ]
+                        )
+                    )
                     self.parent.append_summary(
                         "\n".join(
                             [
@@ -712,48 +848,88 @@ class EmailCopyWindow:
                             ]
                         )
                     )
+                    self.detail_var.set("The report was saved and the original folder structure was preserved.")
                     messagebox.showinfo(
                         "Done",
                         f"Copied {result.copied} files.\n\nDestination: {result.dest_dir}\nManifest: {result.manifest_path}",
                     )
-                    self.window.destroy()
-                    return
                 if kind == "progress":
                     progress: EmailCopyProgress = payload
+                    self.scanned_var.set(str(progress.scanned))
+                    self.matched_var.set(str(progress.matched))
                     if progress.phase == "scanning":
-                        if self.progress is not None:
-                            self.progress.set(0 if progress.scanned <= 0 else 0.08)
+                        self.phase_var.set("Scanning")
+                        self.percent_var.set("Scanning")
                         self.status_var.set(
                             f"Checking files... Looked at: {progress.scanned}  Matches found: {progress.matched}"
                         )
+                        if progress.current_name:
+                            self.detail_var.set(f"Checking: {progress.current_name}")
+                        else:
+                            self.detail_var.set("Checking folders for supported email file types.")
                     else:
+                        self.phase_var.set("Copying")
                         total = max(1, progress.total)
                         if self.progress is not None:
+                            self.progress.stop()
+                            self.set_progress_mode("determinate")
                             self.progress.set(progress.copied / total)
+                        self.percent_var.set(f"{int((progress.copied / total) * 100)}%")
+                        self.copied_var.set(str(progress.copied))
                         if progress.total == 0:
                             self.status_var.set(
                                 f"Finished checking {progress.scanned} files. No supported email files were found."
                             )
+                            self.detail_var.set("Nothing matched the supported email file types in this folder.")
                         elif progress.current_relative:
                             self.status_var.set(
                                 f"Copying files... {progress.copied} of {progress.total}: {progress.current_relative}"
+                            )
+                            self.detail_var.set(
+                                f"Found {progress.total} supported email files after checking {progress.scanned} files."
                             )
                         else:
                             self.status_var.set(
                                 f"Found {progress.total} supported email files after checking {progress.scanned} files."
                             )
+                            self.detail_var.set("Starting the copy now.")
                 if kind == "error":
                     self.running = False
                     if self.start_button is not None:
                         self.start_button.configure(state="normal")
                     if self.reset_button is not None:
                         self.reset_button.configure(state="normal")
+                    if self.progress is not None:
+                        self.progress.stop()
+                        self.set_progress_mode("determinate")
                     self.status_var.set("Something went wrong while copying the email files.")
+                    self.phase_var.set("Error")
+                    self.percent_var.set("0%")
                     messagebox.showerror("Copy failed", str(payload))
         except queue.Empty:
             pass
-        if self.window.winfo_exists():
-            self.window.after(100, self.pump_queue)
+        if self.page.winfo_exists():
+            self.page.after(100, self.pump_queue)
+
+    def set_progress_mode(self, mode: str) -> None:
+        if self.progress is None:
+            return
+        self.progress.configure(mode=mode)
+
+    def set_summary(self, text: str) -> None:
+        if self.summary_box is None:
+            return
+        self.summary_box.configure(state="normal")
+        self.summary_box.delete("1.0", "end")
+        self.summary_box.insert("end", text)
+        self.summary_box.configure(state="disabled")
+
+    def open_manifest(self) -> None:
+        if self.latest_manifest:
+            open_in_file_manager(Path(self.latest_manifest))
+
+    def open_destination(self) -> None:
+        open_in_file_manager(Path(self.dest_var.get() or os.getcwd()))
 
 
 class ContentListApp:
@@ -762,14 +938,15 @@ class ContentListApp:
         ctk.set_appearance_mode(load_theme_mode())
         self.root = ctk.CTk()
         self.root.title("Content List Generator")
-        self.root.geometry("1220x820")
-        self.root.minsize(1040, 720)
+        self.root.geometry("1360x860")
+        self.root.minsize(1160, 760)
         self.theme_mode_var = tk.StringVar(value=load_theme_mode())
         self.colors = palette_for_mode(self.theme_mode_var.get())
         self.root.configure(fg_color=themed_color("app_bg"))
 
         self.message_queue: queue.Queue[tuple[str, object]] = queue.Queue()
         self.running = False
+        self.active_page = "content"
 
         cwd = Path(os.getcwd())
         self.source_var = tk.StringVar(value=str(cwd))
@@ -782,6 +959,9 @@ class ContentListApp:
         self.xlsx_var = tk.BooleanVar(value=False)
         self.preserve_zeros_var = tk.BooleanVar(value=False)
         self.status_var = tk.StringVar(value="Choose a folder to scan, then click Generate Content List.")
+        self.scan_files_var = tk.StringVar(value="0")
+        self.scan_skipped_var = tk.StringVar(value="0")
+        self.scan_saved_var = tk.StringVar(value="Waiting")
         self.generate_button: ctk.CTkButton | None = None
         self.email_button: ctk.CTkButton | None = None
         self.about_button: ctk.CTkButton | None = None
@@ -794,6 +974,8 @@ class ContentListApp:
         self.summary: ctk.CTkTextbox | None = None
         self.progress: ctk.CTkProgressBar | None = None
         self.preserve_zeros_toggle: ctk.CTkCheckBox | None = None
+        self.page_frames: dict[str, ctk.CTkFrame] = {}
+        self.nav_buttons: dict[str, ctk.CTkButton] = {}
 
         self.configure_style()
         self.build_ui()
@@ -806,43 +988,13 @@ class ContentListApp:
         if "clam" in style.theme_names():
             style.theme_use("clam")
         style.configure("App.TFrame", background=colors["app_bg"])
-        style.configure("Hero.TFrame", background=colors["hero_bg"])
         style.configure("Card.TFrame", background=colors["card_bg"], relief="flat")
+        style.configure("Panel.TFrame", background=colors["card_alt_bg"], relief="flat")
         style.configure("Title.TLabel", background=colors["app_bg"], foreground=colors["title_fg"], font=("Segoe UI", 26, "bold"))
-        style.configure("HeroTitle.TLabel", background=colors["hero_bg"], foreground=colors["hero_fg"], font=("Segoe UI", 24, "bold"))
-        style.configure("HeroBody.TLabel", background=colors["hero_bg"], foreground=colors["hero_muted"], font=("Segoe UI", 11))
         style.configure("Body.TLabel", background=colors["card_bg"], foreground=colors["body_fg"], font=("Segoe UI", 11))
         style.configure("AppBody.TLabel", background=colors["app_bg"], foreground=colors["body_fg"], font=("Segoe UI", 11))
         style.configure("Hint.TLabel", background=colors["app_bg"], foreground=colors["hint_fg"], font=("Segoe UI", 10))
         style.configure("CardHint.TLabel", background=colors["card_bg"], foreground=colors["hint_fg"], font=("Segoe UI", 10))
-        style.configure("Card.TCheckbutton", background=colors["card_bg"], foreground=colors["body_fg"], font=("Segoe UI", 11))
-        style.map(
-            "Card.TCheckbutton",
-            background=[
-                ("active", colors["card_bg"]),
-                ("selected", colors["card_bg"]),
-                ("disabled", colors["card_bg"]),
-                ("!disabled", colors["card_bg"]),
-            ],
-            foreground=[
-                ("disabled", colors["hint_fg"]),
-                ("!disabled", colors["body_fg"]),
-            ],
-        )
-        style.configure("Hero.TCheckbutton", background=colors["hero_bg"], foreground=colors["hero_fg"], font=("Segoe UI", 10, "bold"))
-        style.map(
-            "Hero.TCheckbutton",
-            background=[
-                ("active", colors["hero_bg"]),
-                ("selected", colors["hero_bg"]),
-                ("disabled", colors["hero_bg"]),
-                ("!disabled", colors["hero_bg"]),
-            ],
-            foreground=[
-                ("disabled", colors["hero_muted"]),
-                ("!disabled", colors["hero_fg"]),
-            ],
-        )
         style.configure(
             "Primary.TButton",
             font=("Segoe UI", 11, "bold"),
@@ -855,7 +1007,7 @@ class ContentListApp:
         )
         style.map(
             "Primary.TButton",
-            background=[("active", colors["progress_fill"]), ("disabled", colors["border"])],
+            background=[("active", colors["primary_hover"]), ("disabled", colors["border"])],
             foreground=[("disabled", colors["hero_muted"])],
         )
         style.configure(
@@ -870,7 +1022,7 @@ class ContentListApp:
         )
         style.map(
             "Secondary.TButton",
-            background=[("active", colors["card_alt_bg"]), ("disabled", colors["border"])],
+            background=[("active", colors["secondary_hover"]), ("disabled", colors["border"])],
             foreground=[("disabled", colors["hint_fg"])],
         )
         style.configure(
@@ -895,80 +1047,156 @@ class ContentListApp:
         )
 
     def build_ui(self) -> None:
-        outer = self.build_scrollable_root(self.root)
-        outer.grid_columnconfigure(0, weight=1)
-        outer.grid_rowconfigure(1, weight=1)
+        shell = ctk.CTkFrame(self.root, fg_color=themed_color("app_bg"), corner_radius=0)
+        shell.pack(fill="both", expand=True)
 
-        hero = ctk.CTkFrame(outer, fg_color=themed_color("hero_bg"), corner_radius=18)
-        hero.grid(row=0, column=0, sticky="ew")
-        hero.grid_columnconfigure(0, weight=1)
-        hero_copy = ctk.CTkFrame(hero, fg_color="transparent")
-        hero_copy.grid(row=0, column=0, sticky="ew")
+        sidebar = ctk.CTkFrame(shell, width=292, fg_color=themed_color("sidebar_bg"), corner_radius=0)
+        sidebar.pack(side="left", fill="y")
+        sidebar.pack_propagate(False)
+
+        content_shell = ctk.CTkFrame(shell, fg_color=themed_color("app_bg"), corner_radius=0)
+        content_shell.pack(side="left", fill="both", expand=True)
+
+        self.build_sidebar(sidebar)
+        self.page_frames["content"] = self.build_content_page(content_shell)
+        self.page_frames["email"] = self.build_email_page(content_shell)
+        self.page_frames["about"] = self.build_about_page(content_shell)
+        self.show_page("content")
+        self.sync_xlsx_state()
+        self.sync_action_buttons()
+
+    def build_scrollable_root(self, parent) -> ctk.CTkScrollableFrame:
+        shell = ctk.CTkScrollableFrame(parent, fg_color=themed_color("app_bg"), corner_radius=0)
+        shell.pack(fill="both", expand=True, padx=0, pady=0)
+        self.enable_scrollwheel(shell)
+        return shell
+
+    def enable_scrollwheel(self, scrollable: ctk.CTkScrollableFrame) -> None:
+        try:
+            scrollable._parent_canvas.bind_all("<MouseWheel>", scrollable._mouse_wheel_all, add="+")
+            scrollable._parent_canvas.bind_all("<Shift-MouseWheel>", scrollable._mouse_wheel_all, add="+")
+            scrollable._parent_canvas.bind_all("<Button-4>", scrollable._mouse_wheel_all, add="+")
+            scrollable._parent_canvas.bind_all("<Button-5>", scrollable._mouse_wheel_all, add="+")
+        except Exception:
+            return
+
+    def build_sidebar(self, parent) -> None:
+        brand = ctk.CTkFrame(parent, fg_color="transparent")
+        brand.pack(fill="x", padx=18, pady=(24, 20))
         ctk.CTkLabel(
-            hero_copy,
+            brand,
             text="Content List Generator",
-            font=ctk.CTkFont(size=34, weight="bold"),
-            text_color=themed_color("hero_fg"),
-        ).pack(anchor="w", padx=22, pady=(22, 0))
-        ctk.CTkLabel(
-            hero_copy,
-            text=(
-                "Create a simple file list from a folder, save an Excel copy if you want one, "
-                "or copy supported email files into a new folder with a saved report."
-            ),
-            font=ctk.CTkFont(size=14),
-            text_color=themed_color("hero_muted"),
-            wraplength=820,
+            font=ctk.CTkFont(size=20, weight="bold"),
+            text_color=themed_color("title_fg"),
+            wraplength=230,
             justify="left",
-        ).pack(anchor="w", padx=22, pady=(8, 22))
-        appearance = ctk.CTkFrame(hero, fg_color="transparent")
-        appearance.grid(row=0, column=1, sticky="ne")
-        ctk.CTkLabel(appearance, text="Appearance", font=ctk.CTkFont(size=12), text_color=themed_color("hero_muted")).pack(anchor="e", padx=22, pady=(22, 0))
+        ).pack(anchor="w")
+        ctk.CTkLabel(
+            brand,
+            text="Create file lists, copy email files, and keep a simple record of what was saved.",
+            font=ctk.CTkFont(size=13),
+            text_color=themed_color("hint_fg"),
+            wraplength=220,
+            justify="left",
+        ).pack(anchor="w", pady=(10, 0))
+
+        nav = ctk.CTkFrame(parent, fg_color="transparent")
+        nav.pack(fill="x", padx=16, pady=(4, 0))
+        self.nav_buttons["content"] = self.make_nav_button(nav, "Content List", lambda: self.show_page("content"))
+        self.nav_buttons["content"].pack(fill="x", pady=4)
+        self.nav_buttons["email"] = self.make_nav_button(nav, "Copy Email Files", lambda: self.show_page("email"))
+        self.nav_buttons["email"].pack(fill="x", pady=4)
+        self.nav_buttons["about"] = self.make_nav_button(nav, "About", lambda: self.show_page("about"))
+        self.nav_buttons["about"].pack(fill="x", pady=4)
+
+        footer = ctk.CTkFrame(parent, fg_color=themed_color("card_bg"), corner_radius=18)
+        footer.pack(side="bottom", fill="x", padx=16, pady=20)
+        ctk.CTkLabel(
+            footer,
+            text="Appearance",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=themed_color("hint_fg"),
+        ).pack(anchor="w", padx=16, pady=(16, 6))
         ctk.CTkSwitch(
-            appearance,
+            footer,
             text="Dark mode",
             variable=self.theme_mode_var,
             onvalue="dark",
             offvalue="light",
             command=self.toggle_theme,
-            text_color=themed_color("hero_fg"),
-            progress_color=themed_color("progress_fill"),
-        ).pack(anchor="e", padx=22, pady=(8, 22))
-
-        main_card = ctk.CTkFrame(outer, fg_color=themed_color("card_bg"), corner_radius=18)
-        main_card.grid(row=1, column=0, sticky="nsew", pady=(18, 0))
-        main_card.grid_columnconfigure(1, weight=1)
-        main_card.grid_rowconfigure(11, weight=1)
-
-        ctk.CTkLabel(main_card, text="Create a Content List", font=ctk.CTkFont(size=24, weight="bold"), text_color=themed_color("body_fg")).grid(row=0, column=0, sticky="w", padx=22, pady=(22, 0))
-        ctk.CTkLabel(
-            main_card,
-            text="Choose a folder, choose where to save the results, and click Generate Content List.",
-            font=ctk.CTkFont(size=13),
-            text_color=themed_color("hint_fg"),
-        ).grid(row=1, column=0, columnspan=3, sticky="w", padx=22, pady=(4, 14))
-
-        self.source_entry = self.add_path_row(main_card, 2, "Folder to scan", self.source_var, self.choose_source)
-        self.output_entry = self.add_path_row(main_card, 3, "Save results to", self.output_dir_var, self.choose_output)
-        self.file_entry = self.add_entry_row(main_card, 4, "Name for the saved list", self.output_name_var)
-        self.exclude_entry = self.add_entry_row(main_card, 5, "Skip file types (optional)", self.exclude_var, "Example: tmp,log,bak")
-
-        options = ctk.CTkFrame(main_card, fg_color="transparent")
-        options.grid(row=6, column=0, columnspan=3, sticky="ew", padx=22, pady=(14, 6))
-        ctk.CTkCheckBox(options, text="Add SHA-256 hashes (advanced)", variable=self.hash_var, text_color=themed_color("body_fg")).pack(anchor="w")
-        ctk.CTkCheckBox(options, text="Skip hidden files", variable=self.hidden_var, text_color=themed_color("body_fg")).pack(anchor="w", pady=(4, 0))
-        ctk.CTkCheckBox(options, text="Skip common system files", variable=self.system_var, text_color=themed_color("body_fg")).pack(anchor="w", pady=(4, 0))
-        ctk.CTkCheckBox(options, text="Also save an Excel copy", variable=self.xlsx_var, command=self.sync_xlsx_state, text_color=themed_color("body_fg")).pack(anchor="w", pady=(4, 0))
-        self.preserve_zeros_toggle = ctk.CTkCheckBox(
-            options,
-            text="Keep leading zeros in Excel",
-            variable=self.preserve_zeros_var,
             text_color=themed_color("body_fg"),
-        )
-        self.preserve_zeros_toggle.pack(anchor="w", pady=(4, 0))
+            progress_color=themed_color("progress_fill"),
+        ).pack(anchor="w", padx=16, pady=(0, 12))
+        ctk.CTkLabel(
+            footer,
+            text="The same tools are available in light and dark mode.",
+            font=ctk.CTkFont(size=12),
+            text_color=themed_color("hint_fg"),
+            wraplength=196,
+            justify="left",
+        ).pack(anchor="w", padx=16, pady=(0, 16))
 
-        actions = ctk.CTkFrame(main_card, fg_color="transparent")
-        actions.grid(row=7, column=0, columnspan=3, sticky="ew", padx=22, pady=(16, 10))
+    def build_content_page(self, parent) -> ctk.CTkScrollableFrame:
+        page = self.build_scrollable_root(parent)
+        page.pack_forget()
+        page.grid_columnconfigure(0, weight=1)
+        page.grid_columnconfigure(1, weight=1)
+
+        hero = ctk.CTkFrame(page, fg_color=themed_color("hero_bg"), corner_radius=24)
+        hero.grid(row=0, column=0, columnspan=2, sticky="ew", padx=28, pady=(28, 0))
+        hero.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(
+            hero,
+            text="Content List Generator",
+            font=ctk.CTkFont(size=36, weight="bold"),
+            text_color=themed_color("hero_fg"),
+        ).grid(row=0, column=0, sticky="w", padx=28, pady=(24, 0))
+        ctk.CTkLabel(
+            hero,
+            text=(
+                "Create a simple file list from a folder, save an Excel copy if you want one, "
+                "or launch the email-copy flow when you need to gather supported email files."
+            ),
+            font=ctk.CTkFont(size=14),
+            text_color=themed_color("hero_muted"),
+            wraplength=780,
+            justify="left",
+        ).grid(row=1, column=0, sticky="w", padx=28, pady=(10, 24))
+
+        source_card = self.make_field_card(page, "Folder to scan", self.source_var, self.choose_source, hint="Choose the folder you want the app to scan.")
+        source_card.grid(row=1, column=0, sticky="nsew", padx=(28, 10), pady=(22, 0))
+        self.source_entry = source_card.entry
+        output_card = self.make_field_card(page, "Save results to", self.output_dir_var, self.choose_output, hint="Choose where the CSV file should be saved.")
+        output_card.grid(row=1, column=1, sticky="nsew", padx=(10, 28), pady=(22, 0))
+        self.output_entry = output_card.entry
+
+        naming_card = ctk.CTkFrame(page, fg_color=themed_color("card_bg"), corner_radius=22)
+        naming_card.grid(row=2, column=0, columnspan=2, sticky="ew", padx=28, pady=(18, 0))
+        naming_card.grid_columnconfigure((0, 1), weight=1)
+        ctk.CTkLabel(naming_card, text="Output details", font=ctk.CTkFont(size=20, weight="bold"), text_color=themed_color("body_fg")).grid(row=0, column=0, columnspan=2, sticky="w", padx=24, pady=(20, 12))
+        file_card = self.make_text_field_card(naming_card, "Name for the saved list", self.output_name_var, hint="The file name should end in .csv.")
+        file_card.grid(row=1, column=0, sticky="ew", padx=(24, 10), pady=(0, 20))
+        self.file_entry = file_card.entry
+        exclude_card = self.make_text_field_card(naming_card, "Skip file types (optional)", self.exclude_var, hint="Example: tmp,log,bak")
+        exclude_card.grid(row=1, column=1, sticky="ew", padx=(10, 24), pady=(0, 20))
+        self.exclude_entry = exclude_card.entry
+
+        options_wrap = ctk.CTkFrame(page, fg_color="transparent")
+        options_wrap.grid(row=3, column=0, columnspan=2, sticky="ew", padx=28, pady=(18, 0))
+        options_wrap.grid_columnconfigure((0, 1), weight=1)
+        ctk.CTkLabel(options_wrap, text="Options", font=ctk.CTkFont(size=20, weight="bold"), text_color=themed_color("body_fg")).grid(row=0, column=0, sticky="w", pady=(0, 10))
+        ctk.CTkLabel(options_wrap, text="Choose any extras you want before you generate the file list.", font=ctk.CTkFont(size=13), text_color=themed_color("hint_fg")).grid(row=1, column=0, columnspan=2, sticky="w", pady=(0, 14))
+
+        self.make_option_tile(options_wrap, "Add SHA-256 hashes (advanced)", self.hash_var).grid(row=2, column=0, sticky="ew", padx=(0, 10), pady=(0, 10))
+        self.make_option_tile(options_wrap, "Skip hidden files", self.hidden_var).grid(row=2, column=1, sticky="ew", padx=(10, 0), pady=(0, 10))
+        self.make_option_tile(options_wrap, "Skip common system files", self.system_var).grid(row=3, column=0, sticky="ew", padx=(0, 10), pady=(0, 10))
+        self.make_option_tile(options_wrap, "Also save an Excel copy", self.xlsx_var, command=self.sync_xlsx_state).grid(row=3, column=1, sticky="ew", padx=(10, 0), pady=(0, 10))
+        preserve_tile = self.make_option_tile(options_wrap, "Keep leading zeros in Excel", self.preserve_zeros_var)
+        preserve_tile.grid(row=4, column=0, sticky="ew", padx=(0, 10), pady=(0, 10))
+        self.preserve_zeros_toggle = preserve_tile.checkbox
+
+        actions = ctk.CTkFrame(page, fg_color="transparent")
+        actions.grid(row=4, column=0, columnspan=2, sticky="ew", padx=28, pady=(18, 0))
         self.generate_button = self.make_primary_button(actions, "Generate Content List", self.start_scan)
         self.generate_button.pack(side="left")
         self.email_button = self.make_secondary_button(actions, "Copy Email Files", self.open_email_copy_window)
@@ -976,34 +1204,84 @@ class ContentListApp:
         self.make_secondary_button(actions, "Use Source As Output", self.copy_source_to_output).pack(side="left", padx=(10, 0))
         self.reset_button = self.make_secondary_button(actions, "Reset", self.reset_fields)
         self.reset_button.pack(side="left", padx=(10, 0))
-        self.about_button = self.make_secondary_button(actions, "About", self.show_about_dialog)
-        self.about_button.pack(side="left", padx=(10, 0))
         self.open_folder_button = self.make_secondary_button(actions, "Open Output Folder", self.open_output_folder)
         self.open_folder_button.pack(side="left", padx=(10, 0))
 
-        self.progress = ctk.CTkProgressBar(main_card, progress_color=themed_color("progress_fill"))
-        self.progress.grid(row=8, column=0, columnspan=3, sticky="ew", padx=22, pady=(0, 8))
-        self.progress.set(0)
-        ctk.CTkLabel(main_card, textvariable=self.status_var, text_color=themed_color("body_fg"), wraplength=900, justify="left").grid(row=9, column=0, columnspan=3, sticky="w", padx=22)
+        progress_card = ctk.CTkFrame(page, fg_color=themed_color("card_bg"), corner_radius=22)
+        progress_card.grid(row=5, column=0, columnspan=2, sticky="ew", padx=28, pady=(18, 0))
+        progress_card.grid_columnconfigure((0, 1, 2), weight=1)
+        ctk.CTkLabel(progress_card, text="Progress", font=ctk.CTkFont(size=20, weight="bold"), text_color=themed_color("body_fg")).grid(row=0, column=0, sticky="w", padx=24, pady=(20, 10))
+        metric_row = ctk.CTkFrame(progress_card, fg_color="transparent")
+        metric_row.grid(row=1, column=0, columnspan=3, sticky="ew", padx=24, pady=(0, 14))
+        metric_row.grid_columnconfigure((0, 1, 2), weight=1)
+        self.make_metric_card(metric_row, "Files Included", self.scan_files_var, accent=True).grid(row=0, column=0, sticky="ew", padx=(0, 8))
+        self.make_metric_card(metric_row, "Items Skipped", self.scan_skipped_var).grid(row=0, column=1, sticky="ew", padx=4)
+        self.make_metric_card(metric_row, "Saved Output", self.scan_saved_var).grid(row=0, column=2, sticky="ew", padx=(8, 0))
 
-        ctk.CTkLabel(main_card, text="Summary", font=ctk.CTkFont(size=18, weight="bold"), text_color=themed_color("body_fg")).grid(row=10, column=0, sticky="w", padx=22, pady=(18, 8))
+        self.progress = ctk.CTkProgressBar(progress_card, progress_color=themed_color("progress_fill"), mode="determinate")
+        self.progress.grid(row=2, column=0, columnspan=3, sticky="ew", padx=24)
+        self.progress.set(0)
+        ctk.CTkLabel(progress_card, textvariable=self.status_var, text_color=themed_color("body_fg"), wraplength=940, justify="left").grid(row=3, column=0, columnspan=3, sticky="w", padx=24, pady=(12, 18))
+
+        summary_card = ctk.CTkFrame(page, fg_color=themed_color("card_bg"), corner_radius=22)
+        summary_card.grid(row=6, column=0, columnspan=2, sticky="nsew", padx=28, pady=(18, 28))
+        summary_card.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(summary_card, text="Summary", font=ctk.CTkFont(size=20, weight="bold"), text_color=themed_color("body_fg")).grid(row=0, column=0, sticky="w", padx=24, pady=(20, 10))
         self.summary = ctk.CTkTextbox(
-            main_card,
-            height=320,
+            summary_card,
+            height=280,
             wrap="word",
             fg_color=themed_color("card_alt_bg"),
             text_color=themed_color("body_fg"),
-            font=("Consolas", 11),
+            border_width=0,
+            font=("Menlo", 11),
         )
-        self.summary.grid(row=11, column=0, columnspan=3, sticky="nsew", padx=22, pady=(0, 22))
+        self.summary.grid(row=1, column=0, sticky="nsew", padx=24, pady=(0, 24))
+        return page
 
-        self.sync_xlsx_state()
-        self.sync_action_buttons()
+    def build_email_page(self, parent) -> ctk.CTkScrollableFrame:
+        self.email_page = EmailCopyPage(self, parent)
+        return self.email_page.page
 
-    def build_scrollable_root(self, parent) -> ctk.CTkScrollableFrame:
-        shell = ctk.CTkScrollableFrame(parent, fg_color=themed_color("app_bg"), corner_radius=0)
-        shell.pack(fill="both", expand=True, padx=0, pady=0)
-        return shell
+    def build_about_page(self, parent) -> ctk.CTkScrollableFrame:
+        page = self.build_scrollable_root(parent)
+        page.pack_forget()
+        page.grid_columnconfigure(0, weight=1)
+
+        card = ctk.CTkFrame(page, fg_color=themed_color("card_bg"), corner_radius=24)
+        card.grid(row=0, column=0, sticky="ew", padx=28, pady=28)
+        ctk.CTkLabel(card, text="About Content List Generator", font=ctk.CTkFont(size=32, weight="bold"), text_color=themed_color("title_fg")).pack(anchor="w", padx=28, pady=(26, 0))
+        ctk.CTkLabel(
+            card,
+            text=(
+                "Content List Generator helps you create a simple file list from a folder and "
+                "copy supported email files into a new location."
+            ),
+            font=ctk.CTkFont(size=14),
+            text_color=themed_color("hint_fg"),
+            wraplength=920,
+            justify="left",
+        ).pack(anchor="w", padx=28, pady=(10, 20))
+        details = ctk.CTkFrame(card, fg_color=themed_color("card_alt_bg"), corner_radius=18)
+        details.pack(fill="x", padx=28, pady=(0, 18))
+        ctk.CTkLabel(details, text="Written by Bryan Snyder", font=ctk.CTkFont(size=16, weight="bold"), text_color=themed_color("body_fg")).pack(anchor="w", padx=20, pady=(18, 6))
+        ctk.CTkLabel(details, text=f"GitHub: {PLACEHOLDER_GITHUB_URL}", text_color=themed_color("body_fg"), wraplength=860, justify="left").pack(anchor="w", padx=20)
+        self.make_secondary_button(details, "Open GitHub Link", lambda: webbrowser.open_new_tab(PLACEHOLDER_GITHUB_URL)).pack(anchor="w", padx=20, pady=(12, 18))
+
+        open_source = ctk.CTkFrame(card, fg_color=themed_color("card_alt_bg"), corner_radius=18)
+        open_source.pack(fill="x", padx=28, pady=(0, 28))
+        ctk.CTkLabel(open_source, text="Open source note", font=ctk.CTkFont(size=18, weight="bold"), text_color=themed_color("body_fg")).pack(anchor="w", padx=20, pady=(18, 8))
+        ctk.CTkLabel(
+            open_source,
+            text=(
+                "This project is being prepared for an open source release.\n"
+                "TODO: decide the final attribution requirement before publishing."
+            ),
+            text_color=themed_color("body_fg"),
+            wraplength=860,
+            justify="left",
+        ).pack(anchor="w", padx=20, pady=(0, 18))
+        return page
 
     def focus_source_entry(self) -> None:
         if self.source_entry is not None and self.source_entry.winfo_exists():
@@ -1019,7 +1297,8 @@ class ContentListApp:
             hover_color=themed_color("progress_fill"),
             text_color=themed_color("primary_fg"),
             corner_radius=12,
-            height=40,
+            height=44,
+            font=ctk.CTkFont(size=14, weight="bold"),
         )
 
     def make_secondary_button(self, parent, text: str, command) -> ctk.CTkButton:
@@ -1028,28 +1307,100 @@ class ContentListApp:
             text=text,
             command=command,
             fg_color=themed_color("secondary_bg"),
-            hover_color=themed_color("card_alt_bg"),
+            hover_color=themed_color("secondary_hover"),
             text_color=themed_color("secondary_fg"),
-            border_color=themed_color("border"),
-            border_width=1,
+            border_color=themed_color("secondary_bg"),
+            border_width=0,
             corner_radius=12,
-            height=40,
+            height=44,
+            font=ctk.CTkFont(size=13, weight="bold"),
         )
 
-    def add_path_row(self, parent, row: int, label: str, variable: tk.StringVar, command) -> ctk.CTkEntry:
-        ctk.CTkLabel(parent, text=label, font=ctk.CTkFont(size=14, weight="bold"), text_color=themed_color("body_fg")).grid(row=row, column=0, sticky="w", pady=6, padx=(22, 12))
-        entry = ctk.CTkEntry(parent, textvariable=variable, fg_color=themed_color("entry_bg"), text_color=themed_color("entry_fg"), border_color=themed_color("border"), height=38)
-        entry.grid(row=row, column=1, sticky="ew", pady=6)
-        self.make_secondary_button(parent, "Browse", command).grid(row=row, column=2, padx=(12, 22), pady=6)
-        return entry
+    def make_nav_button(self, parent, text: str, command) -> ctk.CTkButton:
+        return ctk.CTkButton(
+            parent,
+            text=text,
+            command=command,
+            anchor="w",
+            height=46,
+            corner_radius=14,
+            fg_color="transparent",
+            hover_color=themed_color("card_bg"),
+            text_color=themed_color("sidebar_idle_fg"),
+            font=ctk.CTkFont(size=15, weight="bold"),
+        )
 
-    def add_entry_row(self, parent, row: int, label: str, variable: tk.StringVar, hint: str = "") -> ctk.CTkEntry:
-        ctk.CTkLabel(parent, text=label, font=ctk.CTkFont(size=14, weight="bold"), text_color=themed_color("body_fg")).grid(row=row, column=0, sticky="w", pady=6, padx=(22, 12))
-        entry = ctk.CTkEntry(parent, textvariable=variable, fg_color=themed_color("entry_bg"), text_color=themed_color("entry_fg"), border_color=themed_color("border"), height=38)
-        entry.grid(row=row, column=1, columnspan=2, sticky="ew", pady=6, padx=(0, 22))
+    def make_metric_card(self, parent, title: str, value_var: tk.StringVar, accent: bool = False) -> ctk.CTkFrame:
+        frame = ctk.CTkFrame(parent, fg_color=themed_color("card_alt_bg"), corner_radius=18)
+        ctk.CTkLabel(frame, text=title, font=ctk.CTkFont(size=12, weight="bold"), text_color=themed_color("hint_fg")).pack(anchor="w", padx=16, pady=(14, 6))
+        ctk.CTkLabel(
+            frame,
+            textvariable=value_var,
+            font=ctk.CTkFont(size=22, weight="bold"),
+            text_color=themed_color("progress_fill" if accent else "body_fg"),
+        ).pack(anchor="w", padx=16, pady=(0, 14))
+        return frame
+
+    def make_option_tile(self, parent, text: str, variable: tk.BooleanVar, command=None) -> ctk.CTkFrame:
+        tile = ctk.CTkFrame(parent, fg_color=themed_color("card_bg"), corner_radius=18)
+        checkbox = ctk.CTkCheckBox(
+            tile,
+            text=text,
+            variable=variable,
+            command=command,
+            text_color=themed_color("body_fg"),
+            fg_color=themed_color("primary_bg"),
+            hover_color=themed_color("primary_hover"),
+            border_color=themed_color("border"),
+            checkmark_color=themed_color("primary_fg"),
+            corner_radius=8,
+        )
+        checkbox.pack(anchor="w", padx=16, pady=16)
+        tile.checkbox = checkbox
+        return tile
+
+    def make_field_card(self, parent, label: str, variable: tk.StringVar, command, hint: str = "") -> ctk.CTkFrame:
+        card = ctk.CTkFrame(parent, fg_color=themed_color("card_bg"), corner_radius=22)
+        card.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(card, text=label, font=ctk.CTkFont(size=18, weight="bold"), text_color=themed_color("body_fg")).grid(row=0, column=0, sticky="w", padx=22, pady=(20, 6))
         if hint:
-            ctk.CTkLabel(parent, text=hint, font=ctk.CTkFont(size=12), text_color=themed_color("hint_fg")).grid(row=row + 1, column=1, columnspan=2, sticky="w")
-        return entry
+            ctk.CTkLabel(card, text=hint, font=ctk.CTkFont(size=12), text_color=themed_color("hint_fg"), wraplength=420, justify="left").grid(row=1, column=0, sticky="w", padx=22, pady=(0, 12))
+        row_idx = 2 if hint else 1
+        entry_wrap = ctk.CTkFrame(card, fg_color="transparent")
+        entry_wrap.grid(row=row_idx, column=0, sticky="ew", padx=22, pady=(0, 20))
+        entry_wrap.grid_columnconfigure(0, weight=1)
+        entry = ctk.CTkEntry(
+            entry_wrap,
+            textvariable=variable,
+            fg_color=themed_color("entry_bg"),
+            text_color=themed_color("entry_fg"),
+            border_color=themed_color("border"),
+            height=44,
+        )
+        entry.grid(row=0, column=0, sticky="ew")
+        self.make_secondary_button(entry_wrap, "Browse", command).grid(row=0, column=1, padx=(12, 0))
+        card.entry = entry
+        return card
+
+    def make_text_field_card(self, parent, label: str, variable: tk.StringVar, hint: str = "") -> ctk.CTkFrame:
+        card = ctk.CTkFrame(parent, fg_color=themed_color("card_alt_bg"), corner_radius=18)
+        card.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(card, text=label, font=ctk.CTkFont(size=15, weight="bold"), text_color=themed_color("body_fg")).grid(row=0, column=0, sticky="w", padx=18, pady=(18, 6))
+        entry = ctk.CTkEntry(
+            card,
+            textvariable=variable,
+            fg_color=themed_color("entry_bg"),
+            text_color=themed_color("entry_fg"),
+            border_color=themed_color("border"),
+            height=42,
+        )
+        entry.grid(row=1, column=0, sticky="ew", padx=18)
+        if hint:
+            ctk.CTkLabel(card, text=hint, font=ctk.CTkFont(size=12), text_color=themed_color("hint_fg"), wraplength=420, justify="left").grid(row=2, column=0, sticky="w", padx=18, pady=(8, 18))
+        else:
+            ctk.CTkFrame(card, fg_color="transparent", height=18).grid(row=2, column=0)
+        card.entry = entry
+        return card
 
     def toggle_theme(self) -> None:
         self.colors = palette_for_mode(self.theme_mode_var.get())
@@ -1057,6 +1408,30 @@ class ContentListApp:
         ctk.set_appearance_mode(self.theme_mode_var.get())
         self.root.configure(fg_color=themed_color("app_bg"))
         self.configure_style()
+        self.show_page(self.active_page)
+
+    def show_page(self, page: str) -> None:
+        self.active_page = page
+        for name, frame in self.page_frames.items():
+            if name == page:
+                frame.pack(fill="both", expand=True)
+            else:
+                frame.pack_forget()
+        for name, button in self.nav_buttons.items():
+            if name == page:
+                button.configure(
+                    fg_color=themed_color("sidebar_active_bg"),
+                    hover_color=themed_color("sidebar_active_bg"),
+                    text_color=themed_color("sidebar_active_fg"),
+                )
+            else:
+                button.configure(
+                    fg_color="transparent",
+                    hover_color=themed_color("card_bg"),
+                    text_color=themed_color("sidebar_idle_fg"),
+                )
+        if page == "content":
+            self.root.after(50, self.focus_source_entry)
 
     def sync_xlsx_state(self) -> None:
         state = "normal" if self.xlsx_var.get() else "disabled"
@@ -1107,53 +1482,24 @@ class ContentListApp:
         if self.progress is not None:
             self.progress.set(0)
         self.status_var.set("Choose a folder to scan, then click Generate Content List.")
+        self.scan_files_var.set("0")
+        self.scan_skipped_var.set("0")
+        self.scan_saved_var.set("Waiting")
         self.append_summary("")
         self.sync_xlsx_state()
+        self.show_page("content")
         self.focus_source_entry()
 
     def show_about_dialog(self) -> None:
-        window = ctk.CTkToplevel(self.root)
-        window.title("About Content List Generator")
-        window.geometry("640x360")
-        window.minsize(560, 320)
-        window.configure(fg_color=themed_color("app_bg"))
-        window.transient(self.root)
-        window.grab_set()
-
-        card = ctk.CTkFrame(window, fg_color="transparent")
-        card.pack(fill="both", expand=True)
-
-        ctk.CTkLabel(card, text="About Content List Generator", font=ctk.CTkFont(size=28, weight="bold"), text_color=themed_color("title_fg")).pack(anchor="w", padx=24, pady=(24, 0))
-        ctk.CTkLabel(
-            card,
-            text=(
-                "Content List Generator helps you create a simple file list from a folder "
-                "and copy supported email files into a new location."
-            ),
-            font=ctk.CTkFont(size=13),
-            text_color=themed_color("hint_fg"),
-            wraplength=560,
-            justify="left",
-        ).pack(anchor="w", padx=24, pady=(8, 16))
-        ctk.CTkLabel(card, text="Written by Bryan Snyder", text_color=themed_color("body_fg")).pack(anchor="w", padx=24)
-        ctk.CTkLabel(card, text="GitHub: placeholder link", text_color=themed_color("body_fg")).pack(anchor="w", padx=24, pady=(10, 0))
-        self.make_secondary_button(card, "Open GitHub Link", lambda: webbrowser.open_new_tab(PLACEHOLDER_GITHUB_URL)).pack(anchor="w", padx=24, pady=(8, 16))
-        ctk.CTkLabel(
-            card,
-            text=(
-                "Open source note:\n"
-                "- This project is being prepared for an open source release.\n"
-                "- TODO: decide the final attribution requirement before publishing."
-            ),
-            text_color=themed_color("body_fg"),
-            justify="left",
-        ).pack(anchor="w", padx=24)
-        self.make_primary_button(card, "Close", window.destroy).pack(anchor="e", padx=24, pady=(20, 24))
+        self.show_page("about")
 
     def open_email_copy_window(self) -> None:
         if self.running:
             return
-        EmailCopyWindow(self)
+        self.show_page("email")
+        email_page = getattr(self, "email_page", None)
+        if email_page is not None:
+            self.root.after(50, email_page.focus_source_entry)
 
     def open_output_folder(self) -> None:
         open_in_file_manager(Path(self.output_dir_var.get() or os.getcwd()))
@@ -1191,7 +1537,11 @@ class ContentListApp:
         if self.progress is not None:
             self.progress.set(0)
         self.status_var.set("Getting everything ready...")
+        self.scan_files_var.set("0")
+        self.scan_skipped_var.set("0")
+        self.scan_saved_var.set("Working")
         self.append_summary("Preparing your file list...")
+        self.show_page("content")
 
         thread = threading.Thread(
             target=self.run_scan_thread,
@@ -1247,6 +1597,9 @@ class ContentListApp:
                     self.running = False
                     result = payload
                     self.status_var.set(f"Your file list is ready. {result.files} files were included.")
+                    self.scan_files_var.set(str(result.files))
+                    self.scan_skipped_var.set(str(result.filtered))
+                    self.scan_saved_var.set("CSV" if not result.xlsx_path else "CSV + Excel")
                     self.append_summary(build_scan_summary(result))
                     if self.progress is not None:
                         self.progress.set(1)
