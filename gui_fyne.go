@@ -42,6 +42,39 @@ type forcedVariantTheme struct {
 	variant fyne.ThemeVariant
 }
 
+type fixedSidebarLayout struct {
+	SidebarWidth float32
+	Padding      float32
+	Gap          float32
+}
+
+func (l *fixedSidebarLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	if len(objects) < 2 {
+		return
+	}
+	sidebar := objects[0]
+	content := objects[1]
+	innerHeight := maxFloat32(0, size.Height-(l.Padding*2))
+	sidebar.Move(fyne.NewPos(l.Padding, l.Padding))
+	sidebar.Resize(fyne.NewSize(l.SidebarWidth, innerHeight))
+
+	contentX := l.Padding + l.SidebarWidth + l.Gap
+	contentWidth := maxFloat32(0, size.Width-contentX-l.Padding)
+	content.Move(fyne.NewPos(contentX, l.Padding))
+	content.Resize(fyne.NewSize(contentWidth, innerHeight))
+}
+
+func (l *fixedSidebarLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
+	if len(objects) < 2 {
+		return fyne.NewSize(0, 0)
+	}
+	sidebarMin := objects[0].MinSize()
+	contentMin := objects[1].MinSize()
+	width := l.Padding + l.SidebarWidth + l.Gap + contentMin.Width + l.Padding
+	height := maxFloat32(sidebarMin.Height, contentMin.Height) + (l.Padding * 2)
+	return fyne.NewSize(width, height)
+}
+
 func (f *forcedVariantTheme) Color(name fyne.ThemeColorName, _ fyne.ThemeVariant) color.Color {
 	switch f.variant {
 	case theme.VariantDark:
@@ -88,11 +121,11 @@ func (f *forcedVariantTheme) Color(name fyne.ThemeColorName, _ fyne.ThemeVariant
 	default:
 		switch name {
 		case theme.ColorNameBackground:
-			return color.NRGBA{R: 0xeb, G: 0xf1, B: 0xf5, A: 0xff}
+			return color.NRGBA{R: 0xe3, G: 0xeb, B: 0xf2, A: 0xff}
 		case theme.ColorNameButton:
-			return color.NRGBA{R: 0xee, G: 0xf3, B: 0xf7, A: 0xff}
+			return color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff}
 		case theme.ColorNameDisabledButton:
-			return color.NRGBA{R: 0xf3, G: 0xf6, B: 0xf9, A: 0xff}
+			return color.NRGBA{R: 0xf4, G: 0xf7, B: 0xfa, A: 0xff}
 		case theme.ColorNameDisabled:
 			return color.NRGBA{R: 0x92, G: 0xa1, B: 0xae, A: 0xff}
 		case theme.ColorNameForeground:
@@ -100,9 +133,9 @@ func (f *forcedVariantTheme) Color(name fyne.ThemeColorName, _ fyne.ThemeVariant
 		case theme.ColorNameForegroundOnPrimary:
 			return color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff}
 		case theme.ColorNameHeaderBackground:
-			return color.NRGBA{R: 0xf2, G: 0xf4, B: 0xf6, A: 0xff}
+			return color.NRGBA{R: 0xea, G: 0xf0, B: 0xf5, A: 0xff}
 		case theme.ColorNameHover:
-			return color.NRGBA{R: 0xe1, G: 0xe8, B: 0xef, A: 0xff}
+			return color.NRGBA{R: 0xd7, G: 0xe1, B: 0xea, A: 0xff}
 		case theme.ColorNameInputBackground:
 			return color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff}
 		case theme.ColorNameInputBorder:
@@ -221,10 +254,16 @@ func launchGUI(startDir string) error {
 		),
 	)
 
-	split := container.NewHSplit(sidebar, container.NewPadded(contentStack))
-	split.SetOffset(0.22)
-
-	window.SetContent(split)
+	mainArea := container.NewPadded(contentStack)
+	window.SetContent(container.New(
+		&fixedSidebarLayout{
+			SidebarWidth: 312,
+			Padding:      28,
+			Gap:          24,
+		},
+		sidebar,
+		mainArea,
+	))
 	setPage("content")
 	window.ShowAndRun()
 	return nil
@@ -1236,4 +1275,11 @@ func openURLInBrowser(url string) {
 		return
 	}
 	_ = cmd.Start()
+}
+
+func maxFloat32(a, b float32) float32 {
+	if a > b {
+		return a
+	}
+	return b
 }

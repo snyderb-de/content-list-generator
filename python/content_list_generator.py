@@ -976,9 +976,11 @@ class ContentListApp:
         self.preserve_zeros_toggle: ctk.CTkCheckBox | None = None
         self.page_frames: dict[str, ctk.CTkFrame] = {}
         self.nav_buttons: dict[str, ctk.CTkButton] = {}
+        self.email_page = None
 
         self.configure_style()
         self.build_ui()
+        self.bind_app_scrolling()
         self.root.after(50, self.focus_source_entry)
         self.root.after(100, self.pump_queue)
 
@@ -1050,12 +1052,12 @@ class ContentListApp:
         shell = ctk.CTkFrame(self.root, fg_color=themed_color("app_bg"), corner_radius=0)
         shell.pack(fill="both", expand=True)
 
-        sidebar = ctk.CTkFrame(shell, width=292, fg_color=themed_color("sidebar_bg"), corner_radius=0)
-        sidebar.pack(side="left", fill="y")
+        sidebar = ctk.CTkFrame(shell, width=304, fg_color=themed_color("sidebar_bg"), corner_radius=18)
+        sidebar.pack(side="left", fill="y", padx=(18, 10), pady=18)
         sidebar.pack_propagate(False)
 
         content_shell = ctk.CTkFrame(shell, fg_color=themed_color("app_bg"), corner_radius=0)
-        content_shell.pack(side="left", fill="both", expand=True)
+        content_shell.pack(side="left", fill="both", expand=True, padx=(10, 18), pady=18)
 
         self.build_sidebar(sidebar)
         self.page_frames["content"] = self.build_content_page(content_shell)
@@ -1068,17 +1070,98 @@ class ContentListApp:
     def build_scrollable_root(self, parent) -> ctk.CTkScrollableFrame:
         shell = ctk.CTkScrollableFrame(parent, fg_color=themed_color("app_bg"), corner_radius=0)
         shell.pack(fill="both", expand=True, padx=0, pady=0)
-        self.enable_scrollwheel(shell)
         return shell
 
-    def enable_scrollwheel(self, scrollable: ctk.CTkScrollableFrame) -> None:
+    def bind_app_scrolling(self) -> None:
+        self.root.bind_all("<MouseWheel>", self.on_mousewheel, add="+")
+        self.root.bind_all("<Shift-MouseWheel>", self.on_shift_mousewheel, add="+")
+        self.root.bind_all("<Button-4>", self.on_linux_scroll_up, add="+")
+        self.root.bind_all("<Button-5>", self.on_linux_scroll_down, add="+")
+        self.root.bind_all("<Up>", self.on_arrow_up, add="+")
+        self.root.bind_all("<Down>", self.on_arrow_down, add="+")
+        self.root.bind_all("<Prior>", self.on_page_up, add="+")
+        self.root.bind_all("<Next>", self.on_page_down, add="+")
+
+    def active_scrollable(self):
+        frame = self.page_frames.get(self.active_page)
+        if frame is None:
+            return None
+        return frame
+
+    def focused_widget_class(self) -> str:
         try:
-            scrollable._parent_canvas.bind_all("<MouseWheel>", scrollable._mouse_wheel_all, add="+")
-            scrollable._parent_canvas.bind_all("<Shift-MouseWheel>", scrollable._mouse_wheel_all, add="+")
-            scrollable._parent_canvas.bind_all("<Button-4>", scrollable._mouse_wheel_all, add="+")
-            scrollable._parent_canvas.bind_all("<Button-5>", scrollable._mouse_wheel_all, add="+")
+            widget = self.root.focus_get()
+            if widget is None:
+                return ""
+            return str(widget.winfo_class()).lower()
         except Exception:
-            return
+            return ""
+
+    def should_preserve_arrow_key(self) -> bool:
+        widget_class = self.focused_widget_class()
+        return any(name in widget_class for name in ("entry", "text", "listbox", "spinbox"))
+
+    def scroll_active(self, units: int, axis: str = "y", what: str = "units") -> str:
+        scrollable = self.active_scrollable()
+        if scrollable is None:
+            return "break"
+        try:
+            canvas = scrollable._parent_canvas
+            if axis == "x":
+                canvas.xview_scroll(units, what)
+            else:
+                canvas.yview_scroll(units, what)
+        except Exception:
+            return "break"
+        return "break"
+
+    def on_mousewheel(self, event) -> str:
+        if sys.platform == "darwin":
+            delta = -1 * int(event.delta)
+            if delta == 0:
+                delta = -1 if event.delta > 0 else 1
+            return self.scroll_active(delta)
+        step = -1 * int(event.delta / 120) if event.delta else 0
+        if step == 0:
+            step = -1 if event.delta > 0 else 1
+        return self.scroll_active(step)
+
+    def on_shift_mousewheel(self, event) -> str:
+        if sys.platform == "darwin":
+            delta = -1 * int(event.delta)
+            if delta == 0:
+                delta = -1 if event.delta > 0 else 1
+            return self.scroll_active(delta, axis="x")
+        step = -1 * int(event.delta / 120) if event.delta else 0
+        if step == 0:
+            step = -1 if event.delta > 0 else 1
+        return self.scroll_active(step, axis="x")
+
+    def on_linux_scroll_up(self, _event) -> str:
+        return self.scroll_active(-3)
+
+    def on_linux_scroll_down(self, _event) -> str:
+        return self.scroll_active(3)
+
+    def on_arrow_up(self, _event) -> str | None:
+        if self.should_preserve_arrow_key():
+            return None
+        return self.scroll_active(-2)
+
+    def on_arrow_down(self, _event) -> str | None:
+        if self.should_preserve_arrow_key():
+            return None
+        return self.scroll_active(2)
+
+    def on_page_up(self, _event) -> str | None:
+        if self.should_preserve_arrow_key():
+            return None
+        return self.scroll_active(-1, what="pages")
+
+    def on_page_down(self, _event) -> str | None:
+        if self.should_preserve_arrow_key():
+            return None
+        return self.scroll_active(1, what="pages")
 
     def build_sidebar(self, parent) -> None:
         brand = ctk.CTkFrame(parent, fg_color="transparent")
@@ -1332,13 +1415,23 @@ class ContentListApp:
 
     def make_metric_card(self, parent, title: str, value_var: tk.StringVar, accent: bool = False) -> ctk.CTkFrame:
         frame = ctk.CTkFrame(parent, fg_color=themed_color("card_alt_bg"), corner_radius=18)
-        ctk.CTkLabel(frame, text=title, font=ctk.CTkFont(size=12, weight="bold"), text_color=themed_color("hint_fg")).pack(anchor="w", padx=16, pady=(14, 6))
+        ctk.CTkLabel(
+            frame,
+            text=title,
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color=themed_color("hint_fg"),
+            anchor="w",
+            justify="left",
+            wraplength=130,
+        ).pack(fill="x", padx=16, pady=(14, 6))
         ctk.CTkLabel(
             frame,
             textvariable=value_var,
             font=ctk.CTkFont(size=22, weight="bold"),
             text_color=themed_color("progress_fill" if accent else "body_fg"),
-        ).pack(anchor="w", padx=16, pady=(0, 14))
+            anchor="w",
+            justify="left",
+        ).pack(fill="x", padx=16, pady=(0, 14))
         return frame
 
     def make_option_tile(self, parent, text: str, variable: tk.BooleanVar, command=None) -> ctk.CTkFrame:
