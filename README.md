@@ -37,7 +37,7 @@ Repo-root launchers:
 
 - macOS/Linux Go GUI: `./run-go-gui.sh`
 - macOS/Linux Python GUI: `./run-python-gui.sh`
-- Windows Python GUI launcher: `run-python-gui.bat`
+- Windows Python GUI launcher: `content-list-generator.bat`
 
 ## Install By OS
 
@@ -51,12 +51,12 @@ Windows, portable Python GUI path:
 
 - install Python 3 with Tkinter
 - install the Python dependency with `pip install -r requirements.txt`
-- place these files in `%USERPROFILE%\scripts\`:
+- place these files in `%USERPROFILE%\scripts\content-list-gen\`:
   - `content_list_generator.py`
   - `content_list_core.py`
   - `copy_email_files.py`
-- place `run-python-gui.bat` on the user's Desktop, or use `releases/windows-python/run-content-list-generator.bat`
-- the launcher looks in `%USERPROFILE%\scripts\` first, so it still works when launched from the Desktop
+- place `content-list-generator.bat` on the user's Desktop, or use `releases/windows-python/content-list-generator.bat`
+- legacy launchers still work: `run-python-gui.bat`, `releases/windows-python/launch-content-list-generator-gui.bat`, and `releases/windows-python/run-content-list-generator.bat`
 
 Windows, Go executable path:
 

@@ -31,50 +31,71 @@ cp requirements.txt "$OUT_DIR/"
 cat > "$OUT_DIR/run-content-list-generator.cmd" <<'EOF'
 @echo off
 setlocal
-set "SCRIPT=%USERPROFILE%\scripts\content_list_generator.py"
+set "SCRIPT=%USERPROFILE%\scripts\content-list-gen\content_list_generator.py"
+if not exist "%SCRIPT%" set "SCRIPT=%USERPROFILE%\scripts\content_list_generator.py"
 if not exist "%SCRIPT%" set "SCRIPT=%~dp0scripts\content_list_generator.py"
 python "%SCRIPT%"
 EOF
 
-cat > "$OUT_DIR/run-content-list-generator.bat" <<'EOF'
+cat > "$OUT_DIR/content-list-generator.bat" <<'EOF'
 @echo off
-setlocal
-set "SCRIPT=%USERPROFILE%\scripts\content_list_generator.py"
+
+REM ---------------------------------------------------------------------------
+REM  Content List Generator - GUI Launcher
+REM  Requires: Python 3.x, tkinter, customtkinter
+REM  Install deps (run once): pip install -r requirements.txt
+REM
+REM  Preferred deploy target:
+REM    %USERPROFILE%\scripts\content-list-gen\
+REM ---------------------------------------------------------------------------
+
+set "SCRIPT=%USERPROFILE%\scripts\content-list-gen\content_list_generator.py"
+if not exist "%SCRIPT%" set "SCRIPT=%USERPROFILE%\scripts\content_list_generator.py"
 if not exist "%SCRIPT%" set "SCRIPT=%~dp0scripts\content_list_generator.py"
 
 if not exist "%SCRIPT%" (
-  echo Could not find content_list_generator.py.
-  echo Expected location:
-  echo   %USERPROFILE%\scripts\content_list_generator.py
-  echo.
-  echo Copy these files into %USERPROFILE%\scripts\:
-  echo   content_list_generator.py
-  echo   content_list_core.py
-  echo   copy_email_files.py
-  exit /b 1
+    echo.
+    echo ERROR: could not find content_list_generator.py.
+    echo Looked for:
+    echo   %USERPROFILE%\scripts\content-list-gen\content_list_generator.py
+    echo   %USERPROFILE%\scripts\content_list_generator.py
+    echo   %~dp0scripts\content_list_generator.py
+    echo.
+    pause
+    exit /b 1
 )
 
-where py >nul 2>&1
-if %ERRORLEVEL%==0 (
-  py -3 "%SCRIPT%" %*
-  exit /b %ERRORLEVEL%
-)
+python "%SCRIPT%" %*
 
-where python >nul 2>&1
-if %ERRORLEVEL%==0 (
-  python "%SCRIPT%" %*
-  exit /b %ERRORLEVEL%
+REM If Python exits with an error (e.g. missing dependency), hold the window
+REM open so the user can read the message before it disappears.
+if %errorlevel% neq 0 (
+    echo.
+    echo ERROR: the script exited with code %errorlevel%.
+    echo Check that Python is installed and dependencies are up to date:
+    echo   pip install -r requirements.txt
+    echo.
+    pause
 )
+EOF
 
-echo Python 3 was not found on this system.
-echo Install Python 3, then run this launcher again.
-exit /b 1
+cat > "$OUT_DIR/launch-content-list-generator-gui.bat" <<'EOF'
+@echo off
+call "%~dp0content-list-generator.bat" %*
+exit /b %errorlevel%
+EOF
+
+cat > "$OUT_DIR/run-content-list-generator.bat" <<'EOF'
+@echo off
+call "%~dp0content-list-generator.bat" %*
+exit /b %errorlevel%
 EOF
 
 cat > "$OUT_DIR/run-email-copy.cmd" <<'EOF'
 @echo off
 setlocal
-set "SCRIPT=%USERPROFILE%\scripts\copy_email_files.py"
+set "SCRIPT=%USERPROFILE%\scripts\content-list-gen\copy_email_files.py"
+if not exist "%SCRIPT%" set "SCRIPT=%USERPROFILE%\scripts\copy_email_files.py"
 if not exist "%SCRIPT%" set "SCRIPT=%~dp0scripts\copy_email_files.py"
 python "%SCRIPT%"
 EOF
@@ -82,7 +103,8 @@ EOF
 cat > "$OUT_DIR/run-content-list-generator-cli.cmd" <<'EOF'
 @echo off
 setlocal
-set "SCRIPT=%USERPROFILE%\scripts\content_list_generator.py"
+set "SCRIPT=%USERPROFILE%\scripts\content-list-gen\content_list_generator.py"
+if not exist "%SCRIPT%" set "SCRIPT=%USERPROFILE%\scripts\content_list_generator.py"
 if not exist "%SCRIPT%" set "SCRIPT=%~dp0scripts\content_list_generator.py"
 python "%SCRIPT%" --cli %*
 EOF
