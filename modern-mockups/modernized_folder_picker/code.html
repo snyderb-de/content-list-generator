@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Content List Generator - Folder Picker</title>
+<!-- Fonts: Manrope & Inter -->
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<!-- Material Symbols Outlined -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "surface-container-low": "#f2f4f6",
+                        "on-secondary-container": "#54647a",
+                        "inverse-surface": "#2d3133",
+                        "tertiary-container": "#c64f00",
+                        "surface-container-high": "#e6e8ea",
+                        "inverse-on-surface": "#eff1f3",
+                        "outline-variant": "#c1c6d7",
+                        "error-container": "#ffdad6",
+                        "tertiary-fixed": "#ffdbcc",
+                        "on-secondary-fixed": "#0b1c30",
+                        "surface-variant": "#e0e3e5",
+                        "surface-bright": "#f7f9fb",
+                        "surface-container-highest": "#e0e3e5",
+                        "secondary": "#505f76",
+                        "on-background": "#191c1e",
+                        "primary-fixed-dim": "#adc6ff",
+                        "on-tertiary-container": "#fffbff",
+                        "tertiary": "#9e3d00",
+                        "primary-fixed": "#d8e2ff",
+                        "on-tertiary-fixed": "#351000",
+                        "on-secondary-fixed-variant": "#38485d",
+                        "secondary-container": "#d0e1fb",
+                        "background": "#f7f9fb",
+                        "inverse-primary": "#adc6ff",
+                        "surface": "#f7f9fb",
+                        "tertiary-fixed-dim": "#ffb595",
+                        "on-surface-variant": "#414755",
+                        "on-error": "#ffffff",
+                        "on-primary-fixed-variant": "#004493",
+                        "on-secondary": "#ffffff",
+                        "primary-container": "#0070eb",
+                        "secondary-fixed": "#d3e4fe",
+                        "secondary-fixed-dim": "#b7c8e1",
+                        "surface-dim": "#d8dadc",
+                        "on-error-container": "#93000a",
+                        "surface-container": "#eceef0",
+                        "surface-tint": "#005bc1",
+                        "primary": "#0058bc",
+                        "outline": "#717786",
+                        "on-tertiary-fixed-variant": "#7c2e00",
+                        "on-surface": "#191c1e",
+                        "on-primary-container": "#fefcff",
+                        "on-tertiary": "#ffffff",
+                        "error": "#ba1a1a",
+                        "surface-container-lowest": "#ffffff",
+                        "on-primary": "#ffffff",
+                        "on-primary-fixed": "#001a41"
+                    },
+                    fontFamily: {
+                        "headline": ["Manrope"],
+                        "body": ["Inter"],
+                        "label": ["Inter"]
+                    },
+                    borderRadius: { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" },
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+        }
+        body { font-family: 'Inter', sans-serif; }
+        h1, h2, h3 { font-family: 'Manrope', sans-serif; }
+    </style>
+</head>
+<body class="bg-surface text-on-surface flex items-center justify-center min-h-screen p-6">
+<!-- Main Window Container (Ether Flow: The Precision Canvas) -->
+<div class="w-full max-w-5xl h-[700px] flex flex-col bg-surface-container-lowest rounded-xl overflow-hidden shadow-2xl ring-1 ring-outline-variant/10">
+<!-- TopAppBar (From JSON) -->
+<header class="bg-[#f7f9fb] dark:bg-slate-900 flex justify-between items-center w-full px-6 py-3 border-b-0">
+<div class="flex items-center gap-4">
+<span class="text-lg font-bold text-slate-900 dark:text-slate-100 font-headline">Content List Generator</span>
+</div>
+<div class="flex items-center space-x-2">
+<button class="material-symbols-outlined text-secondary hover:bg-slate-200/50 dark:hover:bg-slate-800/50 p-2 rounded-lg transition-colors scale-98 active:scale-95">minimize</button>
+<button class="material-symbols-outlined text-secondary hover:bg-slate-200/50 dark:hover:bg-slate-800/50 p-2 rounded-lg transition-colors scale-98 active:scale-95">expand</button>
+<button class="material-symbols-outlined text-secondary hover:bg-slate-200/50 dark:hover:bg-slate-800/50 p-2 rounded-lg transition-colors scale-98 active:scale-95">close</button>
+</div>
+</header>
+<!-- Breadcrumb & Navigation Actions Header -->
+<div class="bg-surface px-6 py-4 flex items-center justify-between">
+<div class="flex items-center gap-3 overflow-hidden">
+<div class="material-symbols-outlined text-secondary">folder_open</div>
+<div class="flex items-center gap-1 text-sm text-on-surface-variant font-medium overflow-hidden whitespace-nowrap">
+<span class="hover:text-primary cursor-pointer">Volumes</span>
+<span class="material-symbols-outlined text-xs">chevron_right</span>
+<span class="text-on-surface font-semibold truncate">oGOV Archived Carney - GOV-005C</span>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<button class="flex items-center gap-2 px-3 py-1.5 text-sm font-semibold text-secondary hover:bg-surface-container-high rounded-lg transition-all active:scale-[0.98]">
+<span class="material-symbols-outlined text-lg">arrow_upward</span>
+<span>Up</span>
+</button>
+<button class="flex items-center gap-2 px-3 py-1.5 text-sm font-semibold text-primary hover:bg-primary/5 rounded-lg transition-all active:scale-[0.98]">
+<span class="material-symbols-outlined text-lg">create_new_folder</span>
+<span>New Folder</span>
+</button>
+</div>
+</div>
+<!-- Main Body: Two-Pane Layout -->
+<div class="flex flex-1 overflow-hidden">
+<!-- SideNavBar (From JSON) -->
+<nav class="bg-[#f2f4f6] dark:bg-slate-800/50 h-full w-64 flex-shrink-0 flex flex-col py-4 px-3">
+<div class="px-3 mb-4">
+<h2 class="text-xs font-bold uppercase tracking-wider text-secondary font-headline">Locations</h2>
+<p class="text-[10px] text-on-surface-variant opacity-70">Places</p>
+</div>
+<div class="space-y-1">
+<!-- Nav Items -->
+<a class="flex items-center gap-3 px-3 py-2 text-sm font-medium text-[#505f76] hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-all duration-200" href="#">
+<span class="material-symbols-outlined text-[20px]">history</span>
+<span>Recent</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-sm font-medium text-[#505f76] hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-all duration-200" href="#">
+<span class="material-symbols-outlined text-[20px]">home</span>
+<span>Home</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-sm font-medium text-[#505f76] hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-all duration-200" href="#">
+<span class="material-symbols-outlined text-[20px]">desktop_windows</span>
+<span>Desktop</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-sm font-medium text-[#505f76] hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-all duration-200" href="#">
+<span class="material-symbols-outlined text-[20px]">description</span>
+<span>Documents</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-sm font-medium text-[#505f76] hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-all duration-200" href="#">
+<span class="material-symbols-outlined text-[20px]">download</span>
+<span>Downloads</span>
+</a>
+<div class="pt-4 pb-2 px-3">
+<div class="h-px bg-outline-variant/20 w-full mb-4"></div>
+</div>
+<a class="flex items-center gap-3 px-3 py-2 text-sm font-semibold bg-[#d0e1fb] dark:bg-[#0058bc]/30 text-[#0058bc] dark:text-[#d8e2ff] rounded-lg" href="#">
+<span class="material-symbols-outlined text-[20px]">hard_drive</span>
+<span class="truncate">oGOV Archived...</span>
+</a>
+</div>
+</nav>
+<!-- Main Folder View (The Content Canvas) -->
+<main class="flex-1 bg-surface-container-lowest flex flex-col">
+<div class="flex-1 overflow-y-auto px-6 py-2">
+<!-- Folder List -->
+<div class="space-y-0.5">
+<!-- Folder Item -->
+<div class="flex items-center gap-4 py-3 px-3 hover:bg-surface-container-high/50 rounded-lg group cursor-pointer transition-colors">
+<span class="material-symbols-outlined text-secondary group-hover:text-primary">folder</span>
+<div class="flex-1">
+<p class="text-sm font-medium text-on-surface">$RECYCLE.BIN</p>
+<p class="text-[11px] text-on-surface-variant">System Folder</p>
+</div>
+<span class="text-xs text-on-surface-variant hidden group-hover:block">Modified 2d ago</span>
+</div>
+<!-- Parent Folder -->
+<div class="flex items-center gap-4 py-3 px-3 hover:bg-surface-container-high/50 rounded-lg group cursor-pointer transition-colors">
+<span class="material-symbols-outlined text-secondary group-hover:text-primary">arrow_upward</span>
+<div class="flex-1">
+<p class="text-sm font-medium text-on-surface">(Parent)</p>
+<p class="text-[11px] text-on-surface-variant">Back to Volumes</p>
+</div>
+</div>
+<!-- Archive Folder -->
+<div class="flex items-center gap-4 py-3 px-3 hover:bg-surface-container-high/50 rounded-lg group cursor-pointer transition-colors">
+<span class="material-symbols-outlined text-secondary group-hover:text-primary">folder_zip</span>
+<div class="flex-1">
+<p class="text-sm font-medium text-on-surface">Photos [Archive - GOV005C]</p>
+<p class="text-[11px] text-on-surface-variant">452 items • 12.4 GB</p>
+</div>
+<span class="text-xs text-on-surface-variant hidden group-hover:block">Modified Oct 12</span>
+</div>
+<!-- System Folder -->
+<div class="flex items-center gap-4 py-3 px-3 hover:bg-surface-container-high/50 rounded-lg group cursor-pointer transition-colors">
+<span class="material-symbols-outlined text-secondary group-hover:text-primary">settings_system_daydream</span>
+<div class="flex-1">
+<p class="text-sm font-medium text-on-surface">System Volume Information</p>
+<p class="text-[11px] text-on-surface-variant">Restricted access</p>
+</div>
+</div>
+<!-- Selected Folder Style -->
+<div class="flex items-center gap-4 py-3 px-3 bg-primary/5 rounded-lg group cursor-pointer border border-primary/10">
+<span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">folder</span>
+<div class="flex-1">
+<p class="text-sm font-bold text-on-surface">Video [Archive - GOV005C]</p>
+<p class="text-[11px] text-primary/70 font-medium">84 items • 42.1 GB</p>
+</div>
+<span class="material-symbols-outlined text-primary text-sm">check_circle</span>
+</div>
+</div>
+</div>
+<!-- Status Bar -->
+<div class="px-6 py-2 bg-surface text-[11px] text-on-surface-variant flex items-center gap-2 border-t border-outline-variant/10">
+<span class="material-symbols-outlined text-sm">info</span>
+<span>Current selected folder: <span class="font-semibold text-on-surface">/Volumes/oGOV Archived Carney - GOV-005C/Video [Archive - GOV005C]</span></span>
+</div>
+</main>
+</div>
+<!-- Footer (From JSON) -->
+<footer class="bg-[#ffffff] dark:bg-slate-950 flex justify-end items-center w-full px-8 py-4 space-x-4 border-t border-slate-100 dark:border-slate-800 shadow-[0_-4px_12px_0_rgba(0,0,0,0.02)]">
+<button class="text-[#505f76] dark:text-slate-400 px-6 py-2 text-sm font-medium hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-all active:scale-[0.98]">
+                Cancel
+            </button>
+<button class="bg-gradient-to-br from-[#0058bc] to-[#0070eb] text-white rounded-lg px-8 py-2 text-sm font-bold shadow-lg shadow-primary/20 hover:brightness-110 transition-all active:scale-95">
+                Open
+            </button>
+</footer>
+</div>
+</body></html>

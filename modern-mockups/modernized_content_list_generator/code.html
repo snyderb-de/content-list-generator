@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>ContentGen - Precision Canvas</title>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Google Fonts -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Manrope:wght@700;800&amp;display=swap" rel="stylesheet"/>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "inverse-surface": "#2d3133",
+                        "tertiary-fixed-dim": "#ffb595",
+                        "outline-variant": "#c1c6d7",
+                        "on-tertiary-fixed": "#351000",
+                        "surface-container-highest": "#e0e3e5",
+                        "on-error": "#ffffff",
+                        "inverse-on-surface": "#eff1f3",
+                        "error": "#ba1a1a",
+                        "surface-container-lowest": "#ffffff",
+                        "secondary-fixed-dim": "#b7c8e1",
+                        "on-error-container": "#93000a",
+                        "error-container": "#ffdad6",
+                        "on-primary": "#ffffff",
+                        "secondary-fixed": "#d3e4fe",
+                        "primary-fixed": "#d8e2ff",
+                        "on-surface": "#191c1e",
+                        "inverse-primary": "#adc6ff",
+                        "tertiary-container": "#c64f00",
+                        "surface-variant": "#e0e3e5",
+                        "on-secondary-fixed-variant": "#38485d",
+                        "primary-fixed-dim": "#adc6ff",
+                        "on-primary-fixed": "#001a41",
+                        "primary-container": "#0070eb",
+                        "surface-dim": "#d8dadc",
+                        "surface-container": "#eceef0",
+                        "background": "#f7f9fb",
+                        "surface-container-high": "#e6e8ea",
+                        "on-secondary-fixed": "#0b1c30",
+                        "on-primary-fixed-variant": "#004493",
+                        "surface-bright": "#f7f9fb",
+                        "secondary-container": "#d0e1fb",
+                        "on-tertiary": "#ffffff",
+                        "secondary": "#505f76",
+                        "on-primary-container": "#fefcff",
+                        "on-secondary": "#ffffff",
+                        "on-background": "#191c1e",
+                        "on-tertiary-container": "#fffbff",
+                        "on-surface-variant": "#414755",
+                        "surface": "#f7f9fb",
+                        "on-secondary-container": "#54647a",
+                        "tertiary": "#9e3d00",
+                        "surface-container-low": "#f2f4f6",
+                        "surface-tint": "#005bc1",
+                        "tertiary-fixed": "#ffdbcc",
+                        "primary": "#0058bc",
+                        "outline": "#717786",
+                        "on-tertiary-fixed-variant": "#7c2e00"
+                    },
+                    fontFamily: {
+                        "headline": ["Manrope"],
+                        "body": ["Inter"],
+                        "label": ["Inter"]
+                    },
+                    borderRadius: {"DEFAULT": "0.5rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+<style>
+        body {
+            background-color: #f7f9fb;
+            color: #191c1e;
+            font-family: 'Inter', sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+        }
+        .primary-gradient {
+            background: linear-gradient(135deg, #0058bc 0%, #0070eb 100%);
+        }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(16px);
+        }
+    </style>
+</head>
+<body class="bg-surface">
+<div class="flex min-h-screen">
+<!-- Side Navigation (Shared Component Logic) -->
+<aside class="fixed left-0 top-0 h-full flex flex-col p-4 space-y-2 bg-surface-container-low w-64 md:flex hidden">
+<div class="px-4 py-6">
+<h1 class="text-lg font-black text-blue-600 font-headline">Precision Canvas</h1>
+<p class="text-xs font-medium text-on-surface-variant font-label">File Utility v1.0</p>
+</div>
+<nav class="flex-1 flex flex-col space-y-1">
+<a class="bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-lg font-bold flex items-center px-4 py-3 transition-all duration-200 ease-out" href="#">
+<span class="material-symbols-outlined mr-3" data-icon="list_alt">list_alt</span>
+<span class="font-label">Content List</span>
+</a>
+<a class="text-slate-600 dark:text-slate-400 hover:text-slate-900 hover:bg-slate-200 dark:hover:bg-slate-800 flex items-center px-4 py-3 rounded-lg transition-all duration-200 ease-out" href="#">
+<span class="material-symbols-outlined mr-3" data-icon="mail_outline">mail_outline</span>
+<span class="font-label">Copy Email Files</span>
+</a>
+<a class="text-slate-600 dark:text-slate-400 hover:text-slate-900 hover:bg-slate-200 dark:hover:bg-slate-800 flex items-center px-4 py-3 rounded-lg transition-all duration-200 ease-out" href="#">
+<span class="material-symbols-outlined mr-3" data-icon="info">info</span>
+<span class="font-label">About</span>
+</a>
+</nav>
+<div class="mt-auto p-4 bg-surface-container-high rounded-xl">
+<div class="flex items-center space-x-3">
+<div class="w-8 h-8 rounded-full bg-primary-fixed flex items-center justify-center text-on-primary-fixed">
+<span class="material-symbols-outlined text-sm" data-icon="person">person</span>
+</div>
+<div class="flex-1 overflow-hidden">
+<p class="text-xs font-bold truncate">Professional User</p>
+<p class="text-[10px] text-on-surface-variant">Admin Account</p>
+</div>
+</div>
+</div>
+</aside>
+<!-- Main Content Area -->
+<main class="flex-1 md:ml-64 flex flex-col">
+<!-- TopAppBar -->
+<header class="flex justify-between items-center px-6 py-4 w-full border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900">
+<div class="flex items-center space-x-4">
+<span class="md:hidden material-symbols-outlined text-on-surface-variant" data-icon="menu">menu</span>
+<h2 class="text-xl font-bold tracking-tight text-slate-900 dark:text-white font-headline">Content List Generator</h2>
+</div>
+<div class="flex items-center space-x-2">
+<button class="p-2 rounded-full hover:bg-slate-200/50 transition-colors text-slate-500">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+</button>
+<button class="p-2 rounded-full hover:bg-slate-200/50 transition-colors text-slate-500">
+<span class="material-symbols-outlined" data-icon="help">help</span>
+</button>
+</div>
+</header>
+<div class="p-6 md:p-10 max-w-5xl mx-auto w-full space-y-12">
+<!-- Configuration Section: Bento Style -->
+<section class="space-y-6">
+<div class="flex items-center justify-between">
+<h3 class="text-lg font-bold font-headline text-on-surface">Configuration</h3>
+<span class="text-xs text-on-surface-variant font-label uppercase tracking-widest">Paths &amp; Inputs</span>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+<!-- Source Folder Card -->
+<div class="bg-surface-container-lowest p-6 rounded-xl shadow-[0_4px_24px_rgba(0,0,0,0.04)] space-y-4">
+<label class="block text-sm font-semibold text-on-surface-variant font-label">Source folder</label>
+<div class="flex gap-2">
+<input class="flex-1 bg-surface-container-low border-none rounded-lg text-sm focus:ring-2 focus:ring-primary-fixed py-3 px-4 text-on-surface" placeholder="/Users/workspace/project" type="text"/>
+<button class="px-4 py-2 bg-secondary-container text-on-secondary-container rounded-lg font-semibold text-sm hover:bg-secondary-fixed transition-colors flex items-center">
+<span class="material-symbols-outlined text-lg" data-icon="folder_open">folder_open</span>
+<span class="ml-2">Browse</span>
+</button>
+</div>
+</div>
+<!-- Output Folder Card -->
+<div class="bg-surface-container-lowest p-6 rounded-xl shadow-[0_4px_24px_rgba(0,0,0,0.04)] space-y-4">
+<label class="block text-sm font-semibold text-on-surface-variant font-label">Output folder</label>
+<div class="flex gap-2">
+<input class="flex-1 bg-surface-container-low border-none rounded-lg text-sm focus:ring-2 focus:ring-primary-fixed py-3 px-4 text-on-surface" placeholder="/Users/workspace/output" type="text"/>
+<button class="px-4 py-2 bg-secondary-container text-on-secondary-container rounded-lg font-semibold text-sm hover:bg-secondary-fixed transition-colors flex items-center">
+<span class="material-symbols-outlined text-lg" data-icon="folder_open">folder_open</span>
+<span class="ml-2">Browse</span>
+</button>
+</div>
+</div>
+<!-- Secondary Inputs -->
+<div class="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
+<div class="space-y-2">
+<label class="block text-xs font-bold text-on-surface-variant font-label uppercase ml-1">Output file name</label>
+<input class="w-full bg-surface-container-low border-none rounded-lg text-sm focus:ring-2 focus:ring-primary-fixed py-3 px-4" type="text" value="content_list_result.txt"/>
+</div>
+<div class="space-y-2">
+<label class="block text-xs font-bold text-on-surface-variant font-label uppercase ml-1">Exclude extensions</label>
+<input class="w-full bg-surface-container-low border-none rounded-lg text-sm focus:ring-2 focus:ring-primary-fixed py-3 px-4" placeholder=".git, .tmp, .log" type="text"/>
+</div>
+</div>
+</div>
+</section>
+<!-- Options Section: Checkbox Grid -->
+<section class="space-y-6">
+<h3 class="text-lg font-bold font-headline text-on-surface">Options</h3>
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+<label class="flex items-center space-x-3 p-4 rounded-xl bg-surface-container-low hover:bg-surface-container-high transition-colors cursor-pointer group">
+<input class="w-5 h-5 rounded text-primary focus:ring-primary border-outline-variant" type="checkbox"/>
+<span class="text-sm font-medium text-on-surface-variant group-hover:text-on-surface">Include SHA-256 hashes</span>
+</label>
+<label class="flex items-center space-x-3 p-4 rounded-xl bg-surface-container-low hover:bg-surface-container-high transition-colors cursor-pointer group">
+<input checked="" class="w-5 h-5 rounded text-primary focus:ring-primary border-outline-variant" type="checkbox"/>
+<span class="text-sm font-medium text-on-surface-variant group-hover:text-on-surface">Exclude hidden files</span>
+</label>
+<label class="flex items-center space-x-3 p-4 rounded-xl bg-surface-container-low hover:bg-surface-container-high transition-colors cursor-pointer group">
+<input checked="" class="w-5 h-5 rounded text-primary focus:ring-primary border-outline-variant" type="checkbox"/>
+<span class="text-sm font-medium text-on-surface-variant group-hover:text-on-surface">Exclude common system files</span>
+</label>
+<label class="flex items-center space-x-3 p-4 rounded-xl bg-surface-container-low hover:bg-surface-container-high transition-colors cursor-pointer group">
+<input class="w-5 h-5 rounded text-primary focus:ring-primary border-outline-variant" type="checkbox"/>
+<span class="text-sm font-medium text-on-surface-variant group-hover:text-on-surface">Create XLSX after scan</span>
+</label>
+<label class="flex items-center space-x-3 p-4 rounded-xl bg-surface-container-low hover:bg-surface-container-high transition-colors cursor-pointer group">
+<input class="w-5 h-5 rounded text-primary focus:ring-primary border-outline-variant" type="checkbox"/>
+<span class="text-sm font-medium text-on-surface-variant group-hover:text-on-surface">Preserve leading zeros in XLSX</span>
+</label>
+</div>
+</section>
+<!-- Actions Bar -->
+<section class="flex flex-col md:flex-row items-center gap-4 pt-8">
+<button class="w-full md:w-auto px-8 py-4 primary-gradient text-on-primary rounded-lg font-bold text-base shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center">
+<span class="material-symbols-outlined mr-2" data-icon="play_arrow">play_arrow</span>
+                        Generate Content List
+                    </button>
+<button class="w-full md:w-auto px-6 py-4 bg-secondary-container text-on-secondary-container rounded-lg font-semibold hover:bg-secondary-fixed transition-colors">
+                        Use Source As Output
+                    </button>
+<button class="w-full md:w-auto px-6 py-4 bg-transparent text-secondary hover:bg-surface-container-high rounded-lg font-semibold transition-colors flex items-center justify-center">
+<span class="material-symbols-outlined mr-2" data-icon="restart_alt">restart_alt</span>
+                        Reset
+                    </button>
+<div class="flex-1"></div>
+<button class="w-full md:w-auto px-6 py-4 border border-outline-variant text-on-surface-variant rounded-lg font-semibold hover:bg-surface-container-low transition-colors flex items-center justify-center">
+<span class="material-symbols-outlined mr-2" data-icon="folder_open">folder_open</span>
+                        Open Output Folder
+                    </button>
+</section>
+<!-- Scan Result Area -->
+<section class="mt-12 bg-surface-container-lowest border border-outline-variant/10 rounded-2xl overflow-hidden">
+<div class="px-6 py-4 bg-surface-container-low border-b border-outline-variant/10 flex items-center">
+<span class="w-3 h-3 rounded-full bg-slate-300 mr-2"></span>
+<span class="text-xs font-bold text-on-surface-variant uppercase tracking-widest font-label">Scan Result Summary</span>
+</div>
+<div class="p-12 flex flex-col items-center text-center space-y-4">
+<div class="w-16 h-16 rounded-full bg-surface-container flex items-center justify-center text-outline mb-2">
+<span class="material-symbols-outlined text-3xl" data-icon="analytics">analytics</span>
+</div>
+<p class="text-on-surface-variant text-sm max-w-md leading-relaxed font-body">
+                            The Go GUI uses the same core engine as the TUI. Run a scan to see the result summary here.
+                        </p>
+<div class="w-full max-w-sm h-1.5 bg-surface-container rounded-full overflow-hidden">
+<div class="w-0 h-full bg-primary transition-all duration-1000"></div>
+</div>
+</div>
+</section>
+</div>
+<!-- Bottom Navigation (Mobile Only) -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 py-3 md:hidden bg-white/80 dark:bg-slate-950/80 backdrop-blur-lg border-t border-slate-200/50 shadow-[0_-4px_24px_rgba(0,0,0,0.04)]">
+<a class="flex flex-col items-center text-blue-600 dark:text-blue-400" href="#">
+<span class="material-symbols-outlined" data-icon="play_arrow">play_arrow</span>
+<span class="text-xs font-medium font-label mt-1">Generate</span>
+</a>
+<a class="flex flex-col items-center text-slate-400 dark:text-slate-500 hover:text-blue-500 transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="restart_alt">restart_alt</span>
+<span class="text-xs font-medium font-label mt-1">Reset</span>
+</a>
+<a class="flex flex-col items-center text-slate-400 dark:text-slate-500 hover:text-blue-500 transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="folder_open">folder_open</span>
+<span class="text-xs font-medium font-label mt-1">Open Folder</span>
+</a>
+</nav>
+</main>
+</div>
+</body></html>
