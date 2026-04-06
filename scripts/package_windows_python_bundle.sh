@@ -11,18 +11,16 @@ mkdir -p "$OUT_DIR" "$BUILD_DIR"
 find "$OUT_DIR" -mindepth 1 -maxdepth 1 \
   ! -name '.gitkeep' \
   -exec rm -rf {} +
-mkdir -p "$OUT_DIR/scripts"
 rm -f "$ARCHIVE" "$TMP_ARCHIVE"
 
 cd "$ROOT_DIR"
 
 ./scripts/parity_check.sh
 python3 -m unittest discover -s ./python -p 'test_*.py'
-python3 -m py_compile ./python/content_list_core.py ./python/content_list_generator.py ./scripts/copy_email_files.py
+python3 -m py_compile ./python/content_list_core.py ./python/content_list_generator.py
 
-cp python/content_list_core.py "$OUT_DIR/scripts/"
-cp python/content_list_generator.py "$OUT_DIR/scripts/"
-cp scripts/copy_email_files.py "$OUT_DIR/scripts/"
+cp python/content_list_core.py "$OUT_DIR/"
+cp python/content_list_generator.py "$OUT_DIR/"
 cp README.md "$OUT_DIR/"
 cp INSTALL.md "$OUT_DIR/"
 cp SMOKE_TEST_PLAN.md "$OUT_DIR/"
@@ -32,7 +30,7 @@ cat > "$OUT_DIR/run-content-list-generator.cmd" <<'EOF'
 @echo off
 setlocal
 set "SCRIPT=%USERPROFILE%\scripts\content_list_generator.py"
-if not exist "%SCRIPT%" set "SCRIPT=%~dp0scripts\content_list_generator.py"
+if not exist "%SCRIPT%" set "SCRIPT=%~dp0content_list_generator.py"
 python "%SCRIPT%"
 EOF
 
@@ -40,7 +38,7 @@ cat > "$OUT_DIR/run-content-list-generator.bat" <<'EOF'
 @echo off
 setlocal
 set "SCRIPT=%USERPROFILE%\scripts\content_list_generator.py"
-if not exist "%SCRIPT%" set "SCRIPT=%~dp0scripts\content_list_generator.py"
+if not exist "%SCRIPT%" set "SCRIPT=%~dp0content_list_generator.py"
 
 if not exist "%SCRIPT%" (
   echo Could not find content_list_generator.py.
@@ -50,7 +48,6 @@ if not exist "%SCRIPT%" (
   echo Copy these files into %USERPROFILE%\scripts\:
   echo   content_list_generator.py
   echo   content_list_core.py
-  echo   copy_email_files.py
   exit /b 1
 )
 
@@ -74,16 +71,16 @@ EOF
 cat > "$OUT_DIR/run-email-copy.cmd" <<'EOF'
 @echo off
 setlocal
-set "SCRIPT=%USERPROFILE%\scripts\copy_email_files.py"
-if not exist "%SCRIPT%" set "SCRIPT=%~dp0scripts\copy_email_files.py"
-python "%SCRIPT%"
+set "SCRIPT=%USERPROFILE%\scripts\content_list_generator.py"
+if not exist "%SCRIPT%" set "SCRIPT=%~dp0content_list_generator.py"
+python "%SCRIPT%" --mode email-copy %*
 EOF
 
 cat > "$OUT_DIR/run-content-list-generator-cli.cmd" <<'EOF'
 @echo off
 setlocal
 set "SCRIPT=%USERPROFILE%\scripts\content_list_generator.py"
-if not exist "%SCRIPT%" set "SCRIPT=%~dp0scripts\content_list_generator.py"
+if not exist "%SCRIPT%" set "SCRIPT=%~dp0content_list_generator.py"
 python "%SCRIPT%" --cli %*
 EOF
 

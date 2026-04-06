@@ -51,11 +51,11 @@ Windows, portable Python GUI path:
 
 - install Python 3 with Tkinter
 - install the Python dependency with `pip install -r requirements.txt`
-- place these files in `%USERPROFILE%\scripts\`:
+- `releases/windows-python/` contains the Windows Python deployment files
+- copy these files to `%USERPROFILE%\scripts\`:
   - `content_list_generator.py`
   - `content_list_core.py`
-  - `copy_email_files.py`
-- place `run-python-gui.bat` on the user's Desktop, or use `releases/windows-python/run-content-list-generator.bat`
+- copy `releases/windows-python/run-content-list-generator.bat` to `%USERPROFILE%\scripts\` (or put it on Desktop)
 - the launcher looks in `%USERPROFILE%\scripts\` first, so it still works when launched from the Desktop
 
 Windows, Go executable path:

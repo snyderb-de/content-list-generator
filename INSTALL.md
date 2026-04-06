@@ -98,7 +98,6 @@ Files to copy:
 
 - `content_list_generator.py`
 - `content_list_core.py`
-- `copy_email_files.py`
 
 Put one of these launchers on the user's Desktop:
 
@@ -118,6 +117,8 @@ Release files end up in:
 ```text
 releases/windows-python/
 ```
+
+Use `releases/windows-python/` as the copy source for `C:\Users\[USER]\scripts\`.
 
 ### Path B: Go Windows Executable
 

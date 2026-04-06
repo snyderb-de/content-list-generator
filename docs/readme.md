@@ -23,7 +23,7 @@ Content List Generator is a desktop tool for two everyday jobs:
 ## Windows Portable Layout
 
 - Install the Python dependency with `pip install -r requirements.txt`
-- Put `content_list_generator.py`, `content_list_core.py`, and `copy_email_files.py` in `%USERPROFILE%\scripts\`
+- Put `content_list_generator.py` and `content_list_core.py` in `%USERPROFILE%\scripts\`
 - Put the launcher `.bat` on the user's Desktop
 - The Desktop launcher looks in `%USERPROFILE%\scripts\` first
 - The packaged Windows Python release lives in `releases/windows-python/`

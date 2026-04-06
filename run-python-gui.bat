@@ -13,7 +13,6 @@ if not exist "%SCRIPT%" (
   echo Copy these files into %USERPROFILE%\scripts\:
   echo   content_list_generator.py
   echo   content_list_core.py
-  echo   copy_email_files.py
   exit /b 1
 )
 

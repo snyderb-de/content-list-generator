@@ -44,6 +44,6 @@ run-python-gui.bat
 - The content-list workflow saves a CSV file and can also save an Excel copy.
 - The email-copy workflow looks for supported email file types, copies matching files, keeps the original folder layout, and saves a report.
 - The Windows Desktop launcher expects the Python files in `%USERPROFILE%\scripts\`.
-- The packaged Windows bundle keeps those Python files together under `releases/windows-python/scripts/` so they can be copied into `%USERPROFILE%\scripts\`.
+- The packaged Windows bundle keeps those Python files at the top of `releases/windows-python/` so they can be copied into `%USERPROFILE%\scripts\`.
 - Release outputs now live under `releases/`, and local build outputs live under `build/`.
 - The main repo TODO list lives in `TODO.md` at the repo root.
