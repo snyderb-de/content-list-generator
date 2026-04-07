@@ -101,10 +101,14 @@ Files to copy:
 
 Put one of these launchers on the user's Desktop:
 
-- `run-python-gui.bat`
-- `releases/windows-python/run-content-list-generator.bat`
+- `content-list-generator.bat`
+- `releases/windows-python/content-list-generator.bat`
 
-The launcher looks in `C:\Users\[USER]\scripts\content_list_generator.py` first.
+Legacy launchers still supported:
+
+- `run-python-gui.bat`
+- `releases/windows-python/launch-content-list-generator-gui.bat`
+- `releases/windows-python/run-content-list-generator.bat`
 
 Build the portable Windows Python package:
 
@@ -119,6 +123,10 @@ releases/windows-python/
 ```
 
 Use `releases/windows-python/` as the copy source for `C:\Users\[USER]\scripts\`.
+
+The launchers also support this alternate path:
+
+`C:\Users\[USER]\scripts\content-list-gen\`
 
 ### Path B: Go Windows Executable
 
