@@ -37,7 +37,7 @@ const (
 const (
 	focusFileName = iota
 	focusExcludeExts
-	focusHashing
+	focusHashAlgorithm
 	focusHidden
 	focusSystem
 	focusXLSX
@@ -83,11 +83,16 @@ func (a actionItem) Title() string       { return a.title }
 func (a actionItem) Description() string { return a.description }
 
 type scanProgressMsg struct {
-	files       uint64
-	directories uint64
-	bytes       uint64
-	filtered    uint64
-	elapsed     time.Duration
+	phase            string
+	files            uint64
+	directories      uint64
+	bytes            uint64
+	filtered         uint64
+	totalFiles       uint64
+	totalDirectories uint64
+	percent          float64
+	eta              time.Duration
+	elapsed          time.Duration
 }
 
 type scanErrorMsg struct {
@@ -110,7 +115,7 @@ type model struct {
 	outputInput    textinput.Model
 	excludeInput   textinput.Model
 	settingsFocus  int
-	hashing        bool
+	hashAlgorithm  hashAlgorithm
 	excludeHidden  bool
 	excludeSystem  bool
 	createXLSX     bool
@@ -185,7 +190,7 @@ func runTUI(startDir string) {
 		outputInput:    outputInput,
 		excludeInput:   excludeInput,
 		settingsFocus:  focusFileName,
-		hashing:        true,
+		hashAlgorithm:  defaultHashAlgorithm(),
 		excludeHidden:  false,
 		excludeSystem:  false,
 		createXLSX:     true,
@@ -615,8 +620,8 @@ func (m model) updateOutputStage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, textinput.Blink
 	case " ":
 		switch m.settingsFocus {
-		case focusHashing:
-			m.hashing = !m.hashing
+		case focusHashAlgorithm:
+			m.hashAlgorithm = m.hashAlgorithm.Next()
 			return m, nil
 		case focusHidden:
 			m.excludeHidden = !m.excludeHidden
@@ -638,8 +643,8 @@ func (m model) updateOutputStage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "enter":
 		switch m.settingsFocus {
-		case focusHashing:
-			m.hashing = !m.hashing
+		case focusHashAlgorithm:
+			m.hashAlgorithm = m.hashAlgorithm.Next()
 			return m, nil
 		case focusHidden:
 			m.excludeHidden = !m.excludeHidden
@@ -693,7 +698,7 @@ func (m model) updateOutputStage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 
 			return m.beginScan(outputPath, scanOptions{
-				Hashing:          m.hashing,
+				HashAlgorithm:    m.hashAlgorithm,
 				ExcludeHidden:    m.excludeHidden,
 				ExcludeSystem:    m.excludeSystem,
 				CreateXLSX:       m.createXLSX,
@@ -724,7 +729,7 @@ func (m model) updateConfirmOverwriteStage(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 			return m, nil
 		}
 		return m.beginScan(m.pendingPath, scanOptions{
-			Hashing:          m.hashing,
+			HashAlgorithm:    m.hashAlgorithm,
 			ExcludeHidden:    m.excludeHidden,
 			ExcludeSystem:    m.excludeSystem,
 			CreateXLSX:       m.createXLSX,
@@ -870,14 +875,14 @@ func (m model) viewOutputForm() string {
 		focusedLine(m.settingsFocus == focusFileName, "File name", m.outputInput.View()),
 		focusedInfo(false, "Format", "Scan writes CSV first. XLSX can be created afterward as a spreadsheet copy."),
 		focusedLine(m.settingsFocus == focusExcludeExts, "Exclude extensions", m.excludeInput.View()),
-		focusedToggle(m.settingsFocus == focusHashing, "SHA-256 hashing", m.hashing),
+		focusedChoice(m.settingsFocus == focusHashAlgorithm, "Verification hash", m.hashAlgorithm.OptionLabel()),
 		focusedToggle(m.settingsFocus == focusHidden, "Exclude hidden files", m.excludeHidden),
 		focusedToggle(m.settingsFocus == focusSystem, "Exclude common system files", m.excludeSystem),
 		focusedToggle(m.settingsFocus == focusXLSX, "Create XLSX after scan", m.createXLSX),
 		focusedToggle(m.settingsFocus == focusPreserveZeros, "Preserve leading zeros in XLSX", m.preserveZeros && m.createXLSX),
 		focusedAction(m.settingsFocus == focusStart, "Start scan"),
 		"",
-		styleHint("Tab or arrows move between controls. Space toggles a switch. Enter activates the focused control."),
+		styleHint("Tab or arrows move between controls. Space or enter changes the focused setting."),
 		styleHint(fmt.Sprintf("Preview: %s", filepath.Join(m.outputDir, valueOrDefault(strings.TrimSpace(m.outputInput.Value()), defaultOutputFilename(m.sourceDir))))),
 	)
 
@@ -889,26 +894,51 @@ func (m model) viewOutputForm() string {
 }
 
 func (m model) viewScanning() string {
+	phaseTitle := fmt.Sprintf("%s %s...", m.spinner.View(), m.progress.phase)
+	if strings.TrimSpace(m.progress.phase) == "" {
+		phaseTitle = fmt.Sprintf("%s Working...", m.spinner.View())
+	}
+	fileStat := formatUint(m.progress.files)
+	if m.progress.totalFiles > 0 {
+		fileStat = fmt.Sprintf("%s / %s", formatUint(m.progress.files), formatUint(m.progress.totalFiles))
+	}
+	directoryStat := formatUint(m.progress.directories)
+	if m.progress.totalDirectories > 0 {
+		directoryStat = fmt.Sprintf("%s / %s", formatUint(m.progress.directories), formatUint(m.progress.totalDirectories))
+	}
+	progressStat := "Counting"
+	if m.progress.phase == progressPhaseLabel(progressPhaseScanning) {
+		progressStat = formatPercent(m.progress.percent)
+	}
+	etaStat := "calculating"
+	if m.progress.phase != progressPhaseLabel(progressPhaseScanning) {
+		etaStat = "after count"
+	} else if m.progress.eta > 0 {
+		etaStat = m.progress.eta.Round(time.Second).String()
+	}
+
 	body := lipgloss.JoinVertical(
 		lipgloss.Left,
-		styleTitle(fmt.Sprintf("%s Scanning...", m.spinner.View())),
+		styleTitle(phaseTitle),
 		"",
 		styleLabel(fmt.Sprintf("Source: %s", m.sourceDir)),
 		styleLabel(fmt.Sprintf("Output: %s", m.outputPath)),
-		styleLabel(fmt.Sprintf("Hashes: %s", onOff(m.hashing))),
+		styleLabel(fmt.Sprintf("Verification hash: %s", m.hashAlgorithm.OptionLabel())),
 		styleLabel(fmt.Sprintf("Exclude hidden: %s", onOff(m.excludeHidden))),
 		styleLabel(fmt.Sprintf("Exclude system: %s", onOff(m.excludeSystem))),
 		styleLabel(fmt.Sprintf("Create XLSX: %s", onOff(m.createXLSX))),
 		styleLabel(fmt.Sprintf("Preserve zeros in XLSX: %s", onOff(m.preserveZeros && m.createXLSX))),
 		styleLabel(fmt.Sprintf("Excluded exts: %s", valueOrDefault(strings.TrimSpace(m.excludeInput.Value()), "none"))),
 		"",
-		styleStat("Files", formatUint(m.progress.files)),
-		styleStat("Directories", formatUint(m.progress.directories)),
+		styleStat("Progress", progressStat),
+		styleStat("Files", fileStat),
+		styleStat("Directories", directoryStat),
 		styleStat("Bytes", humanBytes(m.progress.bytes)),
 		styleStat("Filtered out", formatUint(m.progress.filtered)),
+		styleStat("ETA", etaStat),
 		styleStat("Elapsed", m.progress.elapsed.Round(time.Second).String()),
 		"",
-		styleHint("Rows are streamed directly to CSV, so huge scans stay memory-safe."),
+		styleHint("The app counts first so scan progress and ETA are based on the real file total."),
 	)
 	return styleFrame(body, m.width)
 }
@@ -992,6 +1022,7 @@ func (m model) viewDone() string {
 		styleStat("Extension filtered", formatUint(m.done.filteredExts)),
 		styleStat("Errors skipped", formatUint(m.done.errors)),
 		styleStat("Elapsed", m.done.elapsed.Round(time.Millisecond).String()),
+		styleStat("Verification hash", m.done.hashAlgorithm.OptionLabel()),
 		styleStat("Hash workers", fmt.Sprintf("%d", m.done.hashWorkers)),
 		styleStat("Create XLSX", onOff(m.done.createXLSX)),
 		styleStat("Preserve zeros", onOff(m.done.preserveZeros)),
@@ -1072,11 +1103,16 @@ func waitForProgress() tea.Cmd {
 	return tea.Tick(250*time.Millisecond, func(t time.Time) tea.Msg {
 		stats := currentProgress()
 		return scanProgressMsg{
-			files:       stats.files,
-			directories: stats.directories,
-			bytes:       stats.bytes,
-			filtered:    stats.filtered,
-			elapsed:     time.Since(stats.startedAt),
+			phase:            progressPhaseLabel(stats.phase),
+			files:            stats.files,
+			directories:      stats.directories,
+			bytes:            stats.bytes,
+			filtered:         stats.filtered,
+			totalFiles:       stats.totalFiles,
+			totalDirectories: stats.totalDirectories,
+			percent:          progressFraction(stats),
+			eta:              progressETA(stats, t),
+			elapsed:          time.Since(stats.startedAt),
 		}
 	})
 }
@@ -1285,6 +1321,10 @@ func onOff(v bool) string {
 	return "off"
 }
 
+func formatPercent(value float64) string {
+	return fmt.Sprintf("%.0f%%", value*100)
+}
+
 func renderMarkdown(input string, width int) string {
 	renderer, err := glamour.NewTermRenderer(
 		glamour.WithAutoStyle(),
@@ -1354,6 +1394,14 @@ func focusedInfo(focused bool, label, value string) string {
 			styleLabel(label),
 			styleHint(value),
 		),
+	)
+}
+
+func focusedChoice(focused bool, label, value string) string {
+	return lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		focusPrefix(focused),
+		styleLabel(fmt.Sprintf("%s: %s", label, value)),
 	)
 }
 

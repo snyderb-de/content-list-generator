@@ -12,6 +12,11 @@ from pathlib import Path
 from typing import Callable
 from xml.sax.saxutils import escape
 
+try:
+    import blake3
+except Exception:  # pragma: no cover
+    blake3 = None
+
 
 SYSTEM_FILES = {".ds_store", "thumbs.db", "desktop.ini", "ehthumbs.db"}
 EMAIL_EXTENSIONS = {
@@ -30,13 +35,18 @@ EMAIL_EXTENSIONS = {
     ".tbb",
     ".wdseml",
 }
+HASH_ALGORITHM_OFF = "off"
+HASH_ALGORITHM_BLAKE3 = "blake3"
+HASH_ALGORITHM_SHA1 = "sha1"
+HASH_ALGORITHM_SHA256 = "sha256"
 REPORT_HEADERS = [
     "File Name",
     "Extension",
     "Size in Bytes",
     "Size in Human Readable",
     "Path From Root Folder",
-    "SHA256 Hash",
+    "Hash Algorithm",
+    "Hash Value",
 ]
 EMAIL_MANIFEST_HEADERS = [
     "Source Path",
@@ -65,8 +75,9 @@ class ScanResult:
     filtered_hidden: int
     filtered_system: int
     filtered_exts: int
+    directories: int
     elapsed: float
-    hashing: bool
+    hash_algorithm: str
     create_xlsx: bool
     preserve_zeros: bool
     hash_workers: int
@@ -94,6 +105,18 @@ class EmailCopyProgress:
     current_name: str = ""
 
 
+@dataclass
+class ScanProgress:
+    phase: str
+    files: int
+    total_files: int
+    directories: int
+    total_directories: int
+    bytes: int
+    filtered: int
+    current_name: str = ""
+
+
 def normalize_exts(raw: str) -> set[str]:
     result: set[str] = set()
     for part in raw.split(","):
@@ -115,6 +138,54 @@ def default_manifest_name() -> str:
 
 def normalize_extension(path: Path) -> str:
     return path.suffix.lower().lstrip(".")
+
+
+def default_hash_algorithm() -> str:
+    return HASH_ALGORITHM_BLAKE3
+
+
+def normalize_hash_algorithm(value: str | None) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized in {"", "off", "none"}:
+        return HASH_ALGORITHM_OFF
+    if normalized in {"blake3", "fast", "fast (blake3)"}:
+        return HASH_ALGORITHM_BLAKE3
+    if normalized in {"sha1", "sha-1", "medium", "medium (sha-1)"}:
+        return HASH_ALGORITHM_SHA1
+    if normalized in {"sha256", "sha-256", "strong", "strong (sha-256)"}:
+        return HASH_ALGORITHM_SHA256
+    return default_hash_algorithm()
+
+
+def hash_algorithm_label(value: str) -> str:
+    normalized = normalize_hash_algorithm(value)
+    if normalized == HASH_ALGORITHM_BLAKE3:
+        return "Fast (BLAKE3)"
+    if normalized == HASH_ALGORITHM_SHA1:
+        return "Medium (SHA-1)"
+    if normalized == HASH_ALGORITHM_SHA256:
+        return "Strong (SHA-256)"
+    return "Off"
+
+
+def hash_algorithm_csv_name(value: str) -> str:
+    normalized = normalize_hash_algorithm(value)
+    if normalized == HASH_ALGORITHM_BLAKE3:
+        return "BLAKE3"
+    if normalized == HASH_ALGORITHM_SHA1:
+        return "SHA-1"
+    if normalized == HASH_ALGORITHM_SHA256:
+        return "SHA-256"
+    return ""
+
+
+def hash_algorithm_labels() -> list[str]:
+    return [
+        hash_algorithm_label(HASH_ALGORITHM_OFF),
+        hash_algorithm_label(HASH_ALGORITHM_BLAKE3),
+        hash_algorithm_label(HASH_ALGORITHM_SHA1),
+        hash_algorithm_label(HASH_ALGORITHM_SHA256),
+    ]
 
 
 def summary_key(ext: str) -> str:
@@ -142,8 +213,18 @@ def should_skip(
     return "", False
 
 
-def hash_file(path: Path) -> str:
-    digest = hashlib.sha256()
+def hash_file(path: Path, algorithm: str) -> str:
+    normalized = normalize_hash_algorithm(algorithm)
+    if normalized == HASH_ALGORITHM_OFF:
+        return ""
+    if normalized == HASH_ALGORITHM_BLAKE3:
+        if blake3 is None:
+            raise RuntimeError("BLAKE3 hashing requires the 'blake3' Python package. Install it with: pip install -r requirements.txt")
+        digest = blake3.blake3()
+    elif normalized == HASH_ALGORITHM_SHA1:
+        digest = hashlib.sha1()
+    else:
+        digest = hashlib.sha256()
     with path.open("rb") as handle:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
@@ -169,15 +250,31 @@ def collect_files(
     include_hidden: bool,
     include_system: bool,
     excluded_exts: set[str],
-) -> tuple[list[Path], int, int, int, int]:
+    progress_callback: Callable[[ScanProgress], None] | None = None,
+) -> tuple[list[Path], int, int, int, int, int]:
     kept: list[Path] = []
     filtered = 0
     filtered_hidden = 0
     filtered_system = 0
     filtered_exts = 0
+    directories = 0
 
     for root, dirs, files in os.walk(source_dir):
         root_path = Path(root)
+        directories += 1
+        if progress_callback is not None and directories % 100 == 0:
+            progress_callback(
+                ScanProgress(
+                    phase="counting",
+                    files=len(kept),
+                    total_files=0,
+                    directories=directories,
+                    total_directories=0,
+                    bytes=0,
+                    filtered=filtered,
+                    current_name=root_path.name,
+                )
+            )
         if not include_hidden:
             visible_dirs = []
             for directory in dirs:
@@ -202,9 +299,34 @@ def collect_files(
                     filtered_exts += 1
                 continue
             kept.append(candidate)
+            if progress_callback is not None and len(kept) % 250 == 0:
+                progress_callback(
+                    ScanProgress(
+                        phase="counting",
+                        files=len(kept),
+                        total_files=0,
+                        directories=directories,
+                        total_directories=0,
+                        bytes=0,
+                        filtered=filtered,
+                        current_name=file_name,
+                    )
+                )
 
     kept.sort()
-    return kept, filtered, filtered_hidden, filtered_system, filtered_exts
+    if progress_callback is not None:
+        progress_callback(
+            ScanProgress(
+                phase="counting",
+                files=len(kept),
+                total_files=0,
+                directories=directories,
+                total_directories=0,
+                bytes=0,
+                filtered=filtered,
+            )
+        )
+    return kept, filtered, filtered_hidden, filtered_system, filtered_exts, directories
 
 
 def summarize_entries(summaries: dict[str, dict[str, int]], key: str) -> list[SummaryEntry]:
@@ -223,22 +345,25 @@ def write_csv_report(
     source_dir: Path,
     output_path: Path,
     files: list[Path],
-    hashing: bool,
-    progress_callback: Callable[[int, int, Path], None] | None = None,
+    hash_algorithm: str,
+    total_directories: int,
+    filtered: int,
+    progress_callback: Callable[[ScanProgress], None] | None = None,
 ) -> tuple[int, int, dict[str, dict[str, int]], int]:
     summaries: dict[str, dict[str, int]] = {}
     total_bytes = 0
     hash_workers = 1
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    normalized_algorithm = normalize_hash_algorithm(hash_algorithm)
 
     with output_path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
         writer.writerow(REPORT_HEADERS)
 
-        if hashing:
+        if normalized_algorithm != HASH_ALGORITHM_OFF:
             hash_workers = max(2, os.cpu_count() or 2)
             with ThreadPoolExecutor(max_workers=hash_workers) as pool:
-                iterator = pool.map(hash_file, files)
+                iterator = pool.map(lambda path: hash_file(path, normalized_algorithm), files)
                 for index, (file_path, file_hash) in enumerate(zip(files, iterator), start=1):
                     stat = file_path.stat()
                     size = stat.st_size
@@ -254,11 +379,23 @@ def write_csv_report(
                             size,
                             human_bytes(size),
                             file_path.relative_to(source_dir).as_posix(),
+                            hash_algorithm_csv_name(normalized_algorithm),
                             file_hash,
                         ]
                     )
                     if progress_callback is not None:
-                        progress_callback(index, len(files), file_path)
+                        progress_callback(
+                            ScanProgress(
+                                phase="scanning",
+                                files=index,
+                                total_files=len(files),
+                                directories=total_directories,
+                                total_directories=total_directories,
+                                bytes=total_bytes,
+                                filtered=filtered,
+                                current_name=file_path.name,
+                            )
+                        )
         else:
             for index, file_path in enumerate(files, start=1):
                 stat = file_path.stat()
@@ -276,10 +413,22 @@ def write_csv_report(
                         human_bytes(size),
                         file_path.relative_to(source_dir).as_posix(),
                         "",
+                        "",
                     ]
                 )
                 if progress_callback is not None:
-                    progress_callback(index, len(files), file_path)
+                    progress_callback(
+                        ScanProgress(
+                            phase="scanning",
+                            files=index,
+                            total_files=len(files),
+                            directories=total_directories,
+                            total_directories=total_directories,
+                            bytes=total_bytes,
+                            filtered=filtered,
+                            current_name=file_path.name,
+                        )
+                    )
 
     return len(files), total_bytes, summaries, hash_workers
 
@@ -441,26 +590,29 @@ def run_scan(
     source_dir: Path,
     output_path: Path,
     *,
-    hashing: bool,
+    hash_algorithm: str,
     include_hidden: bool,
     include_system: bool,
     excluded_exts: set[str],
     create_xlsx: bool,
     preserve_zeros: bool,
-    progress_callback: Callable[[int, int, Path], None] | None = None,
+    progress_callback: Callable[[ScanProgress], None] | None = None,
 ) -> ScanResult:
     started = time.time()
-    files, filtered, filtered_hidden, filtered_system, filtered_exts = collect_files(
+    files, filtered, filtered_hidden, filtered_system, filtered_exts, directories = collect_files(
         source_dir,
         include_hidden,
         include_system,
         excluded_exts,
+        progress_callback=progress_callback,
     )
     file_count, total_bytes, summaries, hash_workers = write_csv_report(
         source_dir,
         output_path,
         files,
-        hashing,
+        hash_algorithm,
+        directories,
+        filtered,
         progress_callback=progress_callback,
     )
     xlsx_path: Path | None = None
@@ -476,8 +628,9 @@ def run_scan(
         filtered_hidden=filtered_hidden,
         filtered_system=filtered_system,
         filtered_exts=filtered_exts,
+        directories=directories,
         elapsed=time.time() - started,
-        hashing=hashing,
+        hash_algorithm=normalize_hash_algorithm(hash_algorithm),
         create_xlsx=create_xlsx,
         preserve_zeros=preserve_zeros,
         hash_workers=hash_workers,
@@ -607,12 +760,13 @@ def build_scan_summary(result: ScanResult) -> str:
         f"Saved file list: {result.output_path}",
         f"Excel copy: {result.xlsx_path if result.xlsx_path else 'not created'}",
         f"Files included: {result.files}",
+        f"Folders counted: {result.directories}",
         f"Total size: {result.total_bytes} ({human_bytes(result.total_bytes)})",
         f"Items skipped: {result.filtered}",
         f"Hidden items skipped: {result.filtered_hidden}",
         f"System items skipped: {result.filtered_system}",
         f"Skipped by file type: {result.filtered_exts}",
-        f"SHA-256 hashes: {'on' if result.hashing else 'off'}",
+        f"Verification hash: {hash_algorithm_label(result.hash_algorithm)}",
         f"Excel copy enabled: {'on' if result.create_xlsx else 'off'}",
         f"Keep leading zeros in Excel: {'on' if result.preserve_zeros and result.create_xlsx else 'off'}",
         f"Finished in: {result.elapsed:.2f}s",

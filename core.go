@@ -3,9 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
-	"crypto/sha256"
 	"encoding/csv"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -40,7 +38,7 @@ type scanDoneMsg struct {
 	topByCount      []summaryEntry
 	topBySize       []summaryEntry
 	hashWorkers     int
-	hashing         bool
+	hashAlgorithm   hashAlgorithm
 	excludeHidden   bool
 	excludeSystem   bool
 	createXLSX      bool
@@ -52,7 +50,7 @@ type scanDoneMsg struct {
 }
 
 type scanOptions struct {
-	Hashing          bool
+	HashAlgorithm    hashAlgorithm
 	ExcludeHidden    bool
 	ExcludeSystem    bool
 	CreateXLSX       bool
@@ -112,6 +110,11 @@ var emailExtensions = map[string]struct{}{
 	".wdseml":         {},
 }
 
+type scanCountTotals struct {
+	files       uint64
+	directories uint64
+}
+
 func sortedEmailExtensions() []string {
 	values := make([]string, 0, len(emailExtensions))
 	for ext := range emailExtensions {
@@ -121,31 +124,58 @@ func sortedEmailExtensions() []string {
 	return values
 }
 
-type globalProgress struct {
-	files       uint64
-	directories uint64
-	bytes       uint64
-	filtered    uint64
-	startedAt   time.Time
-}
+func countScanTargets(sourceDir string, options scanOptions, startedAt time.Time) (scanCountTotals, error) {
+	totals := scanCountTotals{}
+	err := filepath.WalkDir(sourceDir, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return nil
+		}
 
-var scanProgressState atomic.Value
+		if d.IsDir() {
+			if path != sourceDir && options.ExcludeHidden && isHiddenName(d.Name()) {
+				setProgress(globalProgress{
+					phase:          progressPhaseCounting,
+					files:          totals.files,
+					directories:    totals.directories,
+					startedAt:      startedAt,
+					phaseStartedAt: startedAt,
+				})
+				return filepath.SkipDir
+			}
+			totals.directories++
+			setProgress(globalProgress{
+				phase:          progressPhaseCounting,
+				files:          totals.files,
+				directories:    totals.directories,
+				startedAt:      startedAt,
+				phaseStartedAt: startedAt,
+			})
+			return nil
+		}
 
-func currentProgress() globalProgress {
-	if value := scanProgressState.Load(); value != nil {
-		return value.(globalProgress)
-	}
-	return globalProgress{startedAt: time.Now()}
-}
+		if _, skipped := shouldSkipFile(path, d.Name(), options); skipped {
+			return nil
+		}
 
-func setProgress(files, directories, bytes, filtered uint64, startedAt time.Time) {
-	scanProgressState.Store(globalProgress{
-		files:       files,
-		directories: directories,
-		bytes:       bytes,
-		filtered:    filtered,
-		startedAt:   startedAt,
+		info, err := d.Info()
+		if err != nil {
+			return nil
+		}
+		if !info.Mode().IsRegular() {
+			return nil
+		}
+
+		totals.files++
+		setProgress(globalProgress{
+			phase:          progressPhaseCounting,
+			files:          totals.files,
+			directories:    totals.directories,
+			startedAt:      startedAt,
+			phaseStartedAt: startedAt,
+		})
+		return nil
 	})
+	return totals, err
 }
 
 type reportWriter interface {
@@ -184,7 +214,8 @@ func (w *csvReportWriter) WriteHeader() error {
 		"Size in Bytes",
 		"Size in Human Readable",
 		"Path From Root Folder",
-		"SHA256 Hash",
+		"Hash Algorithm",
+		"Hash Value",
 	})
 }
 
@@ -206,7 +237,16 @@ func (w *csvReportWriter) Close() error {
 
 func runScan(sourceDir, outputPath string, options scanOptions) (scanDoneMsg, error) {
 	startedAt := time.Now()
-	setProgress(0, 0, 0, 0, startedAt)
+	setProgress(globalProgress{
+		phase:          progressPhaseCounting,
+		startedAt:      startedAt,
+		phaseStartedAt: startedAt,
+	})
+
+	counts, err := countScanTargets(sourceDir, options, startedAt)
+	if err != nil {
+		return scanDoneMsg{}, err
+	}
 
 	reportWriter, err := newReportWriter(outputPath)
 	if err != nil {
@@ -220,9 +260,18 @@ func runScan(sourceDir, outputPath string, options scanOptions) (scanDoneMsg, er
 
 	stats := &scannerStats{}
 	hashWorkers := 1
-	if options.Hashing {
+	if options.HashAlgorithm.Enabled() {
 		hashWorkers = max(2, runtime.NumCPU())
 	}
+
+	scanStartedAt := time.Now()
+	setProgress(globalProgress{
+		phase:            progressPhaseScanning,
+		totalFiles:       counts.files,
+		totalDirectories: counts.directories,
+		startedAt:        startedAt,
+		phaseStartedAt:   scanStartedAt,
+	})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -246,9 +295,7 @@ func runScan(sourceDir, outputPath string, options scanOptions) (scanDoneMsg, er
 			for work := range workCh {
 				hashValue := ""
 				var resultErr error
-				if options.Hashing {
-					hashValue, resultErr = hashFile(work.path)
-				}
+				hashValue, resultErr = hashFile(work.path, options.HashAlgorithm)
 				select {
 				case resultCh <- scanResult{index: work.index, work: work, hash: hashValue, err: resultErr}:
 				case <-ctx.Done():
@@ -277,20 +324,31 @@ func runScan(sourceDir, outputPath string, options scanOptions) (scanDoneMsg, er
 					stats.filtered.Add(1)
 					filteredHidden++
 					filteredSamples = appendFilteredSample(filteredSamples, fmt.Sprintf("%s -> hidden directory", filepath.ToSlash(path)))
-					setProgress(stats.files.Load(), stats.directories.Load(), stats.bytes.Load(), stats.filtered.Load(), startedAt)
+					setProgress(globalProgress{
+						phase:            progressPhaseScanning,
+						files:            stats.files.Load(),
+						directories:      stats.directories.Load(),
+						bytes:            stats.bytes.Load(),
+						filtered:         stats.filtered.Load(),
+						totalFiles:       counts.files,
+						totalDirectories: counts.directories,
+						startedAt:        startedAt,
+						phaseStartedAt:   scanStartedAt,
+					})
 					return filepath.SkipDir
 				}
 				stats.directories.Add(1)
-				setProgress(stats.files.Load(), stats.directories.Load(), stats.bytes.Load(), stats.filtered.Load(), startedAt)
-				return nil
-			}
-
-			info, err := d.Info()
-			if err != nil {
-				stats.errors.Add(1)
-				return nil
-			}
-			if !info.Mode().IsRegular() {
+				setProgress(globalProgress{
+					phase:            progressPhaseScanning,
+					files:            stats.files.Load(),
+					directories:      stats.directories.Load(),
+					bytes:            stats.bytes.Load(),
+					filtered:         stats.filtered.Load(),
+					totalFiles:       counts.files,
+					totalDirectories: counts.directories,
+					startedAt:        startedAt,
+					phaseStartedAt:   scanStartedAt,
+				})
 				return nil
 			}
 
@@ -305,7 +363,26 @@ func runScan(sourceDir, outputPath string, options scanOptions) (scanDoneMsg, er
 					filteredExts++
 				}
 				filteredSamples = appendFilteredSample(filteredSamples, fmt.Sprintf("%s -> %s", filepath.ToSlash(path), reason))
-				setProgress(stats.files.Load(), stats.directories.Load(), stats.bytes.Load(), stats.filtered.Load(), startedAt)
+				setProgress(globalProgress{
+					phase:            progressPhaseScanning,
+					files:            stats.files.Load(),
+					directories:      stats.directories.Load(),
+					bytes:            stats.bytes.Load(),
+					filtered:         stats.filtered.Load(),
+					totalFiles:       counts.files,
+					totalDirectories: counts.directories,
+					startedAt:        startedAt,
+					phaseStartedAt:   scanStartedAt,
+				})
+				return nil
+			}
+
+			info, err := d.Info()
+			if err != nil {
+				stats.errors.Add(1)
+				return nil
+			}
+			if !info.Mode().IsRegular() {
 				return nil
 			}
 
@@ -346,7 +423,17 @@ func runScan(sourceDir, outputPath string, options scanOptions) (scanDoneMsg, er
 
 			if ready.err != nil {
 				stats.errors.Add(1)
-				setProgress(stats.files.Load(), stats.directories.Load(), stats.bytes.Load(), stats.filtered.Load(), startedAt)
+				setProgress(globalProgress{
+					phase:            progressPhaseScanning,
+					files:            stats.files.Load(),
+					directories:      stats.directories.Load(),
+					bytes:            stats.bytes.Load(),
+					filtered:         stats.filtered.Load(),
+					totalFiles:       counts.files,
+					totalDirectories: counts.directories,
+					startedAt:        startedAt,
+					phaseStartedAt:   scanStartedAt,
+				})
 				continue
 			}
 
@@ -356,6 +443,7 @@ func runScan(sourceDir, outputPath string, options scanOptions) (scanDoneMsg, er
 				fmt.Sprintf("%d", ready.work.size),
 				humanBytes(ready.work.size),
 				ready.work.relative,
+				options.HashAlgorithm.CSVName(),
 				ready.hash,
 			}); err != nil {
 				cancel()
@@ -372,7 +460,17 @@ func runScan(sourceDir, outputPath string, options scanOptions) (scanDoneMsg, er
 			entry.Bytes += ready.work.size
 			typeTotals[key] = entry
 
-			setProgress(stats.files.Load(), stats.directories.Load(), stats.bytes.Load(), stats.filtered.Load(), startedAt)
+			setProgress(globalProgress{
+				phase:            progressPhaseScanning,
+				files:            stats.files.Load(),
+				directories:      stats.directories.Load(),
+				bytes:            stats.bytes.Load(),
+				filtered:         stats.filtered.Load(),
+				totalFiles:       counts.files,
+				totalDirectories: counts.directories,
+				startedAt:        startedAt,
+				phaseStartedAt:   scanStartedAt,
+			})
 		}
 	}
 
@@ -385,6 +483,18 @@ func runScan(sourceDir, outputPath string, options scanOptions) (scanDoneMsg, er
 
 	xlsxPath := ""
 	if options.CreateXLSX {
+		xlsxStartedAt := time.Now()
+		setProgress(globalProgress{
+			phase:            progressPhaseXLSX,
+			files:            stats.files.Load(),
+			directories:      stats.directories.Load(),
+			bytes:            stats.bytes.Load(),
+			filtered:         stats.filtered.Load(),
+			totalFiles:       counts.files,
+			totalDirectories: counts.directories,
+			startedAt:        startedAt,
+			phaseStartedAt:   xlsxStartedAt,
+		})
 		xlsxPath = strings.TrimSuffix(outputPath, filepath.Ext(outputPath)) + ".xlsx"
 		if err := convertCSVToXLSX(outputPath, xlsxPath, options.PreserveZeros); err != nil {
 			return scanDoneMsg{}, err
@@ -403,7 +513,7 @@ func runScan(sourceDir, outputPath string, options scanOptions) (scanDoneMsg, er
 		topByCount:      summarizeByCount(typeTotals, 8),
 		topBySize:       summarizeBySize(typeTotals, 8),
 		hashWorkers:     hashWorkers,
-		hashing:         options.Hashing,
+		hashAlgorithm:   options.HashAlgorithm,
 		excludeHidden:   options.ExcludeHidden,
 		excludeSystem:   options.ExcludeSystem,
 		createXLSX:      options.CreateXLSX,
@@ -413,20 +523,6 @@ func runScan(sourceDir, outputPath string, options scanOptions) (scanDoneMsg, er
 		filteredExts:    filteredExts,
 		filteredSamples: filteredSamples,
 	}, nil
-}
-
-func hashFile(path string) (string, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer file.Close()
-
-	hash := sha256.New()
-	if _, err := io.CopyBuffer(hash, file, make([]byte, 1<<20)); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
 func copyEmailFiles(sourceDir, destDir string) (string, uint64, error) {

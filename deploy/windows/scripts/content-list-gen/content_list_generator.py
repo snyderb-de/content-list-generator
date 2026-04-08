@@ -30,11 +30,16 @@ from content_list_core import (
     EMAIL_EXTENSIONS,
     EmailCopyProgress,
     EmailCopyResult,
+    HASH_ALGORITHM_SHA256,
+    ScanProgress,
     build_scan_summary,
-    collect_files,
     copy_email_files,
     default_output_name,
+    default_hash_algorithm,
+    hash_algorithm_label,
+    hash_algorithm_labels,
     normalize_exts,
+    normalize_hash_algorithm,
     run_scan,
 )
 
@@ -148,7 +153,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir")
     parser.add_argument("--output-name")
     parser.add_argument("--dest")
-    parser.add_argument("--hash", action="store_true", dest="hashing")
+    parser.add_argument("--hash", action="store_true", dest="hashing", help="Use SHA-256 hashing for backward-compatible CLI usage")
+    parser.add_argument("--hash-algorithm", choices=("off", "blake3", "sha1", "sha256"))
     parser.add_argument("--include-hidden", action="store_true")
     parser.add_argument("--include-system", action="store_true")
     parser.add_argument("--exclude-exts", default="")
@@ -501,7 +507,13 @@ def run_cli_scan(args: argparse.Namespace) -> int:
         print("Output file name must end in .csv", file=sys.stderr)
         return 1
 
-    hashing = args.hashing or prompt_yes_no("Include SHA-256 hashes?", default=True)
+    hash_algorithm = normalize_hash_algorithm(args.hash_algorithm)
+    if args.hashing and not args.hash_algorithm:
+        hash_algorithm = HASH_ALGORITHM_SHA256
+    if args.hash_algorithm is None and not args.hashing:
+        hash_algorithm = normalize_hash_algorithm(
+            prompt("Verification hash (off, blake3, sha1, sha256)", default_hash_algorithm())
+        )
     include_hidden = args.include_hidden or prompt_yes_no("Include hidden files?", default=False)
     include_system = args.include_system or prompt_yes_no("Include common system files?", default=False)
     exclude_raw = args.exclude_exts or prompt("Exclude extensions (comma-separated)", "")
@@ -522,7 +534,7 @@ def run_cli_scan(args: argparse.Namespace) -> int:
     result = run_scan(
         source_dir,
         output_path,
-        hashing=hashing,
+        hash_algorithm=hash_algorithm,
         include_hidden=include_hidden,
         include_system=include_system,
         excluded_exts=excluded_exts,
@@ -953,7 +965,7 @@ class ContentListApp:
         self.output_dir_var = tk.StringVar(value=str(cwd))
         self.output_name_var = tk.StringVar(value=default_output_name(cwd))
         self.exclude_var = tk.StringVar(value="")
-        self.hash_var = tk.BooleanVar(value=True)
+        self.hash_algorithm_var = tk.StringVar(value=hash_algorithm_label(default_hash_algorithm()))
         self.hidden_var = tk.BooleanVar(value=False)
         self.system_var = tk.BooleanVar(value=False)
         self.xlsx_var = tk.BooleanVar(value=True)
@@ -1270,7 +1282,7 @@ class ContentListApp:
         ctk.CTkLabel(options_wrap, text="Options", font=ctk.CTkFont(size=20, weight="bold"), text_color=themed_color("body_fg")).grid(row=0, column=0, sticky="w", pady=(0, 10))
         ctk.CTkLabel(options_wrap, text="Choose any extras you want before you generate the file list.", font=ctk.CTkFont(size=13), text_color=themed_color("hint_fg")).grid(row=1, column=0, columnspan=2, sticky="w", pady=(0, 14))
 
-        self.make_option_tile(options_wrap, "Add SHA-256 hashes (advanced)", self.hash_var).grid(row=2, column=0, sticky="ew", padx=(0, 10), pady=(0, 10))
+        self.make_select_tile(options_wrap, "Verification hash", self.hash_algorithm_var, hash_algorithm_labels()).grid(row=2, column=0, sticky="ew", padx=(0, 10), pady=(0, 10))
         self.make_option_tile(options_wrap, "Skip hidden files", self.hidden_var).grid(row=2, column=1, sticky="ew", padx=(10, 0), pady=(0, 10))
         self.make_option_tile(options_wrap, "Skip common system files", self.system_var).grid(row=3, column=0, sticky="ew", padx=(0, 10), pady=(0, 10))
         self.make_option_tile(options_wrap, "Also save an Excel copy", self.xlsx_var, command=self.sync_xlsx_state).grid(row=3, column=1, sticky="ew", padx=(10, 0), pady=(0, 10))
@@ -1452,6 +1464,31 @@ class ContentListApp:
         tile.checkbox = checkbox
         return tile
 
+    def make_select_tile(self, parent, text: str, variable: tk.StringVar, values: list[str]) -> ctk.CTkFrame:
+        tile = ctk.CTkFrame(parent, fg_color=themed_color("card_bg"), corner_radius=18)
+        ctk.CTkLabel(
+            tile,
+            text=text,
+            text_color=themed_color("body_fg"),
+            font=ctk.CTkFont(size=13, weight="bold"),
+        ).pack(anchor="w", padx=16, pady=(16, 8))
+        menu = ctk.CTkOptionMenu(
+            tile,
+            values=values,
+            variable=variable,
+            fg_color=themed_color("secondary_bg"),
+            button_color=themed_color("primary_bg"),
+            button_hover_color=themed_color("primary_hover"),
+            text_color=themed_color("body_fg"),
+            dropdown_fg_color=themed_color("card_bg"),
+            dropdown_hover_color=themed_color("secondary_hover"),
+            dropdown_text_color=themed_color("body_fg"),
+            corner_radius=10,
+        )
+        menu.pack(fill="x", padx=16, pady=(0, 16))
+        tile.menu = menu
+        return tile
+
     def make_field_card(self, parent, label: str, variable: tk.StringVar, command, hint: str = "") -> ctk.CTkFrame:
         card = ctk.CTkFrame(parent, fg_color=themed_color("card_bg"), corner_radius=22)
         card.grid_columnconfigure(0, weight=1)
@@ -1567,7 +1604,7 @@ class ContentListApp:
         self.output_dir_var.set(str(cwd))
         self.output_name_var.set(default_output_name(cwd))
         self.exclude_var.set("")
-        self.hash_var.set(True)
+        self.hash_algorithm_var.set(hash_algorithm_label(default_hash_algorithm()))
         self.hidden_var.set(False)
         self.system_var.set(False)
         self.xlsx_var.set(True)
@@ -1645,22 +1682,15 @@ class ContentListApp:
 
     def run_scan_thread(self, source_dir: Path, output_path: Path, excluded_exts: set[str]) -> None:
         try:
-            files, *_ = collect_files(
-                source_dir,
-                self.hidden_var.get(),
-                self.system_var.get(),
-                excluded_exts,
-            )
-            self.message_queue.put(("setup_progress", len(files)))
-            self.message_queue.put(("status", f"Saving {len(files)} files into the list..."))
+            self.message_queue.put(("status", "Counting files and folders..."))
 
-            def on_progress(current: int, total: int, file_path: Path) -> None:
-                self.message_queue.put(("progress", (current, total, file_path.name)))
+            def on_progress(progress: ScanProgress) -> None:
+                self.message_queue.put(("progress", progress))
 
             result = run_scan(
                 source_dir,
                 output_path,
-                hashing=self.hash_var.get(),
+                hash_algorithm=normalize_hash_algorithm(self.hash_algorithm_var.get()),
                 include_hidden=self.hidden_var.get(),
                 include_system=self.system_var.get(),
                 excluded_exts=excluded_exts,
@@ -1676,16 +1706,25 @@ class ContentListApp:
         try:
             while True:
                 kind, payload = self.message_queue.get_nowait()
-                if kind == "setup_progress":
-                    if self.progress is not None:
-                        self.progress.set(0)
-                elif kind == "status":
+                if kind == "status":
                     self.status_var.set(str(payload))
                 elif kind == "progress":
-                    current, total, name = payload
-                    if self.progress is not None:
-                        self.progress.set(current / max(1, total))
-                    self.status_var.set(f"Working... {current} of {total}: {name}")
+                    progress: ScanProgress = payload
+                    if progress.phase == "counting":
+                        if self.progress is not None:
+                            self.progress.configure(mode="indeterminate")
+                            self.progress.start()
+                        self.status_var.set(
+                            f"Counting... {progress.files} files found in {progress.directories} folders so far."
+                        )
+                    else:
+                        if self.progress is not None:
+                            self.progress.stop()
+                            self.progress.configure(mode="determinate")
+                            self.progress.set(progress.files / max(1, progress.total_files))
+                        self.status_var.set(
+                            f"Scanning... {progress.files} of {progress.total_files}: {progress.current_name}"
+                        )
                 elif kind == "done":
                     self.running = False
                     result = payload
@@ -1695,12 +1734,17 @@ class ContentListApp:
                     self.scan_saved_var.set("CSV" if not result.xlsx_path else "CSV + Excel")
                     self.append_summary(build_scan_summary(result))
                     if self.progress is not None:
+                        self.progress.stop()
+                        self.progress.configure(mode="determinate")
                         self.progress.set(1)
                     self.sync_action_buttons()
                 elif kind == "error":
                     self.running = False
                     self.status_var.set("Something went wrong while making the file list.")
                     self.sync_action_buttons()
+                    if self.progress is not None:
+                        self.progress.stop()
+                        self.progress.configure(mode="determinate")
                     messagebox.showerror("Scan failed", str(payload))
         except queue.Empty:
             pass
@@ -1720,6 +1764,7 @@ def main() -> int:
             args.output_dir,
             args.output_name,
             args.dest,
+            args.hash_algorithm,
             args.hashing,
             args.include_hidden,
             args.include_system,

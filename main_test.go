@@ -25,7 +25,7 @@ func TestRunScanWritesCSVAndHashes(t *testing.T) {
 
 	output := filepath.Join(workspace, "report.csv")
 	done, err := runScan(source, output, scanOptions{
-		Hashing:       true,
+		HashAlgorithm: hashAlgorithmSHA256,
 		ExcludeHidden: false,
 		ExcludeSystem: false,
 		ExcludedExts:  map[string]struct{}{},
@@ -59,7 +59,10 @@ func TestRunScanWritesCSVAndHashes(t *testing.T) {
 	if rows[2][4] != "nested/b.bin" {
 		t.Fatalf("expected nested relative path, got %q", rows[2][4])
 	}
-	if rows[1][5] == "" || rows[2][5] == "" {
+	if rows[1][5] != "SHA-256" || rows[2][5] != "SHA-256" {
+		t.Fatalf("expected hash algorithm column to be populated")
+	}
+	if rows[1][6] == "" || rows[2][6] == "" {
 		t.Fatalf("expected hashes to be written")
 	}
 }
@@ -85,7 +88,7 @@ func TestRunScanAppliesFilters(t *testing.T) {
 
 	output := filepath.Join(workspace, "filtered.csv")
 	done, err := runScan(source, output, scanOptions{
-		Hashing:       false,
+		HashAlgorithm: hashAlgorithmOff,
 		ExcludeHidden: true,
 		ExcludeSystem: true,
 		ExcludedExts: map[string]struct{}{
@@ -177,11 +180,12 @@ func TestConvertCSVToXLSXPreservesLeadingZeros(t *testing.T) {
 		"Size in Bytes",
 		"Size in Human Readable",
 		"Path From Root Folder",
-		"SHA256 Hash",
+		"Hash Algorithm",
+		"Hash Value",
 	}); err != nil {
 		t.Fatalf("write header: %v", err)
 	}
-	if err := writer.Write([]string{"sample.txt", "txt", "00123", "123 B", "nested/sample.txt", ""}); err != nil {
+	if err := writer.Write([]string{"sample.txt", "txt", "00123", "123 B", "nested/sample.txt", "", ""}); err != nil {
 		t.Fatalf("write row: %v", err)
 	}
 	writer.Flush()
@@ -308,7 +312,7 @@ func TestRunScanMatchesGoldenFixture(t *testing.T) {
 	source := filepath.Join("testdata", "parity", "source")
 
 	done, err := runScan(source, output, scanOptions{
-		Hashing:       true,
+		HashAlgorithm: hashAlgorithmSHA256,
 		ExcludeHidden: true,
 		ExcludeSystem: true,
 		ExcludedExts: map[string]struct{}{

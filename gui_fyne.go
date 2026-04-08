@@ -319,7 +319,8 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 	excludeEntry := widget.NewEntry()
 	excludeEntry.SetPlaceHolder("tmp,log")
 
-	hashCheck := widget.NewCheck("Add SHA-256 hashes (advanced)", nil)
+	hashSelect := widget.NewSelect(hashAlgorithmOptionLabels(), nil)
+	hashSelect.SetSelected(defaultHashAlgorithm().OptionLabel())
 	hiddenCheck := widget.NewCheck("Skip hidden files", nil)
 	systemCheck := widget.NewCheck("Skip common system files", nil)
 	xlsxCheck := widget.NewCheck("Also save an Excel copy", nil)
@@ -358,7 +359,7 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 		outputEntry.SetText(defaultOutput)
 		fileEntry.SetText(defaultFilename)
 		excludeEntry.SetText("")
-		hashCheck.SetChecked(false)
+		hashSelect.SetSelected(defaultHashAlgorithm().OptionLabel())
 		hiddenCheck.SetChecked(false)
 		systemCheck.SetChecked(false)
 		xlsxCheck.SetChecked(false)
@@ -425,15 +426,31 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 						return
 					case <-ticker.C:
 						stats := currentProgress()
-						fyne.Do(func() {
-							statusLabel.SetText(fmt.Sprintf(
-								"Working... Files: %d  Folders: %d  Size: %s  Skipped: %d  Time: %s",
+						progressLine := fmt.Sprintf(
+							"%s... Files: %d  Folders: %d  Size: %s  Skipped: %d  Time: %s",
+							progressPhaseLabel(stats.phase),
+							stats.files,
+							stats.directories,
+							humanBytes(stats.bytes),
+							stats.filtered,
+							time.Since(stats.startedAt).Round(time.Second),
+						)
+						if stats.phase == progressPhaseScanning && stats.totalFiles > 0 {
+							progressLine = fmt.Sprintf(
+								"%s... %s complete  Files: %d/%d  Folders: %d/%d  Size: %s  Skipped: %d  ETA: %s",
+								progressPhaseLabel(stats.phase),
+								formatPercent(progressFraction(stats)),
 								stats.files,
+								stats.totalFiles,
 								stats.directories,
+								stats.totalDirectories,
 								humanBytes(stats.bytes),
 								stats.filtered,
-								time.Since(stats.startedAt).Round(time.Second),
-							))
+								valueOrDefaultDuration(progressETA(stats, time.Now()), "calculating"),
+							)
+						}
+						fyne.Do(func() {
+							statusLabel.SetText(progressLine)
 						})
 					}
 				}
@@ -441,7 +458,7 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 
 			go func() {
 				done, err := runScan(sourceDir, outputPath, scanOptions{
-					Hashing:       hashCheck.Checked,
+					HashAlgorithm: parseHashAlgorithm(hashSelect.Selected),
 					ExcludeHidden: hiddenCheck.Checked,
 					ExcludeSystem: systemCheck.Checked,
 					CreateXLSX:    xlsxCheck.Checked,
@@ -470,6 +487,7 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 						fmt.Sprintf("Files included: %d", done.files),
 						fmt.Sprintf("Total size: %s", humanBytes(done.bytes)),
 						fmt.Sprintf("Items skipped: %d", done.filtered),
+						fmt.Sprintf("Verification hash: %s", done.hashAlgorithm.OptionLabel()),
 						fmt.Sprintf("Finished in: %s", done.elapsed.Round(time.Millisecond)),
 					}, "\n"))
 				})
@@ -523,7 +541,7 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 		"Choose any extras you want before you generate the file list.",
 		container.NewGridWithColumns(
 			2,
-			makeCheckCard(hashCheck, "Add SHA-256 hashes (advanced)"),
+			makeSelectCard("Verification hash", "Choose how strongly the app verifies files later.", hashSelect),
 			makeCheckCard(hiddenCheck, "Skip hidden files"),
 			makeCheckCard(systemCheck, "Skip common system files"),
 			makeCheckCard(xlsxCheck, "Also save an Excel copy"),
@@ -861,8 +879,25 @@ func makeCheckCard(check *widget.Check, subtitle string) fyne.CanvasObject {
 	return widget.NewCard("", "", container.NewVBox(check, hintLabel))
 }
 
+func makeSelectCard(title, subtitle string, selectWidget *widget.Select) fyne.CanvasObject {
+	hintLabel := widget.NewLabel(subtitle)
+	hintLabel.Wrapping = fyne.TextWrapWord
+	return widget.NewCard("", "", container.NewVBox(
+		widget.NewLabelWithStyle(title, fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		selectWidget,
+		hintLabel,
+	))
+}
+
 func makeMetricCard(title string, value *widget.Label) fyne.CanvasObject {
 	return widget.NewCard(title, "", value)
+}
+
+func valueOrDefaultDuration(value time.Duration, fallback string) string {
+	if value <= 0 {
+		return fallback
+	}
+	return value.Round(time.Second).String()
 }
 
 func pathInputRow(window fyne.Window, entry *widget.Entry, title string, mustExist bool) fyne.CanvasObject {

@@ -27,7 +27,7 @@ class ContentListGeneratorTests(unittest.TestCase):
             result = core.run_scan(
                 source,
                 workspace / "report.csv",
-                hashing=True,
+                hash_algorithm=core.HASH_ALGORITHM_BLAKE3,
                 include_hidden=False,
                 include_system=False,
                 excluded_exts=set(),
@@ -41,15 +41,16 @@ class ContentListGeneratorTests(unittest.TestCase):
             with (workspace / "report.csv").open("r", newline="", encoding="utf-8") as handle:
                 rows = list(csv.reader(handle))
             self.assertEqual(rows[1][0], "0007.txt")
-            self.assertTrue(rows[1][5])
+            self.assertEqual(rows[1][5], "BLAKE3")
+            self.assertTrue(rows[1][6])
 
     def test_convert_csv_to_xlsx_preserves_leading_zeros(self) -> None:
         with TemporaryDirectory() as tmp:
             workspace = Path(tmp)
             csv_path = workspace / "input.csv"
             csv_path.write_text(
-                "File Name,Extension,Size in Bytes,Size in Human Readable,Path From Root Folder,SHA256 Hash\n"
-                "sample.txt,txt,00123,123 B,nested/sample.txt,\n",
+                "File Name,Extension,Size in Bytes,Size in Human Readable,Path From Root Folder,Hash Algorithm,Hash Value\n"
+                "sample.txt,txt,00123,123 B,nested/sample.txt,,\n",
                 encoding="utf-8",
             )
             xlsx_path = workspace / "output.xlsx"
@@ -115,7 +116,7 @@ class ContentListGeneratorTests(unittest.TestCase):
             result = core.run_scan(
                 source,
                 output_path,
-                hashing=True,
+                hash_algorithm=core.HASH_ALGORITHM_SHA256,
                 include_hidden=False,
                 include_system=False,
                 excluded_exts={"log"},
