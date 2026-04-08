@@ -40,6 +40,7 @@ from content_list_core import (
     hash_algorithm_label,
     hash_algorithm_labels,
     human_bytes,
+    is_blake3_available,
     normalize_exts,
     normalize_hash_algorithm,
     run_scan,
@@ -197,14 +198,15 @@ def open_in_file_manager(path: Path) -> None:
 
 
 def choose_directory(parent, title: str, initialdir: str, mustexist: bool, colors: dict[str, str] | None = None) -> str:
-    if tk is None or ttk is None:
-        return filedialog.askdirectory(
-            parent=parent,
-            title=title,
-            initialdir=initialdir or os.getcwd(),
-            mustexist=mustexist,
-        )
-    return FolderPickerDialog(parent, title, initialdir or os.getcwd(), mustexist, colors or palette_for_mode("light")).show()
+    del colors
+    if filedialog is None:
+        return ""
+    return filedialog.askdirectory(
+        parent=parent,
+        title=title,
+        initialdir=initialdir or os.getcwd(),
+        mustexist=mustexist,
+    )
 
 
 def folder_places() -> list[tuple[str, Path]]:
@@ -531,6 +533,14 @@ def run_cli_scan(args: argparse.Namespace) -> int:
         if not overwrite:
             print("Canceled.")
             return 1
+
+    if hash_algorithm == "blake3" and not is_blake3_available():
+        print(
+            "BLAKE3 was selected, but the Python 'blake3' package is not installed.\n"
+            "Install it with: pip install -r requirements.txt",
+            file=sys.stderr,
+        )
+        return 1
 
     print("\nCollecting files...")
     result = run_scan(
@@ -1671,6 +1681,14 @@ class ContentListApp:
             if not confirmed:
                 return
 
+        selected_hash = normalize_hash_algorithm(self.hash_algorithm_var.get())
+        if selected_hash == "blake3" and not is_blake3_available():
+            messagebox.showerror(
+                "BLAKE3 not installed",
+                "BLAKE3 was selected, but the Python 'blake3' package is not installed.\n\nInstall it with: pip install -r requirements.txt",
+            )
+            return
+
         self.running = True
         self.scan_cancel_event = threading.Event()
         self.sync_action_buttons()
@@ -1699,6 +1717,7 @@ class ContentListApp:
     def run_scan_thread(self, source_dir: Path, output_path: Path, excluded_exts: set[str]) -> None:
         try:
             self.message_queue.put(("status", "Counting files and folders..."))
+            selected_hash = normalize_hash_algorithm(self.hash_algorithm_var.get())
 
             def on_progress(progress: ScanProgress) -> None:
                 self.message_queue.put(("progress", progress))
@@ -1706,7 +1725,7 @@ class ContentListApp:
             result = run_scan(
                 source_dir,
                 output_path,
-                hash_algorithm=normalize_hash_algorithm(self.hash_algorithm_var.get()),
+                hash_algorithm=selected_hash,
                 include_hidden=self.hidden_var.get(),
                 include_system=self.system_var.get(),
                 excluded_exts=excluded_exts,

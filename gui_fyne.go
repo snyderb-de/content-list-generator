@@ -20,6 +20,7 @@ import (
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/storage"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
@@ -942,147 +943,26 @@ func pathInputRow(window fyne.Window, entry *widget.Entry, title string, mustExi
 }
 
 func showFolderPicker(window fyne.Window, title, startPath string, _ bool, onSelect func(string)) {
-	currentPath := normalizeFolderPath(startPath)
-	places := folderPlaces()
-	children := folderChildren(currentPath)
-
-	titleLabel := widget.NewLabelWithStyle("Content List Generator", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-	pathLabel := widget.NewLabel(currentPath)
-	pathLabel.Wrapping = fyne.TextWrapWord
-	selectedLabel := widget.NewLabel("Current selected folder: " + currentPath)
-	selectedLabel.Wrapping = fyne.TextWrapWord
-	locationsLabel := widget.NewLabelWithStyle("LOCATIONS", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-	placesHint := widget.NewLabel("Places")
-	placesHint.TextStyle = fyne.TextStyle{Italic: true}
-	var placesList *widget.List
-
-	refreshChildren := func() {}
-	selectedPlace := -1
-	refreshCurrentPath := func(path string) {
-		currentPath = normalizeFolderPath(path)
-		pathLabel.SetText(currentPath)
-		selectedLabel.SetText("Current selected folder: " + currentPath)
-		children = folderChildren(currentPath)
-		selectedPlace = selectedPlaceIndex(places, currentPath)
-		if selectedPlace >= 0 {
-			placesList.Select(selectedPlace)
-		} else {
-			placesList.UnselectAll()
-		}
-		refreshChildren()
-	}
-
-	placesList = widget.NewList(
-		func() int { return len(places) },
-		func() fyne.CanvasObject {
-			return container.NewHBox(
-				widget.NewIcon(theme.FolderIcon()),
-				widget.NewLabel("Place"),
-			)
-		},
-		func(id widget.ListItemID, obj fyne.CanvasObject) {
-			row := obj.(*fyne.Container)
-			row.Objects[0].(*widget.Icon).SetResource(placeIcon(places[id].Name))
-			row.Objects[1].(*widget.Label).SetText(places[id].Name)
-		},
-	)
-	placesList.OnSelected = func(id widget.ListItemID) {
-		if id >= 0 && id < len(places) {
-			refreshCurrentPath(places[id].Path)
-		}
-	}
-
-	childrenList := widget.NewList(
-		func() int { return len(children) },
-		func() fyne.CanvasObject {
-			title := widget.NewLabel("Folder")
-			subtitle := widget.NewLabel("")
-			subtitle.TextStyle = fyne.TextStyle{Italic: true}
-			subtitle.Wrapping = fyne.TextWrapWord
-			return container.NewHBox(
-				widget.NewIcon(theme.FolderIcon()),
-				container.NewVBox(title, subtitle),
-			)
-		},
-		func(id widget.ListItemID, obj fyne.CanvasObject) {
-			row := obj.(*fyne.Container)
-			row.Objects[0].(*widget.Icon).SetResource(folderChildIcon(children[id]))
-			textBlock := row.Objects[1].(*fyne.Container)
-			textBlock.Objects[0].(*widget.Label).SetText(children[id].Name)
-			textBlock.Objects[1].(*widget.Label).SetText(children[id].Subtitle)
-		},
-	)
-	refreshChildren = func() {
-		childrenList.Refresh()
-	}
-	childrenList.OnSelected = func(id widget.ListItemID) {
-		if id >= 0 && id < len(children) {
-			refreshCurrentPath(children[id].Path)
-		}
-	}
-
-	upButton := widget.NewButton("Up", func() {
-		parent := filepath.Dir(currentPath)
-		if parent == "" || parent == currentPath {
+	openDialog := dialog.NewFolderOpen(func(uri fyne.ListableURI, err error) {
+		if err != nil {
+			dialog.ShowError(err, window)
 			return
 		}
-		refreshCurrentPath(parent)
-	})
-
-	newFolderButton := widget.NewButton("New Folder", func() {
-		nameEntry := widget.NewEntry()
-		nameEntry.SetPlaceHolder("Folder name")
-		content := container.NewVBox(
-			widget.NewLabel("Create a folder inside:"),
-			widget.NewLabel(currentPath),
-			widget.NewLabel(""),
-			widget.NewLabel("Folder name"),
-			nameEntry,
-		)
-		createDialog := dialog.NewCustomConfirm("New Folder", "Create Folder", "Cancel", content, func(ok bool) {
-			if !ok {
-				return
-			}
-			name := strings.TrimSpace(nameEntry.Text)
-			if name == "" {
-				dialog.ShowError(fmt.Errorf("folder name is required"), window)
-				return
-			}
-			target := filepath.Join(currentPath, name)
-			if err := os.MkdirAll(target, 0o755); err != nil {
-				dialog.ShowError(err, window)
-				return
-			}
-			refreshCurrentPath(target)
-		}, window)
-		createDialog.Resize(fyne.NewSize(520, 220))
-		createDialog.Show()
-		window.Canvas().Focus(nameEntry)
-	})
-
-	breadcrumb := container.NewHBox(
-		widget.NewIcon(theme.FolderIcon()),
-		widget.NewLabel(strings.Join(breadcrumbParts(currentPath), "  >  ")),
-	)
-	headerTop := container.NewBorder(nil, nil, nil, nil, titleLabel)
-	headerBar := container.NewBorder(nil, nil, nil, container.NewHBox(upButton, newFolderButton), breadcrumb)
-	header := container.NewVBox(headerTop, widget.NewSeparator(), headerBar)
-	body := container.NewHSplit(
-		container.NewBorder(container.NewVBox(locationsLabel, placesHint), nil, nil, nil, placesList),
-		container.NewBorder(nil, nil, nil, nil, childrenList),
-	)
-	body.SetOffset(0.26)
-	footer := container.NewBorder(nil, nil, widget.NewIcon(theme.InfoIcon()), nil, selectedLabel)
-	content := container.NewBorder(header, footer, nil, nil, body)
-
-	openDialog := dialog.NewCustomConfirm(title, "Open", "Cancel", content, func(ok bool) {
-		if ok {
-			onSelect(currentPath)
+		if uri == nil {
+			return
 		}
+		selected := strings.TrimPrefix(uri.String(), "file://")
+		onSelect(normalizeFolderPath(selected))
 	}, window)
-	openDialog.Resize(fyne.NewSize(1250, 940))
+	openDialog.SetTitle(title)
+	start := normalizeFolderPath(startPath)
+	if start != "" {
+		startURI, err := storage.ListerForURI(storage.NewFileURI(start))
+		if err == nil {
+			openDialog.SetLocation(startURI)
+		}
+	}
 	openDialog.Show()
-	refreshCurrentPath(currentPath)
 }
 
 func normalizeFolderPath(path string) string {

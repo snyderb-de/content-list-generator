@@ -150,7 +150,11 @@ def normalize_extension(path: Path) -> str:
 
 
 def default_hash_algorithm() -> str:
-    return HASH_ALGORITHM_BLAKE3
+    return HASH_ALGORITHM_SHA1
+
+
+def is_blake3_available() -> bool:
+    return blake3 is not None
 
 
 def normalize_hash_algorithm(value: str | None) -> str:
