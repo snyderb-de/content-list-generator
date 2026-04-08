@@ -3,6 +3,8 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"image/color"
 	"os"
@@ -337,7 +339,9 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 
 	statusLabel := widget.NewLabel("Choose a folder to scan, then click Generate Content List.")
 	statusLabel.Wrapping = fyne.TextWrapWord
-	progressBar := widget.NewProgressBarInfinite()
+	progressBar := widget.NewProgressBar()
+	progressBar.Min = 0
+	progressBar.Max = 1
 	progressBar.Hide()
 	resultLabel := widget.NewLabel("Your results will appear here after the file list is finished.")
 	resultLabel.Wrapping = fyne.TextWrapWord
@@ -350,6 +354,13 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 
 	startButton := widget.NewButton("Generate Content List", nil)
 	startButton.Importance = widget.HighImportance
+	stopButton := widget.NewButton("Stop Scan", func() {
+		if cancelActiveScan() {
+			statusLabel.SetText("Stopping scan...")
+		}
+	})
+	stopButton.Importance = widget.WarningImportance
+	stopButton.Disable()
 	useSourceButton := widget.NewButton("Use Source As Output", func() {
 		outputEntry.SetText(sourceEntry.Text)
 	})
@@ -365,6 +376,7 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 		xlsxCheck.SetChecked(false)
 		zeroCheck.SetChecked(false)
 		progressBar.Hide()
+		progressBar.SetValue(0)
 		statusLabel.SetText("Choose a folder to scan, then click Generate Content List.")
 		resultLabel.SetText("Your results will appear here after the file list is finished.")
 		filesMetric.SetText("0")
@@ -379,12 +391,15 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 	setRunning := func(running bool) {
 		if running {
 			startButton.Disable()
+			stopButton.Enable()
 			useSourceButton.Disable()
 			resetButton.Disable()
 			progressBar.Show()
+			progressBar.SetValue(0)
 			return
 		}
 		startButton.Enable()
+		stopButton.Disable()
 		useSourceButton.Enable()
 		resetButton.Enable()
 		progressBar.Hide()
@@ -437,7 +452,7 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 						)
 						if stats.phase == progressPhaseScanning && stats.totalFiles > 0 {
 							progressLine = fmt.Sprintf(
-								"%s... %s complete  Files: %d/%d  Folders: %d/%d  Size: %s  Skipped: %d  ETA: %s",
+								"%s... %s complete  Files: %d/%d  Folders: %d/%d  Size: %s/%s  Skipped: %d  ETA: %s  Current: %s",
 								progressPhaseLabel(stats.phase),
 								formatPercent(progressFraction(stats)),
 								stats.files,
@@ -445,11 +460,16 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 								stats.directories,
 								stats.totalDirectories,
 								humanBytes(stats.bytes),
+								humanBytes(stats.totalBytes),
 								stats.filtered,
 								valueOrDefaultDuration(progressETA(stats, time.Now()), "calculating"),
+								valueOrDefault(stats.currentItem, "waiting for first file"),
 							)
 						}
 						fyne.Do(func() {
+							if stats.phase == progressPhaseScanning {
+								progressBar.SetValue(progressFraction(stats))
+							}
 							statusLabel.SetText(progressLine)
 						})
 					}
@@ -469,6 +489,12 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 				fyne.Do(func() {
 					setRunning(false)
 					if err != nil {
+						if errors.Is(err, context.Canceled) {
+							statusLabel.SetText("Scan stopped. Partial output was removed.")
+							resultLabel.SetText("Scan stopped before completion.")
+							savedMetric.SetText("Stopped")
+							return
+						}
 						statusLabel.SetText("Something went wrong while making the file list.")
 						dialog.ShowError(err, window)
 						return
@@ -476,18 +502,23 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 					filesMetric.SetText(strconv.FormatUint(done.files, 10))
 					skippedMetric.SetText(strconv.FormatUint(done.filtered, 10))
 					if done.xlsxPath != "" {
-						savedMetric.SetText("CSV + Excel")
+						savedMetric.SetText("CSV + Report + Excel")
 					} else {
-						savedMetric.SetText("CSV")
+						savedMetric.SetText("CSV + Report")
 					}
+					progressBar.SetValue(1)
 					statusLabel.SetText(fmt.Sprintf("Your file list is ready. %d files were included.", done.files))
 					resultLabel.SetText(strings.Join([]string{
-						fmt.Sprintf("Saved file list: %s", done.outputPath),
-						fmt.Sprintf("Excel copy: %s", valueOrDefault(done.xlsxPath, "not created")),
+						fmt.Sprintf("Selected folder: %s", done.sourceName),
+						fmt.Sprintf("Saved file list: %s", filepath.Base(done.outputPath)),
+						fmt.Sprintf("Excel copy: %s", baseNameOrFallback(done.xlsxPath, "not created")),
+						fmt.Sprintf("Summary report: %s", baseNameOrFallback(done.reportPath, "not created")),
 						fmt.Sprintf("Files included: %d", done.files),
 						fmt.Sprintf("Total size: %s", humanBytes(done.bytes)),
 						fmt.Sprintf("Items skipped: %d", done.filtered),
 						fmt.Sprintf("Verification hash: %s", done.hashAlgorithm.OptionLabel()),
+						fmt.Sprintf("First file in CSV: %s", valueOrDefault(done.firstCSVItem, "none")),
+						fmt.Sprintf("Last file in CSV: %s", valueOrDefault(done.lastCSVItem, "none")),
 						fmt.Sprintf("Finished in: %s", done.elapsed.Round(time.Millisecond)),
 					}, "\n"))
 				})
@@ -551,6 +582,7 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 
 	actions := container.NewHBox(
 		startButton,
+		stopButton,
 		useSourceButton,
 		resetButton,
 		openOutputButton,

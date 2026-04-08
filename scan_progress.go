@@ -22,6 +22,8 @@ type globalProgress struct {
 	filtered         uint64
 	totalFiles       uint64
 	totalDirectories uint64
+	totalBytes       uint64
+	currentItem      string
 	startedAt        time.Time
 	phaseStartedAt   time.Time
 }
@@ -45,7 +47,20 @@ func setProgress(progress globalProgress) {
 }
 
 func progressFraction(progress globalProgress) float64 {
-	if progress.phase != progressPhaseScanning || progress.totalFiles == 0 {
+	if progress.phase != progressPhaseScanning {
+		return 0
+	}
+	if progress.totalBytes > 0 {
+		value := float64(progress.bytes) / float64(progress.totalBytes)
+		if value < 0 {
+			return 0
+		}
+		if value > 1 {
+			return 1
+		}
+		return value
+	}
+	if progress.totalFiles == 0 {
 		return 0
 	}
 	value := float64(progress.files) / float64(progress.totalFiles)
@@ -59,11 +74,21 @@ func progressFraction(progress globalProgress) float64 {
 }
 
 func progressETA(progress globalProgress, now time.Time) time.Duration {
-	if progress.phase != progressPhaseScanning || progress.totalFiles == 0 || progress.files == 0 {
+	if progress.phase != progressPhaseScanning {
 		return 0
 	}
 	elapsed := now.Sub(progress.phaseStartedAt)
 	if elapsed <= 0 {
+		return 0
+	}
+	if progress.totalBytes > 0 && progress.bytes > 0 {
+		remaining := progress.totalBytes - progress.bytes
+		if remaining == 0 {
+			return 0
+		}
+		return time.Duration(float64(elapsed) * (float64(remaining) / float64(progress.bytes)))
+	}
+	if progress.totalFiles == 0 || progress.files == 0 {
 		return 0
 	}
 	remaining := progress.totalFiles - progress.files

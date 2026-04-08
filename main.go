@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -90,6 +91,8 @@ type scanProgressMsg struct {
 	filtered         uint64
 	totalFiles       uint64
 	totalDirectories uint64
+	totalBytes       uint64
+	currentItem      string
 	percent          float64
 	eta              time.Duration
 	elapsed          time.Duration
@@ -98,6 +101,8 @@ type scanProgressMsg struct {
 type scanErrorMsg struct {
 	err error
 }
+
+type scanCanceledMsg struct{}
 
 type emailCopyDoneMsg struct {
 	sourceDir    string
@@ -330,6 +335,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case stageConfirmOverwrite:
 			return m.updateConfirmOverwriteStage(msg)
 		case stageScanning:
+			if msg.String() == "s" || msg.String() == "esc" {
+				cancelActiveScan()
+				return m, nil
+			}
 			if msg.String() == "ctrl+c" || msg.String() == "q" {
 				m.quitting = true
 				return m, tea.Quit
@@ -377,6 +386,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.stage = stageFailed
 		m.err = msg.err
 		return m, nil
+	case scanCanceledMsg:
+		m.stage = stageSetOutput
+		m.err = fmt.Errorf("scan stopped")
+		m.syncSettingsFocus()
+		return m, textinput.Blink
 	}
 
 	return m, nil
@@ -906,6 +920,10 @@ func (m model) viewScanning() string {
 	if m.progress.totalDirectories > 0 {
 		directoryStat = fmt.Sprintf("%s / %s", formatUint(m.progress.directories), formatUint(m.progress.totalDirectories))
 	}
+	byteStat := humanBytes(m.progress.bytes)
+	if m.progress.totalBytes > 0 {
+		byteStat = fmt.Sprintf("%s / %s", humanBytes(m.progress.bytes), humanBytes(m.progress.totalBytes))
+	}
 	progressStat := "Counting"
 	if m.progress.phase == progressPhaseLabel(progressPhaseScanning) {
 		progressStat = formatPercent(m.progress.percent)
@@ -916,6 +934,7 @@ func (m model) viewScanning() string {
 	} else if m.progress.eta > 0 {
 		etaStat = m.progress.eta.Round(time.Second).String()
 	}
+	currentFileStat := valueOrDefault(m.progress.currentItem, "waiting for first file")
 
 	body := lipgloss.JoinVertical(
 		lipgloss.Left,
@@ -933,12 +952,13 @@ func (m model) viewScanning() string {
 		styleStat("Progress", progressStat),
 		styleStat("Files", fileStat),
 		styleStat("Directories", directoryStat),
-		styleStat("Bytes", humanBytes(m.progress.bytes)),
+		styleStat("Bytes", byteStat),
 		styleStat("Filtered out", formatUint(m.progress.filtered)),
 		styleStat("ETA", etaStat),
+		styleStat("Current file", currentFileStat),
 		styleStat("Elapsed", m.progress.elapsed.Round(time.Second).String()),
 		"",
-		styleHint("The app counts first so scan progress and ETA are based on the real file total."),
+		styleHint("Press s or esc to stop the scan. The app counts first so progress and ETA are based on the real file total."),
 	)
 	return styleFrame(body, m.width)
 }
@@ -1013,6 +1033,7 @@ func (m model) viewDone() string {
 		"",
 		styleStat("Output", m.done.outputPath),
 		styleStat("XLSX copy", valueOrDefault(m.done.xlsxPath, "not created")),
+		styleStat("Report", valueOrDefault(m.done.reportPath, "not created")),
 		styleStat("Files", formatUint(m.done.files)),
 		styleStat("Directories", formatUint(m.done.directories)),
 		styleStat("Bytes", humanBytes(m.done.bytes)),
@@ -1023,6 +1044,9 @@ func (m model) viewDone() string {
 		styleStat("Errors skipped", formatUint(m.done.errors)),
 		styleStat("Elapsed", m.done.elapsed.Round(time.Millisecond).String()),
 		styleStat("Verification hash", m.done.hashAlgorithm.OptionLabel()),
+		styleStat("Selected folder", valueOrDefault(m.done.sourceName, "unknown")),
+		styleStat("First file in CSV", valueOrDefault(m.done.firstCSVItem, "none")),
+		styleStat("Last file in CSV", valueOrDefault(m.done.lastCSVItem, "none")),
 		styleStat("Hash workers", fmt.Sprintf("%d", m.done.hashWorkers)),
 		styleStat("Create XLSX", onOff(m.done.createXLSX)),
 		styleStat("Preserve zeros", onOff(m.done.preserveZeros)),
@@ -1074,8 +1098,11 @@ func (m model) viewError() string {
 
 func startScan(sourceDir, outputPath string, options scanOptions) tea.Cmd {
 	return func() tea.Msg {
-		done, err := runScan(sourceDir, outputPath, options)
+		done, err := runScanWithContext(context.Background(), sourceDir, outputPath, options)
 		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				return scanCanceledMsg{}
+			}
 			return scanErrorMsg{err: err}
 		}
 		return done
@@ -1110,6 +1137,8 @@ func waitForProgress() tea.Cmd {
 			filtered:         stats.filtered,
 			totalFiles:       stats.totalFiles,
 			totalDirectories: stats.totalDirectories,
+			totalBytes:       stats.totalBytes,
+			currentItem:      stats.currentItem,
 			percent:          progressFraction(stats),
 			eta:              progressETA(stats, t),
 			elapsed:          time.Since(stats.startedAt),
@@ -1291,6 +1320,14 @@ func defaultOutputFilename(sourceDir string) string {
 		name = "content-list"
 	}
 	return fmt.Sprintf("%s-content-list-%s.csv", name, stamp)
+}
+
+func folderDisplayName(path string) string {
+	name := filepath.Base(filepath.Clean(path))
+	if name == "" || name == "." || name == string(filepath.Separator) {
+		return path
+	}
+	return name
 }
 
 func humanBytes(bytes uint64) string {

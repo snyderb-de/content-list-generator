@@ -32,8 +32,10 @@ type scanDoneMsg struct {
 	bytes           uint64
 	errors          uint64
 	filtered        uint64
+	sourceName      string
 	outputPath      string
 	xlsxPath        string
+	reportPath      string
 	elapsed         time.Duration
 	topByCount      []summaryEntry
 	topBySize       []summaryEntry
@@ -47,6 +49,8 @@ type scanDoneMsg struct {
 	filteredSystem  uint64
 	filteredExts    uint64
 	filteredSamples []string
+	firstCSVItem    string
+	lastCSVItem     string
 }
 
 type scanOptions struct {
@@ -113,6 +117,7 @@ var emailExtensions = map[string]struct{}{
 type scanCountTotals struct {
 	files       uint64
 	directories uint64
+	bytes       uint64
 }
 
 func sortedEmailExtensions() []string {
@@ -124,9 +129,14 @@ func sortedEmailExtensions() []string {
 	return values
 }
 
-func countScanTargets(sourceDir string, options scanOptions, startedAt time.Time) (scanCountTotals, error) {
+func countScanTargets(ctx context.Context, sourceDir string, options scanOptions, startedAt time.Time) (scanCountTotals, error) {
 	totals := scanCountTotals{}
 	err := filepath.WalkDir(sourceDir, func(path string, d fs.DirEntry, walkErr error) error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
 		if walkErr != nil {
 			return nil
 		}
@@ -137,6 +147,7 @@ func countScanTargets(sourceDir string, options scanOptions, startedAt time.Time
 					phase:          progressPhaseCounting,
 					files:          totals.files,
 					directories:    totals.directories,
+					currentItem:    filepath.ToSlash(path),
 					startedAt:      startedAt,
 					phaseStartedAt: startedAt,
 				})
@@ -147,6 +158,7 @@ func countScanTargets(sourceDir string, options scanOptions, startedAt time.Time
 				phase:          progressPhaseCounting,
 				files:          totals.files,
 				directories:    totals.directories,
+				currentItem:    filepath.ToSlash(path),
 				startedAt:      startedAt,
 				phaseStartedAt: startedAt,
 			})
@@ -166,10 +178,13 @@ func countScanTargets(sourceDir string, options scanOptions, startedAt time.Time
 		}
 
 		totals.files++
+		totals.bytes += uint64(info.Size())
 		setProgress(globalProgress{
 			phase:          progressPhaseCounting,
 			files:          totals.files,
 			directories:    totals.directories,
+			bytes:          totals.bytes,
+			currentItem:    filepath.ToSlash(path),
 			startedAt:      startedAt,
 			phaseStartedAt: startedAt,
 		})
@@ -236,15 +251,27 @@ func (w *csvReportWriter) Close() error {
 }
 
 func runScan(sourceDir, outputPath string, options scanOptions) (scanDoneMsg, error) {
+	return runScanWithContext(context.Background(), sourceDir, outputPath, options)
+}
+
+func runScanWithContext(parent context.Context, sourceDir, outputPath string, options scanOptions) (scanDoneMsg, error) {
 	startedAt := time.Now()
+	ctx, cancel := context.WithCancel(parent)
+	token := setActiveScanCancel(cancel)
+	defer clearActiveScanCancel(token)
+	defer cancel()
+
 	setProgress(globalProgress{
 		phase:          progressPhaseCounting,
 		startedAt:      startedAt,
 		phaseStartedAt: startedAt,
 	})
 
-	counts, err := countScanTargets(sourceDir, options, startedAt)
+	counts, err := countScanTargets(ctx, sourceDir, options, startedAt)
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			cleanupScanArtifacts(outputPath, "", "")
+		}
 		return scanDoneMsg{}, err
 	}
 
@@ -269,12 +296,11 @@ func runScan(sourceDir, outputPath string, options scanOptions) (scanDoneMsg, er
 		phase:            progressPhaseScanning,
 		totalFiles:       counts.files,
 		totalDirectories: counts.directories,
+		totalBytes:       counts.bytes,
+		currentItem:      "waiting for first file",
 		startedAt:        startedAt,
 		phaseStartedAt:   scanStartedAt,
 	})
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	workCh := make(chan scanWork, hashWorkers*4)
 	resultCh := make(chan scanResult, hashWorkers*4)
@@ -285,6 +311,8 @@ func runScan(sourceDir, outputPath string, options scanOptions) (scanDoneMsg, er
 	filteredSystem := uint64(0)
 	filteredExts := uint64(0)
 	filteredSamples := make([]string, 0, 8)
+	firstCSVItem := ""
+	lastCSVItem := ""
 	var expected uint64
 
 	var workerWG sync.WaitGroup
@@ -295,7 +323,7 @@ func runScan(sourceDir, outputPath string, options scanOptions) (scanDoneMsg, er
 			for work := range workCh {
 				hashValue := ""
 				var resultErr error
-				hashValue, resultErr = hashFile(work.path, options.HashAlgorithm)
+				hashValue, resultErr = hashFile(ctx, work.path, options.HashAlgorithm)
 				select {
 				case resultCh <- scanResult{index: work.index, work: work, hash: hashValue, err: resultErr}:
 				case <-ctx.Done():
@@ -314,6 +342,11 @@ func runScan(sourceDir, outputPath string, options scanOptions) (scanDoneMsg, er
 		defer close(workCh)
 		var index uint64
 		walkErrCh <- filepath.WalkDir(sourceDir, func(path string, d fs.DirEntry, walkErr error) error {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			default:
+			}
 			if walkErr != nil {
 				stats.errors.Add(1)
 				return nil
@@ -332,6 +365,8 @@ func runScan(sourceDir, outputPath string, options scanOptions) (scanDoneMsg, er
 						filtered:         stats.filtered.Load(),
 						totalFiles:       counts.files,
 						totalDirectories: counts.directories,
+						totalBytes:       counts.bytes,
+						currentItem:      filepath.ToSlash(path),
 						startedAt:        startedAt,
 						phaseStartedAt:   scanStartedAt,
 					})
@@ -346,6 +381,8 @@ func runScan(sourceDir, outputPath string, options scanOptions) (scanDoneMsg, er
 					filtered:         stats.filtered.Load(),
 					totalFiles:       counts.files,
 					totalDirectories: counts.directories,
+					totalBytes:       counts.bytes,
+					currentItem:      filepath.ToSlash(path),
 					startedAt:        startedAt,
 					phaseStartedAt:   scanStartedAt,
 				})
@@ -371,6 +408,8 @@ func runScan(sourceDir, outputPath string, options scanOptions) (scanDoneMsg, er
 					filtered:         stats.filtered.Load(),
 					totalFiles:       counts.files,
 					totalDirectories: counts.directories,
+					totalBytes:       counts.bytes,
+					currentItem:      filepath.ToSlash(path),
 					startedAt:        startedAt,
 					phaseStartedAt:   scanStartedAt,
 				})
@@ -422,6 +461,10 @@ func runScan(sourceDir, outputPath string, options scanOptions) (scanDoneMsg, er
 			expected++
 
 			if ready.err != nil {
+				if errors.Is(ready.err, context.Canceled) {
+					cancel()
+					continue
+				}
 				stats.errors.Add(1)
 				setProgress(globalProgress{
 					phase:            progressPhaseScanning,
@@ -431,6 +474,8 @@ func runScan(sourceDir, outputPath string, options scanOptions) (scanDoneMsg, er
 					filtered:         stats.filtered.Load(),
 					totalFiles:       counts.files,
 					totalDirectories: counts.directories,
+					totalBytes:       counts.bytes,
+					currentItem:      ready.work.relative,
 					startedAt:        startedAt,
 					phaseStartedAt:   scanStartedAt,
 				})
@@ -452,6 +497,10 @@ func runScan(sourceDir, outputPath string, options scanOptions) (scanDoneMsg, er
 
 			stats.files.Add(1)
 			stats.bytes.Add(ready.work.size)
+			if firstCSVItem == "" {
+				firstCSVItem = ready.work.relative
+			}
+			lastCSVItem = ready.work.relative
 
 			key := summaryKey(ready.work.ext)
 			entry := typeTotals[key]
@@ -468,6 +517,8 @@ func runScan(sourceDir, outputPath string, options scanOptions) (scanDoneMsg, er
 				filtered:         stats.filtered.Load(),
 				totalFiles:       counts.files,
 				totalDirectories: counts.directories,
+				totalBytes:       counts.bytes,
+				currentItem:      ready.work.relative,
 				startedAt:        startedAt,
 				phaseStartedAt:   scanStartedAt,
 			})
@@ -477,12 +528,17 @@ func runScan(sourceDir, outputPath string, options scanOptions) (scanDoneMsg, er
 	if walkErr := <-walkErrCh; walkErr != nil && !errors.Is(walkErr, context.Canceled) {
 		return scanDoneMsg{}, walkErr
 	}
+	if errors.Is(ctx.Err(), context.Canceled) {
+		cleanupScanArtifacts(outputPath, "", "")
+		return scanDoneMsg{}, ctx.Err()
+	}
 	if err := reportWriter.Finalize(stats.files.Load()); err != nil {
 		return scanDoneMsg{}, err
 	}
 
 	xlsxPath := ""
 	if options.CreateXLSX {
+		nextXLSXPath := strings.TrimSuffix(outputPath, filepath.Ext(outputPath)) + ".xlsx"
 		xlsxStartedAt := time.Now()
 		setProgress(globalProgress{
 			phase:            progressPhaseXLSX,
@@ -492,23 +548,31 @@ func runScan(sourceDir, outputPath string, options scanOptions) (scanDoneMsg, er
 			filtered:         stats.filtered.Load(),
 			totalFiles:       counts.files,
 			totalDirectories: counts.directories,
+			totalBytes:       counts.bytes,
+			currentItem:      filepath.Base(nextXLSXPath),
 			startedAt:        startedAt,
 			phaseStartedAt:   xlsxStartedAt,
 		})
-		xlsxPath = strings.TrimSuffix(outputPath, filepath.Ext(outputPath)) + ".xlsx"
+		xlsxPath = nextXLSXPath
 		if err := convertCSVToXLSX(outputPath, xlsxPath, options.PreserveZeros); err != nil {
+			if errors.Is(err, context.Canceled) {
+				cleanupScanArtifacts(outputPath, xlsxPath, "")
+			}
 			return scanDoneMsg{}, err
 		}
 	}
 
-	return scanDoneMsg{
+	reportPath := strings.TrimSuffix(outputPath, filepath.Ext(outputPath)) + "-report.txt"
+	report := scanDoneMsg{
 		files:           stats.files.Load(),
 		directories:     stats.directories.Load(),
 		bytes:           stats.bytes.Load(),
 		errors:          stats.errors.Load(),
 		filtered:        stats.filtered.Load(),
+		sourceName:      folderDisplayName(sourceDir),
 		outputPath:      outputPath,
 		xlsxPath:        xlsxPath,
+		reportPath:      reportPath,
 		elapsed:         time.Since(startedAt),
 		topByCount:      summarizeByCount(typeTotals, 8),
 		topBySize:       summarizeBySize(typeTotals, 8),
@@ -522,7 +586,76 @@ func runScan(sourceDir, outputPath string, options scanOptions) (scanDoneMsg, er
 		filteredSystem:  filteredSystem,
 		filteredExts:    filteredExts,
 		filteredSamples: filteredSamples,
-	}, nil
+		firstCSVItem:    firstCSVItem,
+		lastCSVItem:     lastCSVItem,
+	}
+	if err := writeScanReport(reportPath, report); err != nil {
+		return scanDoneMsg{}, err
+	}
+	if errors.Is(ctx.Err(), context.Canceled) {
+		cleanupScanArtifacts(outputPath, xlsxPath, reportPath)
+		return scanDoneMsg{}, ctx.Err()
+	}
+
+	return report, nil
+}
+
+func cleanupScanArtifacts(paths ...string) {
+	for _, pathValue := range paths {
+		if strings.TrimSpace(pathValue) == "" {
+			continue
+		}
+		_ = os.Remove(pathValue)
+	}
+}
+
+func writeScanReport(reportPath string, done scanDoneMsg) error {
+	return os.WriteFile(reportPath, []byte(buildScanReport(done)), 0o644)
+}
+
+func buildScanReport(done scanDoneMsg) string {
+	lines := []string{
+		"Content List Report",
+		fmt.Sprintf("Selected folder: %s", valueOrDefault(done.sourceName, "unknown")),
+		fmt.Sprintf("Saved file list: %s", filepath.Base(done.outputPath)),
+		fmt.Sprintf("Excel copy: %s", baseNameOrFallback(done.xlsxPath, "not created")),
+		fmt.Sprintf("Summary report: %s", filepath.Base(done.reportPath)),
+		fmt.Sprintf("Files included: %d", done.files),
+		fmt.Sprintf("Folders counted: %d", done.directories),
+		fmt.Sprintf("Total size: %s", humanBytes(done.bytes)),
+		fmt.Sprintf("Items skipped: %d", done.filtered),
+		fmt.Sprintf("Verification hash: %s", done.hashAlgorithm.OptionLabel()),
+		fmt.Sprintf("First file in CSV: %s", valueOrDefault(done.firstCSVItem, "none")),
+		fmt.Sprintf("Last file in CSV: %s", valueOrDefault(done.lastCSVItem, "none")),
+		fmt.Sprintf("Finished in: %s", done.elapsed.Round(time.Millisecond)),
+		"",
+	}
+	lines = append(lines, renderReportSummaryLines("Top extensions by file count", done.topByCount, func(entry summaryEntry) string {
+		return fmt.Sprintf("%s files, %s", formatUint(entry.Count), humanBytes(entry.Bytes))
+	})...)
+	lines = append(lines, "")
+	lines = append(lines, renderReportSummaryLines("Top extensions by total size", done.topBySize, func(entry summaryEntry) string {
+		return fmt.Sprintf("%s, %s files", humanBytes(entry.Bytes), formatUint(entry.Count))
+	})...)
+	return strings.Join(lines, "\n") + "\n"
+}
+
+func renderReportSummaryLines(title string, items []summaryEntry, formatter func(summaryEntry) string) []string {
+	lines := []string{title}
+	if len(items) == 0 {
+		return append(lines, "No files were written.")
+	}
+	for _, item := range items {
+		lines = append(lines, fmt.Sprintf("%s: %s", item.Label, formatter(item)))
+	}
+	return lines
+}
+
+func baseNameOrFallback(pathValue, fallback string) string {
+	if strings.TrimSpace(pathValue) == "" {
+		return fallback
+	}
+	return filepath.Base(pathValue)
 }
 
 func copyEmailFiles(sourceDir, destDir string) (string, uint64, error) {

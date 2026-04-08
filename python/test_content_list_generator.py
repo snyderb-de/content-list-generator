@@ -37,12 +37,16 @@ class ContentListGeneratorTests(unittest.TestCase):
 
             self.assertEqual(result.files, 1)
             self.assertTrue(result.xlsx_path and result.xlsx_path.exists())
+            self.assertTrue(result.report_path.exists())
 
             with (workspace / "report.csv").open("r", newline="", encoding="utf-8") as handle:
                 rows = list(csv.reader(handle))
             self.assertEqual(rows[1][0], "0007.txt")
             self.assertEqual(rows[1][5], "BLAKE3")
             self.assertTrue(rows[1][6])
+            report_text = result.report_path.read_text(encoding="utf-8")
+            self.assertIn("Selected folder: source", report_text)
+            self.assertIn("First file in CSV: 0007.txt", report_text)
 
     def test_convert_csv_to_xlsx_preserves_leading_zeros(self) -> None:
         with TemporaryDirectory() as tmp:

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/xuri/excelize/v2"
@@ -38,6 +39,20 @@ func TestRunScanWritesCSVAndHashes(t *testing.T) {
 	}
 	if done.hashWorkers < 2 {
 		t.Fatalf("expected parallel hash workers when hashing is enabled, got %d", done.hashWorkers)
+	}
+	if done.reportPath == "" {
+		t.Fatalf("expected report path to be set")
+	}
+	reportBytes, err := os.ReadFile(done.reportPath)
+	if err != nil {
+		t.Fatalf("read report: %v", err)
+	}
+	reportText := string(reportBytes)
+	if !strings.Contains(reportText, "Selected folder: source") {
+		t.Fatalf("expected report to include selected folder name, got %q", reportText)
+	}
+	if !strings.Contains(reportText, "First file in CSV: a.txt") || !strings.Contains(reportText, "Last file in CSV: nested/b.bin") {
+		t.Fatalf("expected report to include first/last csv items, got %q", reportText)
 	}
 
 	file, err := os.Open(output)

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/sha1"
 	"crypto/sha256"
 	"encoding/hex"
@@ -111,7 +112,7 @@ func hashAlgorithmOptionLabels() []string {
 	return labels
 }
 
-func hashFile(path string, algorithm hashAlgorithm) (string, error) {
+func hashFile(ctx context.Context, path string, algorithm hashAlgorithm) (string, error) {
 	if !algorithm.Enabled() {
 		return "", nil
 	}
@@ -132,8 +133,25 @@ func hashFile(path string, algorithm hashAlgorithm) (string, error) {
 		digest = sha256.New()
 	}
 
-	if _, err := io.CopyBuffer(digest, file, make([]byte, 1<<20)); err != nil {
-		return "", err
+	buffer := make([]byte, 1<<20)
+	for {
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		default:
+		}
+		count, err := file.Read(buffer)
+		if count > 0 {
+			if _, writeErr := digest.Write(buffer[:count]); writeErr != nil {
+				return "", writeErr
+			}
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return "", err
+		}
 	}
 	return hex.EncodeToString(digest.Sum(nil)), nil
 }

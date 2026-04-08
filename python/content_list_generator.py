@@ -31,6 +31,7 @@ from content_list_core import (
     EmailCopyProgress,
     EmailCopyResult,
     HASH_ALGORITHM_SHA256,
+    ScanCanceled,
     ScanProgress,
     build_scan_summary,
     copy_email_files,
@@ -38,6 +39,7 @@ from content_list_core import (
     default_hash_algorithm,
     hash_algorithm_label,
     hash_algorithm_labels,
+    human_bytes,
     normalize_exts,
     normalize_hash_algorithm,
     run_scan,
@@ -975,6 +977,7 @@ class ContentListApp:
         self.scan_skipped_var = tk.StringVar(value="0")
         self.scan_saved_var = tk.StringVar(value="Waiting")
         self.generate_button: ctk.CTkButton | None = None
+        self.stop_button: ctk.CTkButton | None = None
         self.email_button: ctk.CTkButton | None = None
         self.about_button: ctk.CTkButton | None = None
         self.open_folder_button: ctk.CTkButton | None = None
@@ -985,6 +988,7 @@ class ContentListApp:
         self.exclude_entry: ctk.CTkEntry | None = None
         self.summary: ctk.CTkTextbox | None = None
         self.progress: ctk.CTkProgressBar | None = None
+        self.scan_cancel_event: threading.Event | None = None
         self.preserve_zeros_toggle: ctk.CTkCheckBox | None = None
         self.page_frames: dict[str, ctk.CTkFrame] = {}
         self.nav_buttons: dict[str, ctk.CTkButton] = {}
@@ -1294,6 +1298,9 @@ class ContentListApp:
         actions.grid(row=4, column=0, columnspan=2, sticky="ew", padx=28, pady=(18, 0))
         self.generate_button = self.make_primary_button(actions, "Generate Content List", self.start_scan)
         self.generate_button.pack(side="left")
+        self.stop_button = self.make_secondary_button(actions, "Stop Scan", self.stop_scan)
+        self.stop_button.pack(side="left", padx=(10, 0))
+        self.stop_button.configure(state="disabled")
         self.email_button = self.make_secondary_button(actions, "Copy Email Files", self.open_email_copy_window)
         self.email_button.pack(side="left", padx=(10, 0))
         self.make_secondary_button(actions, "Use Source As Output", self.copy_source_to_output).pack(side="left", padx=(10, 0))
@@ -1574,6 +1581,8 @@ class ContentListApp:
         running_state = "disabled" if self.running else "normal"
         if self.generate_button is not None:
             self.generate_button.configure(state=running_state)
+        if self.stop_button is not None:
+            self.stop_button.configure(state="normal" if self.running else "disabled")
         if self.email_button is not None:
             self.email_button.configure(state=running_state)
         if self.open_folder_button is not None:
@@ -1663,6 +1672,7 @@ class ContentListApp:
                 return
 
         self.running = True
+        self.scan_cancel_event = threading.Event()
         self.sync_action_buttons()
         if self.progress is not None:
             self.progress.set(0)
@@ -1679,6 +1689,12 @@ class ContentListApp:
             daemon=True,
         )
         thread.start()
+
+    def stop_scan(self) -> None:
+        if self.scan_cancel_event is None:
+            return
+        self.scan_cancel_event.set()
+        self.status_var.set("Stopping scan...")
 
     def run_scan_thread(self, source_dir: Path, output_path: Path, excluded_exts: set[str]) -> None:
         try:
@@ -1697,8 +1713,11 @@ class ContentListApp:
                 create_xlsx=self.xlsx_var.get(),
                 preserve_zeros=self.preserve_zeros_var.get(),
                 progress_callback=on_progress,
+                cancel_event=self.scan_cancel_event,
             )
             self.message_queue.put(("done", result))
+        except ScanCanceled:
+            self.message_queue.put(("canceled", None))
         except Exception as exc:  # pragma: no cover
             self.message_queue.put(("error", str(exc)))
 
@@ -1712,34 +1731,48 @@ class ContentListApp:
                     progress: ScanProgress = payload
                     if progress.phase == "counting":
                         if self.progress is not None:
-                            self.progress.configure(mode="indeterminate")
-                            self.progress.start()
+                            self.progress.stop()
+                            self.progress.configure(mode="determinate")
+                            self.progress.set(0)
                         self.status_var.set(
-                            f"Counting... {progress.files} files found in {progress.directories} folders so far."
+                            f"Counting... {progress.files} files in {progress.directories} folders so far ({human_bytes(progress.bytes)} found)."
                         )
                     else:
                         if self.progress is not None:
                             self.progress.stop()
                             self.progress.configure(mode="determinate")
-                            self.progress.set(progress.files / max(1, progress.total_files))
+                            self.progress.set(progress.bytes / max(1, progress.total_bytes))
                         self.status_var.set(
-                            f"Scanning... {progress.files} of {progress.total_files}: {progress.current_name}"
+                            f"Scanning... {progress.files} of {progress.total_files} files, {human_bytes(progress.bytes)} of {human_bytes(progress.total_bytes)}: {progress.current_name}"
                         )
                 elif kind == "done":
                     self.running = False
+                    self.scan_cancel_event = None
                     result = payload
                     self.status_var.set(f"Your file list is ready. {result.files} files were included.")
                     self.scan_files_var.set(str(result.files))
                     self.scan_skipped_var.set(str(result.filtered))
-                    self.scan_saved_var.set("CSV" if not result.xlsx_path else "CSV + Excel")
+                    self.scan_saved_var.set("CSV + Report" if not result.xlsx_path else "CSV + Report + Excel")
                     self.append_summary(build_scan_summary(result))
                     if self.progress is not None:
                         self.progress.stop()
                         self.progress.configure(mode="determinate")
                         self.progress.set(1)
                     self.sync_action_buttons()
+                elif kind == "canceled":
+                    self.running = False
+                    self.scan_cancel_event = None
+                    self.status_var.set("Scan stopped. Partial output was removed.")
+                    self.scan_saved_var.set("Stopped")
+                    self.append_summary("Scan stopped before completion.")
+                    if self.progress is not None:
+                        self.progress.stop()
+                        self.progress.configure(mode="determinate")
+                        self.progress.set(0)
+                    self.sync_action_buttons()
                 elif kind == "error":
                     self.running = False
+                    self.scan_cancel_event = None
                     self.status_var.set("Something went wrong while making the file list.")
                     self.sync_action_buttons()
                     if self.progress is not None:
