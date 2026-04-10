@@ -20,8 +20,8 @@ import (
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/storage"
 	"fyne.io/fyne/v2/layout"
+	"fyne.io/fyne/v2/storage"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
@@ -942,7 +942,7 @@ func pathInputRow(window fyne.Window, entry *widget.Entry, title string, mustExi
 	return container.NewBorder(nil, nil, nil, browse, entry)
 }
 
-func showFolderPicker(window fyne.Window, title, startPath string, _ bool, onSelect func(string)) {
+func showFolderPicker(window fyne.Window, _ string, startPath string, _ bool, onSelect func(string)) {
 	openDialog := dialog.NewFolderOpen(func(uri fyne.ListableURI, err error) {
 		if err != nil {
 			dialog.ShowError(err, window)
@@ -954,7 +954,6 @@ func showFolderPicker(window fyne.Window, title, startPath string, _ bool, onSel
 		selected := strings.TrimPrefix(uri.String(), "file://")
 		onSelect(normalizeFolderPath(selected))
 	}, window)
-	openDialog.SetTitle(title)
 	start := normalizeFolderPath(startPath)
 	if start != "" {
 		startURI, err := storage.ListerForURI(storage.NewFileURI(start))

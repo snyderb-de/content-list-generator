@@ -25,8 +25,6 @@ cd "$ROOT_DIR"
 go build -o "$OUT_DIR/content-list-generator-tui" .
 go build -tags gui -o "$OUT_DIR/content-list-generator-gui" .
 cp README.md "$OUT_DIR/"
-cp INSTALL.md "$OUT_DIR/"
-cp SMOKE_TEST_PLAN.md "$OUT_DIR/"
 
 cat > "$OUT_DIR/README-PACKAGE.txt" <<'EOF'
 Local Linux package
@@ -35,7 +33,6 @@ Included:
 - content-list-generator-gui
 - content-list-generator-tui
 - README.md
-- SMOKE_TEST_PLAN.md
 
 Launch the GUI:
 ./content-list-generator-gui --gui

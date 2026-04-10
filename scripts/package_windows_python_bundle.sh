@@ -16,14 +16,12 @@ rm -f "$ARCHIVE" "$TMP_ARCHIVE"
 cd "$ROOT_DIR"
 
 ./scripts/parity_check.sh
-python3 -m unittest discover -s ./python -p 'test_*.py'
+python3 -m unittest discover -s ./python/tests -p 'test_*.py'
 python3 -m py_compile ./python/content_list_core.py ./python/content_list_generator.py
 
 cp python/content_list_core.py "$OUT_DIR/"
 cp python/content_list_generator.py "$OUT_DIR/"
 cp README.md "$OUT_DIR/"
-cp INSTALL.md "$OUT_DIR/"
-cp SMOKE_TEST_PLAN.md "$OUT_DIR/"
 cp requirements.txt "$OUT_DIR/"
 
 cat > "$OUT_DIR/run-content-list-generator.cmd" <<'BAT'

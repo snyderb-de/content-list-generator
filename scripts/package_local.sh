@@ -26,7 +26,6 @@ cp "$ROOT_DIR/python/content_list_core.py" "$PY_DIR/python/"
 cp "$ROOT_DIR/python/content_list_generator.py" "$PY_DIR/python/"
 cp "$ROOT_DIR/scripts/copy_email_files.py" "$PY_DIR/scripts/"
 cp "$ROOT_DIR/README.md" "$PY_DIR/"
-cp "$ROOT_DIR/INSTALL.md" "$PY_DIR/"
 cp "$ROOT_DIR/requirements.txt" "$PY_DIR/"
 
 cat > "$PY_DIR/run-python-app.sh" <<'EOF'

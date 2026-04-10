@@ -10,7 +10,7 @@ go test ./... -run 'TestRunScanMatchesGoldenFixture|TestCopyEmailFilesMatchesGol
 
 echo "Running Python parity checks against shared fixtures..."
 python3 -m unittest \
-  python.test_content_list_generator.ContentListGeneratorTests.test_run_scan_matches_golden_fixture \
-  python.test_content_list_generator.ContentListGeneratorTests.test_copy_email_matches_golden_fixture
+  python.tests.test_content_scan.ContentScanTests.test_run_scan_matches_golden_fixture \
+  python.tests.test_email_copy.EmailCopyTests.test_copy_email_matches_golden_fixture
 
 echo "Parity checks passed."

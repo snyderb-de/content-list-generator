@@ -5,6 +5,7 @@
 - Decide the final project license
 - Evaluate GPL as a release candidate and make the final license decision
 - Decide the final attribution requirement for reuse or redistribution
+- Smooth ETA behavior for very large scans with long-tail large files
 - Keep polishing both GUIs for non-technical users
-- Continue improving folder pickers and long-running progress feedback
+- Decide whether release bundles stay portable-only or move toward installer-style distribution
 - Package the Linux release from a Linux build host

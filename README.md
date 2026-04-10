@@ -2,30 +2,46 @@
 
 Written by Bryan Snyder
 
-Content List Generator is maintained as two feature-parity desktop apps:
+Content List Generator is maintained as two live desktop runtimes that stay in feature parity as closely as practical:
 
-- Go GUI for macOS and Linux
-- Python GUI for Windows
-- alternate Go Windows `.exe` artifacts for teams that want a standalone executable path
+- Go app for macOS and Linux, with optional Windows `.exe` build outputs
+- Python app for Windows portable deployment
 
-Both app paths support:
+Both runtimes support:
 
 - recursive content-list export to CSV
 - optional XLSX generation
-- leading-zero preservation in XLSX
+- hash verification modes for migration workflows
+- plain-text scan reports
 - integrated email-file copy with manifest output
+
+## Runtime And Deploy Paths
+
+Core app/runtime files:
+
+- `main.go`, `core.go`, `gui_fyne.go`, `scan_*.go`
+- `python/content_list_generator.py`
+- `python/content_list_core.py`
+
+Deploy and distribution files that must stay aligned with the app:
+
+- `deploy/windows/desktop/content-list-generator.bat`
+- `deploy/windows/scripts/content-list-gen/content_list_generator.py`
+- `deploy/windows/scripts/content-list-gen/content_list_core.py`
+- repo-root launchers such as `run-go-gui.sh`, `run-python-gui.sh`, and `content-list-generator.bat`
+- packaging helpers in `scripts/`
+
+Generated outputs belong in `build/` and `releases/` and are intentionally not tracked.
 
 ## Repo Layout
 
-- `docs/` long-form project docs and GitHub Pages content
-- `python/` Python app source and Python-side tests
-- `scripts/` build, release, parity, and local run helpers
-- `build/` local build outputs
-- `releases/` release-ready artifacts and packaged outputs
-- `testing/` local manual testing workspace
-- `testdata/` tracked automated test fixtures
+- `python/` Python runtime code and Python automated tests
+- `project-dashboard/` static project dashboard for repo status and docs
+- `scripts/` build, parity, packaging, and local-run helpers
+- `testing/` tool-oriented fixtures, generators, runners, and ignored local manual-test folders
+- `deploy/` copy-ready deployment files that are part of the operational workflow
 
-## Clone And Run
+## Quick Start
 
 ```bash
 git clone <repo-url>
@@ -33,63 +49,60 @@ cd content-list-generator
 ./scripts/dev_check.sh
 ```
 
-Repo-root launchers:
+Local launchers:
 
 - macOS/Linux Go GUI: `./run-go-gui.sh`
 - macOS/Linux Python GUI: `./run-python-gui.sh`
-- Windows Python GUI launcher: `content-list-generator.bat`
-- legacy Windows launcher: `run-python-gui.bat`
+- cross-platform helper: `./scripts/run_local.sh [go|go-gui|python|python-cli]`
+- Windows desktop launcher: `content-list-generator.bat`
 
-## Install By OS
+## Platform Notes
 
 macOS and Linux:
 
-- install Go
-- run `./run-go-gui.sh` from the repo root for the Go GUI
-- local binaries are written to `build/`
+- use the Go app
+- local binaries are built into `build/`
+- local release packages are produced by `./scripts/package_macos_local.sh` or `./scripts/package_linux_local.sh`
 
-Windows, portable Python GUI path:
+Windows portable Python path:
 
 - install Python 3 with Tkinter
-- install the Python dependency with `pip install -r requirements.txt`
-- `releases/windows-python/` contains the Windows Python deployment files
-- copy these files to `%USERPROFILE%\scripts\`:
-  - `content_list_generator.py`
-  - `content_list_core.py`
-- place `content-list-generator.bat` on the user's Desktop, or use `releases/windows-python/content-list-generator.bat`
-- launcher search order supports both `%USERPROFILE%\scripts\` and `%USERPROFILE%\scripts\content-list-gen\`
-- legacy launchers still work: `run-python-gui.bat`, `releases/windows-python/launch-content-list-generator-gui.bat`, and `releases/windows-python/run-content-list-generator.bat`
+- install GUI dependencies with `pip install -r requirements.txt`
+- Python defaults to `SHA-1`
+- `BLAKE3` is optional on Python and requires the `blake3` package from `requirements.txt`
+- copy the deploy bundle from `deploy/windows/` or generate a fresh bundle with `./scripts/package_windows_python_bundle.sh`
+- supported launcher lookup paths remain `%USERPROFILE%\\scripts\\` and `%USERPROFILE%\\scripts\\content-list-gen\\`
 
-Windows, Go executable path:
+Windows Go executable path:
 
-- run `./scripts/build_releases.sh`
-- use the built artifacts in `releases/windows-go/`
-- current Windows Go artifacts:
-  - `releases/windows-go/content-list-generator-windows-amd64.exe`
-  - `releases/windows-go/content-list-generator-windows-arm64.exe`
+- build fresh `.exe` outputs with `./scripts/build_releases.sh`
+- generated artifacts land in `releases/windows-go/`
 
-## Build And Add Feature
+## Testing
 
-Recommended local workflow:
-
-```bash
-git clone <repo-url>
-cd content-list-generator
-./scripts/dev_check.sh
-./scripts/run_local.sh go-gui
-./scripts/run_local.sh python
-```
-
-Useful commands:
+Automated checks:
 
 ```bash
 go test ./...
 go test -tags gui ./...
-python3 -m unittest discover -s ./python -p 'test_*.py'
+python3 -m unittest discover -s ./python/tests -p 'test_*.py'
 python3 -m py_compile python/content_list_core.py python/content_list_generator.py scripts/copy_email_files.py
 ```
 
-Release helpers:
+Shared helper scripts:
+
+- `./scripts/dev_check.sh` runs the main smoke suite
+- `./scripts/parity_check.sh` runs the cross-language fixture parity checks
+
+Tool-oriented testing layout:
+
+- `testing/content-scan/` contains content-list fixtures, regeneration helpers, and a feature runner
+- `testing/email-copy/` contains email-copy fixtures, regeneration helpers, and a feature runner
+- `testing/manual-samples/` and `testing/manual-output/` are reserved for ignored machine-local testing data
+
+## Packaging And Releases
+
+Release and local package helpers:
 
 ```bash
 ./scripts/build_releases.sh
@@ -97,18 +110,15 @@ Release helpers:
 ./scripts/package_linux_local.sh
 ./scripts/package_windows_python_bundle.sh
 ./scripts/package_smoke_assets.sh
+./scripts/package_local.sh
 ```
 
-## Release Outputs
+These scripts generate fresh artifacts in `build/` and `releases/`. The repo no longer treats generated binaries, zips, or tarballs as source files.
 
-- macOS release artifacts live in `releases/macos/`
-- Linux release artifacts live in `releases/linux/`
-- Windows Python release artifacts live in `releases/windows-python/`
-- Windows Go release artifacts live in `releases/windows-go/`
+## Docs
 
-## Project Docs
+Canonical docs now live in:
 
-- install and run: [INSTALL.md](./INSTALL.md)
-- smoke test plan: [SMOKE_TEST_PLAN.md](./SMOKE_TEST_PLAN.md)
-- project TODO list: [TODO.md](./TODO.md)
-- docs index: [docs/index.md](./docs/index.md)
+- `README.md` for setup, structure, runtime, and testing
+- `TODO.md` for active follow-up work
+- `project-dashboard/` for a lightweight static project overview
