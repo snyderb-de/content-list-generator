@@ -159,6 +159,40 @@ func TestRunScanCreatesXLSX(t *testing.T) {
 	}
 }
 
+func TestRunScanDeletesCSVAfterXLSXWhenEnabled(t *testing.T) {
+	workspace := t.TempDir()
+	source := filepath.Join(workspace, "source")
+	if err := ensureDir(source); err != nil {
+		t.Fatalf("mkdir source: %v", err)
+	}
+	if err := writeFixtureFile(filepath.Join(source, "keep.txt"), "hello"); err != nil {
+		t.Fatalf("write keep.txt: %v", err)
+	}
+
+	output := filepath.Join(workspace, "report.csv")
+	done, err := runScan(source, output, scanOptions{
+		CreateXLSX:    true,
+		PreserveZeros: true,
+		DeleteCSV:     true,
+		ExcludedExts:  map[string]struct{}{},
+	})
+	if err != nil {
+		t.Fatalf("runScan failed: %v", err)
+	}
+	if !done.csvDeleted {
+		t.Fatalf("expected csvDeleted to be true")
+	}
+	if _, err := os.Stat(output); !os.IsNotExist(err) {
+		t.Fatalf("expected csv output to be removed, got err=%v", err)
+	}
+	if done.xlsxPath == "" {
+		t.Fatalf("expected xlsx path to be set")
+	}
+	if _, err := os.Stat(done.xlsxPath); err != nil {
+		t.Fatalf("expected xlsx file to exist: %v", err)
+	}
+}
+
 func TestConvertCSVToXLSXPreservesLeadingZeros(t *testing.T) {
 	workspace := t.TempDir()
 	csvPath := filepath.Join(workspace, "input.csv")

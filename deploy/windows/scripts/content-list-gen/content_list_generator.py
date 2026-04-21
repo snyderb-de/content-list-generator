@@ -48,31 +48,65 @@ from content_list_core import (
 
 
 PLACEHOLDER_GITHUB_URL = "https://github.com/placeholder/content-list-generator"
-SETTINGS_PATH = Path.home() / ".content-list-generator-settings.json"
+SETTINGS_FILE_NAME = "content-list-generator-settings.json"
+SETTINGS_LOCATION_PATH = Path.home() / ".content-list-generator-settings-location.json"
+LEGACY_SETTINGS_PATH = Path.home() / ".content-list-generator-settings.json"
+
+def default_settings_path() -> Path:
+    return Path.home() / "scripts" / "settings" / SETTINGS_FILE_NAME
+
+
+def read_json_dict(path: Path) -> dict[str, object]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return data
+
+
+def write_json_dict(path: Path, payload: dict[str, object]) -> None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    except OSError:
+        return
+
+
+def current_settings_path() -> Path:
+    data = read_json_dict(SETTINGS_LOCATION_PATH)
+    configured = str(data.get("settings_path", "")).strip()
+    if configured:
+        return Path(configured).expanduser()
+    return default_settings_path()
+
+
+def set_settings_path(path: Path) -> None:
+    target = path.expanduser()
+    current = current_settings_path()
+    current_data = read_json_dict(current)
+    if not current_data:
+        current_data = read_json_dict(LEGACY_SETTINGS_PATH)
+    target_data = read_json_dict(target)
+    target_data.update(current_data)
+    write_json_dict(target, target_data)
+    write_json_dict(SETTINGS_LOCATION_PATH, {"settings_path": str(target)})
 
 
 def load_theme_mode() -> str:
-    try:
-        data = json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
-    except (OSError, ValueError, TypeError):
-        return "light"
-    if not isinstance(data, dict):
-        return "light"
-    return "dark" if str(data.get("appearance_mode", "")).lower() == "dark" else "light"
+    for candidate in (current_settings_path(), LEGACY_SETTINGS_PATH):
+        data = read_json_dict(candidate)
+        mode = str(data.get("appearance_mode", "")).strip().lower()
+        if mode in {"dark", "light"}:
+            return mode
+    return "light"
 
 
 def save_theme_mode(mode: str) -> None:
-    try:
-        data = json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
-        if not isinstance(data, dict):
-            data = {}
-    except (OSError, ValueError, TypeError):
-        data = {}
+    data = read_json_dict(current_settings_path())
     data["appearance_mode"] = "dark" if mode == "dark" else "light"
-    try:
-        SETTINGS_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
-    except OSError:
-        return
+    write_json_dict(current_settings_path(), data)
 
 
 def palette_for_mode(mode: str) -> dict[str, str]:
@@ -158,12 +192,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dest")
     parser.add_argument("--hash", action="store_true", dest="hashing", help="Use SHA-256 hashing for backward-compatible CLI usage")
     parser.add_argument("--hash-algorithm", choices=("off", "blake3", "sha1", "sha256"))
-    parser.add_argument("--include-hidden", action="store_true")
-    parser.add_argument("--include-system", action="store_true")
+    parser.add_argument("--skip-hidden", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--skip-system", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--include-hidden", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--include-system", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--exclude-exts", default="")
     parser.add_argument("--overwrite", action="store_true")
-    parser.add_argument("--xlsx", action="store_true", dest="create_xlsx")
-    parser.add_argument("--preserve-zeros", action="store_true")
+    parser.add_argument("--xlsx", action=argparse.BooleanOptionalAction, dest="create_xlsx", default=True)
+    parser.add_argument("--preserve-zeros", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--delete-csv-after-xlsx", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--cli", action="store_true", help="Force CLI mode instead of Tkinter GUI")
     return parser.parse_args()
 
@@ -184,6 +221,14 @@ def prompt_yes_no(text: str, default: bool = False) -> bool:
     if not value:
         return default
     return value in {"y", "yes"}
+
+
+def cli_flag_provided(*flags: str) -> bool:
+    for arg in sys.argv[1:]:
+        for flag in flags:
+            if arg == flag or arg.startswith(f"{flag}="):
+                return True
+    return False
 
 
 def open_in_file_manager(path: Path) -> None:
@@ -518,14 +563,31 @@ def run_cli_scan(args: argparse.Namespace) -> int:
         hash_algorithm = normalize_hash_algorithm(
             prompt("Verification hash (off, blake3, sha1, sha256)", default_hash_algorithm())
         )
-    include_hidden = args.include_hidden or prompt_yes_no("Include hidden files?", default=False)
-    include_system = args.include_system or prompt_yes_no("Include common system files?", default=False)
+    if cli_flag_provided("--skip-hidden", "--no-skip-hidden", "--include-hidden"):
+        skip_hidden = args.skip_hidden and not args.include_hidden
+    else:
+        skip_hidden = prompt_yes_no("Skip hidden files?", default=True)
+    if cli_flag_provided("--skip-system", "--no-skip-system", "--include-system"):
+        skip_system = args.skip_system and not args.include_system
+    else:
+        skip_system = prompt_yes_no("Skip common system files?", default=True)
     exclude_raw = args.exclude_exts or prompt("Exclude extensions (comma-separated)", "")
     excluded_exts = normalize_exts(exclude_raw)
-    create_xlsx = args.create_xlsx or prompt_yes_no("Create XLSX after the CSV scan?", default=True)
+    if cli_flag_provided("--xlsx", "--no-xlsx"):
+        create_xlsx = args.create_xlsx
+    else:
+        create_xlsx = prompt_yes_no("Create XLSX after the CSV scan?", default=True)
     preserve_zeros = False
+    delete_csv_after_xlsx = False
     if create_xlsx:
-        preserve_zeros = args.preserve_zeros or prompt_yes_no("Preserve leading zeros in XLSX?", default=True)
+        if cli_flag_provided("--preserve-zeros", "--no-preserve-zeros"):
+            preserve_zeros = args.preserve_zeros
+        else:
+            preserve_zeros = prompt_yes_no("Preserve leading zeros in XLSX?", default=True)
+        if cli_flag_provided("--delete-csv-after-xlsx", "--no-delete-csv-after-xlsx"):
+            delete_csv_after_xlsx = args.delete_csv_after_xlsx
+        else:
+            delete_csv_after_xlsx = prompt_yes_no("Delete CSV after creating XLSX?", default=True)
 
     output_path = output_dir / output_name
     if output_path.exists() and not args.overwrite:
@@ -547,11 +609,12 @@ def run_cli_scan(args: argparse.Namespace) -> int:
         source_dir,
         output_path,
         hash_algorithm=hash_algorithm,
-        include_hidden=include_hidden,
-        include_system=include_system,
+        include_hidden=not skip_hidden,
+        include_system=not skip_system,
         excluded_exts=excluded_exts,
         create_xlsx=create_xlsx,
         preserve_zeros=preserve_zeros,
+        delete_csv=delete_csv_after_xlsx,
     )
     print(build_scan_summary(result))
     return 0
@@ -958,15 +1021,17 @@ class EmailCopyPage:
 
 class ContentListApp:
     def __init__(self) -> None:
+        current_mode = load_theme_mode()
         ctk.set_default_color_theme("blue")
-        ctk.set_appearance_mode(load_theme_mode())
+        ctk.set_appearance_mode(current_mode)
         self.root = ctk.CTk()
         self.root.title("Content List Generator")
         self.root.geometry("1360x860")
         self.root.minsize(1160, 760)
-        self.theme_mode_var = tk.StringVar(value=load_theme_mode())
+        self.theme_mode_var = tk.StringVar(value=current_mode)
         self.colors = palette_for_mode(self.theme_mode_var.get())
         self.root.configure(fg_color=themed_color("app_bg"))
+        self.settings_path_var = tk.StringVar(value=str(current_settings_path()))
 
         self.message_queue: queue.Queue[tuple[str, object]] = queue.Queue()
         self.running = False
@@ -978,10 +1043,11 @@ class ContentListApp:
         self.output_name_var = tk.StringVar(value=default_output_name(cwd))
         self.exclude_var = tk.StringVar(value="")
         self.hash_algorithm_var = tk.StringVar(value=hash_algorithm_label(default_hash_algorithm()))
-        self.hidden_var = tk.BooleanVar(value=False)
-        self.system_var = tk.BooleanVar(value=False)
+        self.hidden_var = tk.BooleanVar(value=True)
+        self.system_var = tk.BooleanVar(value=True)
         self.xlsx_var = tk.BooleanVar(value=True)
         self.preserve_zeros_var = tk.BooleanVar(value=True)
+        self.delete_csv_var = tk.BooleanVar(value=True)
         self.status_var = tk.StringVar(value="Choose a folder to scan, then click Generate Content List.")
         self.scan_files_var = tk.StringVar(value="0")
         self.scan_skipped_var = tk.StringVar(value="0")
@@ -1000,6 +1066,8 @@ class ContentListApp:
         self.progress: ctk.CTkProgressBar | None = None
         self.scan_cancel_event: threading.Event | None = None
         self.preserve_zeros_toggle: ctk.CTkCheckBox | None = None
+        self.delete_csv_toggle: ctk.CTkCheckBox | None = None
+        self.delete_csv_tile: ctk.CTkFrame | None = None
         self.page_frames: dict[str, ctk.CTkFrame] = {}
         self.nav_buttons: dict[str, ctk.CTkButton] = {}
         self.email_page = None
@@ -1238,6 +1306,23 @@ class ContentListApp:
         ).pack(anchor="w", padx=16, pady=(0, 12))
         ctk.CTkLabel(
             footer,
+            text="Settings file",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=themed_color("hint_fg"),
+        ).pack(anchor="w", padx=16, pady=(0, 4))
+        ctk.CTkLabel(
+            footer,
+            textvariable=self.settings_path_var,
+            font=ctk.CTkFont(size=11),
+            text_color=themed_color("body_fg"),
+            wraplength=196,
+            justify="left",
+        ).pack(anchor="w", padx=16, pady=(0, 10))
+        self.make_secondary_button(footer, "Choose Settings Folder", self.choose_settings_folder).pack(
+            anchor="w", padx=16, pady=(0, 12)
+        )
+        ctk.CTkLabel(
+            footer,
             text="The same tools are available in light and dark mode.",
             font=ctk.CTkFont(size=12),
             text_color=themed_color("hint_fg"),
@@ -1303,6 +1388,9 @@ class ContentListApp:
         preserve_tile = self.make_option_tile(options_wrap, "Keep leading zeros in Excel", self.preserve_zeros_var)
         preserve_tile.grid(row=4, column=0, sticky="ew", padx=(0, 10), pady=(0, 10))
         self.preserve_zeros_toggle = preserve_tile.checkbox
+        self.delete_csv_tile = self.make_option_tile(options_wrap, "Delete CSV after Excel is created", self.delete_csv_var)
+        self.delete_csv_tile.grid(row=4, column=1, sticky="ew", padx=(10, 0), pady=(0, 10))
+        self.delete_csv_toggle = self.delete_csv_tile.checkbox
 
         actions = ctk.CTkFrame(page, fg_color="transparent")
         actions.grid(row=4, column=0, columnspan=2, sticky="ew", padx=28, pady=(18, 0))
@@ -1584,8 +1672,21 @@ class ContentListApp:
         state = "normal" if self.xlsx_var.get() else "disabled"
         if self.preserve_zeros_toggle is not None:
             self.preserve_zeros_toggle.configure(state=state)
-        if not self.xlsx_var.get():
+        if self.delete_csv_toggle is not None:
+            self.delete_csv_toggle.configure(state=state)
+        if self.delete_csv_tile is not None:
+            if self.xlsx_var.get():
+                self.delete_csv_tile.grid()
+            else:
+                self.delete_csv_tile.grid_remove()
+        if self.xlsx_var.get():
+            if not self.preserve_zeros_var.get():
+                self.preserve_zeros_var.set(True)
+            if not self.delete_csv_var.get():
+                self.delete_csv_var.set(True)
+        else:
             self.preserve_zeros_var.set(False)
+            self.delete_csv_var.set(False)
 
     def sync_action_buttons(self) -> None:
         running_state = "disabled" if self.running else "normal"
@@ -1614,6 +1715,17 @@ class ContentListApp:
         if chosen:
             self.output_dir_var.set(chosen)
 
+    def choose_settings_folder(self) -> None:
+        start = str(current_settings_path().parent)
+        chosen = choose_directory(self.root, "Choose Settings Folder", start, False, self.colors)
+        if not chosen:
+            return
+        target = Path(chosen).expanduser() / SETTINGS_FILE_NAME
+        set_settings_path(target)
+        self.settings_path_var.set(str(current_settings_path()))
+        save_theme_mode(self.theme_mode_var.get())
+        self.status_var.set(f"Settings file location updated: {target}")
+
     def copy_source_to_output(self) -> None:
         self.output_dir_var.set(self.source_var.get())
 
@@ -1624,10 +1736,11 @@ class ContentListApp:
         self.output_name_var.set(default_output_name(cwd))
         self.exclude_var.set("")
         self.hash_algorithm_var.set(hash_algorithm_label(default_hash_algorithm()))
-        self.hidden_var.set(False)
-        self.system_var.set(False)
+        self.hidden_var.set(True)
+        self.system_var.set(True)
         self.xlsx_var.set(True)
         self.preserve_zeros_var.set(True)
+        self.delete_csv_var.set(True)
         if self.progress is not None:
             self.progress.set(0)
         self.status_var.set("Choose a folder to scan, then click Generate Content List.")
@@ -1726,11 +1839,12 @@ class ContentListApp:
                 source_dir,
                 output_path,
                 hash_algorithm=selected_hash,
-                include_hidden=self.hidden_var.get(),
-                include_system=self.system_var.get(),
+                include_hidden=not self.hidden_var.get(),
+                include_system=not self.system_var.get(),
                 excluded_exts=excluded_exts,
                 create_xlsx=self.xlsx_var.get(),
                 preserve_zeros=self.preserve_zeros_var.get(),
+                delete_csv=self.delete_csv_var.get(),
                 progress_callback=on_progress,
                 cancel_event=self.scan_cancel_event,
             )
@@ -1771,7 +1885,12 @@ class ContentListApp:
                     self.status_var.set(f"Your file list is ready. {result.files} files were included.")
                     self.scan_files_var.set(str(result.files))
                     self.scan_skipped_var.set(str(result.filtered))
-                    self.scan_saved_var.set("CSV + Report" if not result.xlsx_path else "CSV + Report + Excel")
+                    if result.xlsx_path and result.csv_deleted:
+                        self.scan_saved_var.set("Report + Excel (CSV removed)")
+                    elif result.xlsx_path:
+                        self.scan_saved_var.set("CSV + Report + Excel")
+                    else:
+                        self.scan_saved_var.set("CSV + Report")
                     self.append_summary(build_scan_summary(result))
                     if self.progress is not None:
                         self.progress.stop()
@@ -1809,24 +1928,7 @@ class ContentListApp:
 
 def main() -> int:
     args = parse_args()
-    has_explicit_cli_args = any(
-        value
-        for value in [
-            args.source,
-            args.output_dir,
-            args.output_name,
-            args.dest,
-            args.hash_algorithm,
-            args.hashing,
-            args.include_hidden,
-            args.include_system,
-            args.exclude_exts,
-            args.overwrite,
-            args.create_xlsx,
-            args.preserve_zeros,
-            args.mode != "scan",
-        ]
-    )
+    has_explicit_cli_args = any(arg != "--cli" for arg in sys.argv[1:])
 
     if not args.cli and not has_explicit_cli_args:
         if tk is None:

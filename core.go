@@ -45,6 +45,8 @@ type scanDoneMsg struct {
 	excludeSystem   bool
 	createXLSX      bool
 	preserveZeros   bool
+	deleteCSV       bool
+	csvDeleted      bool
 	filteredHidden  uint64
 	filteredSystem  uint64
 	filteredExts    uint64
@@ -59,6 +61,7 @@ type scanOptions struct {
 	ExcludeSystem    bool
 	CreateXLSX       bool
 	PreserveZeros    bool
+	DeleteCSV        bool
 	ExcludedExts     map[string]struct{}
 	ExcludedExtsText string
 }
@@ -537,6 +540,7 @@ func runScanWithContext(parent context.Context, sourceDir, outputPath string, op
 	}
 
 	xlsxPath := ""
+	csvDeleted := false
 	if options.CreateXLSX {
 		nextXLSXPath := strings.TrimSuffix(outputPath, filepath.Ext(outputPath)) + ".xlsx"
 		xlsxStartedAt := time.Now()
@@ -560,6 +564,12 @@ func runScanWithContext(parent context.Context, sourceDir, outputPath string, op
 			}
 			return scanDoneMsg{}, err
 		}
+		if options.DeleteCSV {
+			if err := os.Remove(outputPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return scanDoneMsg{}, err
+			}
+			csvDeleted = true
+		}
 	}
 
 	reportPath := strings.TrimSuffix(outputPath, filepath.Ext(outputPath)) + "-report.txt"
@@ -582,6 +592,8 @@ func runScanWithContext(parent context.Context, sourceDir, outputPath string, op
 		excludeSystem:   options.ExcludeSystem,
 		createXLSX:      options.CreateXLSX,
 		preserveZeros:   options.PreserveZeros,
+		deleteCSV:       options.DeleteCSV,
+		csvDeleted:      csvDeleted,
 		filteredHidden:  filteredHidden,
 		filteredSystem:  filteredSystem,
 		filteredExts:    filteredExts,
@@ -627,6 +639,8 @@ func buildScanReport(done scanDoneMsg) string {
 		fmt.Sprintf("Verification hash: %s", done.hashAlgorithm.OptionLabel()),
 		fmt.Sprintf("First file in CSV: %s", valueOrDefault(done.firstCSVItem, "none")),
 		fmt.Sprintf("Last file in CSV: %s", valueOrDefault(done.lastCSVItem, "none")),
+		fmt.Sprintf("Delete CSV after XLSX: %s", onOff(done.deleteCSV && done.createXLSX)),
+		fmt.Sprintf("CSV removed after XLSX: %s", onOff(done.csvDeleted)),
 		fmt.Sprintf("Finished in: %s", done.elapsed.Round(time.Millisecond)),
 		"",
 	}

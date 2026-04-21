@@ -82,6 +82,8 @@ class ScanResult:
     hash_algorithm: str
     create_xlsx: bool
     preserve_zeros: bool
+    delete_csv: bool
+    csv_deleted: bool
     hash_workers: int
     top_by_count: list[SummaryEntry]
     top_by_size: list[SummaryEntry]
@@ -645,11 +647,13 @@ def run_scan(
     excluded_exts: set[str],
     create_xlsx: bool,
     preserve_zeros: bool,
+    delete_csv: bool,
     progress_callback: Callable[[ScanProgress], None] | None = None,
     cancel_event=None,
 ) -> ScanResult:
     started = time.time()
     xlsx_path: Path | None = None
+    csv_deleted = False
     report_path = output_path.with_name(f"{output_path.stem}-report.txt")
     try:
         files, filtered, filtered_hidden, filtered_system, filtered_exts, directories, total_expected_bytes = collect_files(
@@ -676,6 +680,9 @@ def run_scan(
             if cancel_event is not None and cancel_event.is_set():
                 raise ScanCanceled()
             convert_csv_to_xlsx(output_path, xlsx_path, preserve_zeros)
+            if delete_csv:
+                output_path.unlink(missing_ok=True)
+                csv_deleted = True
         result = ScanResult(
             source_name=folder_display_name(source_dir),
             output_path=output_path,
@@ -692,6 +699,8 @@ def run_scan(
             hash_algorithm=normalize_hash_algorithm(hash_algorithm),
             create_xlsx=create_xlsx,
             preserve_zeros=preserve_zeros,
+            delete_csv=delete_csv,
+            csv_deleted=csv_deleted,
             hash_workers=hash_workers,
             top_by_count=summarize_entries(summaries, "count"),
             top_by_size=summarize_entries(summaries, "bytes"),
@@ -727,6 +736,8 @@ def build_scan_report(result: ScanResult) -> str:
         f"Verification hash: {hash_algorithm_label(result.hash_algorithm)}",
         f"First file in CSV: {result.first_csv_item or 'none'}",
         f"Last file in CSV: {result.last_csv_item or 'none'}",
+        f"Delete CSV after XLSX: {'on' if result.delete_csv and result.create_xlsx else 'off'}",
+        f"CSV removed after XLSX: {'on' if result.csv_deleted else 'off'}",
         f"Finished in: {result.elapsed:.2f}s",
         "",
         *render_top("Top extensions by file count", result.top_by_count),
@@ -870,6 +881,8 @@ def build_scan_summary(result: ScanResult) -> str:
         f"Last file in CSV: {result.last_csv_item or 'none'}",
         f"Excel copy enabled: {'on' if result.create_xlsx else 'off'}",
         f"Keep leading zeros in Excel: {'on' if result.preserve_zeros and result.create_xlsx else 'off'}",
+        f"Delete CSV after XLSX: {'on' if result.delete_csv and result.create_xlsx else 'off'}",
+        f"CSV removed after XLSX: {'on' if result.csv_deleted else 'off'}",
         f"Finished in: {result.elapsed:.2f}s",
         "",
         *render_top("Most common file types", result.top_by_count),

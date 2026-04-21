@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"image/color"
@@ -39,6 +40,9 @@ type folderChild struct {
 
 const placeholderGitHubURL = "https://github.com/placeholder/content-list-generator"
 const appearancePreferenceKey = "appearance_mode"
+const settingsFileName = "content-list-generator-settings.json"
+const settingsLocationFileName = ".content-list-generator-settings-location.json"
+const legacySettingsFileName = ".content-list-generator-settings.json"
 
 type forcedVariantTheme struct {
 	fyne.Theme
@@ -241,10 +245,29 @@ func launchGUI(startDir string) error {
 		}
 		applyAppearance(application, mode, true)
 	}
+	settingsPathLabel := widget.NewLabel("")
+	settingsPathLabel.Wrapping = fyne.TextWrapWord
+	refreshSettingsPath := func() {
+		settingsPathLabel.SetText("Settings file: " + settingsFilePath())
+	}
+	refreshSettingsPath()
+	chooseSettingsFolder := widget.NewButton("Choose Settings Folder", func() {
+		startPath := filepath.Dir(settingsFilePath())
+		showFolderPicker(window, "Choose Settings Folder", startPath, false, func(path string) {
+			target := filepath.Join(path, settingsFileName)
+			if err := setSettingsFilePath(target); err != nil {
+				dialog.ShowError(err, window)
+				return
+			}
+			saveAppearanceModeToSettingsFile(currentAppearanceMode(application))
+			refreshSettingsPath()
+		})
+	})
+	chooseSettingsFolder.Importance = widget.LowImportance
 	appearanceCard := widget.NewCard(
 		"Appearance",
 		"The same tools are available in light and dark mode.",
-		container.NewVBox(darkMode),
+		container.NewVBox(darkMode, settingsPathLabel, chooseSettingsFolder),
 	)
 
 	sidebar := container.NewPadded(
@@ -273,7 +296,10 @@ func launchGUI(startDir string) error {
 }
 
 func applySavedAppearance(application fyne.App) {
-	mode := strings.ToLower(strings.TrimSpace(application.Preferences().String(appearancePreferenceKey)))
+	mode := loadAppearanceModeFromSettingsFile()
+	if mode == "" {
+		mode = strings.ToLower(strings.TrimSpace(application.Preferences().String(appearancePreferenceKey)))
+	}
 	if mode != "dark" && mode != "light" {
 		return
 	}
@@ -281,6 +307,9 @@ func applySavedAppearance(application fyne.App) {
 }
 
 func currentAppearanceMode(application fyne.App) string {
+	if mode := loadAppearanceModeFromSettingsFile(); mode == "dark" || mode == "light" {
+		return mode
+	}
 	mode := strings.ToLower(strings.TrimSpace(application.Preferences().String(appearancePreferenceKey)))
 	if mode == "dark" || mode == "light" {
 		return mode
@@ -302,7 +331,160 @@ func applyAppearance(application fyne.App, mode string, persist bool) {
 	})
 	if persist {
 		application.Preferences().SetString(appearancePreferenceKey, mode)
+		saveAppearanceModeToSettingsFile(mode)
 	}
+}
+
+func defaultSettingsFilePath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, "scripts", "settings", settingsFileName)
+}
+
+func legacySettingsFilePath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, legacySettingsFileName)
+}
+
+func settingsLocationPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, settingsLocationFileName)
+}
+
+func normalizeSettingsFilePath(path string) string {
+	clean := strings.TrimSpace(path)
+	if clean == "" {
+		return ""
+	}
+	if strings.HasPrefix(clean, "~") {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			switch {
+			case clean == "~":
+				clean = home
+			case strings.HasPrefix(clean, "~/"), strings.HasPrefix(clean, `~\`):
+				clean = filepath.Join(home, clean[2:])
+			}
+		}
+	}
+	abs, err := filepath.Abs(clean)
+	if err != nil {
+		return filepath.Clean(clean)
+	}
+	return filepath.Clean(abs)
+}
+
+func readSettingsPayload(path string) map[string]any {
+	if strings.TrimSpace(path) == "" {
+		return map[string]any{}
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return map[string]any{}
+	}
+	payload := map[string]any{}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return map[string]any{}
+	}
+	return payload
+}
+
+func writeSettingsPayload(path string, payload map[string]any) error {
+	if strings.TrimSpace(path) == "" {
+		return fmt.Errorf("settings path is empty")
+	}
+	if payload == nil {
+		payload = map[string]any{}
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	encoded, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, encoded, 0o644)
+}
+
+func configuredSettingsFilePath() string {
+	locationPath := settingsLocationPath()
+	payload := readSettingsPayload(locationPath)
+	raw, ok := payload["settings_path"]
+	if !ok {
+		return ""
+	}
+	return normalizeSettingsFilePath(fmt.Sprintf("%v", raw))
+}
+
+func settingsFilePath() string {
+	if configured := configuredSettingsFilePath(); configured != "" {
+		return configured
+	}
+	return defaultSettingsFilePath()
+}
+
+func setSettingsFilePath(path string) error {
+	targetPath := normalizeSettingsFilePath(path)
+	if targetPath == "" {
+		return fmt.Errorf("settings path cannot be empty")
+	}
+	currentPath := settingsFilePath()
+	currentPayload := readSettingsPayload(currentPath)
+	if len(currentPayload) == 0 {
+		currentPayload = readSettingsPayload(legacySettingsFilePath())
+	}
+	targetPayload := readSettingsPayload(targetPath)
+	for key, value := range currentPayload {
+		targetPayload[key] = value
+	}
+	if err := writeSettingsPayload(targetPath, targetPayload); err != nil {
+		return err
+	}
+	return writeSettingsPayload(settingsLocationPath(), map[string]any{
+		"settings_path": targetPath,
+	})
+}
+
+func loadAppearanceModeFromSettingsFile() string {
+	seen := map[string]struct{}{}
+	for _, candidate := range []string{settingsFilePath(), legacySettingsFilePath()} {
+		candidate = normalizeSettingsFilePath(candidate)
+		if candidate == "" {
+			continue
+		}
+		if _, exists := seen[candidate]; exists {
+			continue
+		}
+		seen[candidate] = struct{}{}
+		payload := readSettingsPayload(candidate)
+		mode := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", payload[appearancePreferenceKey])))
+		if mode == "dark" || mode == "light" {
+			return mode
+		}
+	}
+	return ""
+}
+
+func saveAppearanceModeToSettingsFile(mode string) {
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	if mode != "dark" && mode != "light" {
+		return
+	}
+	settingsPath := settingsFilePath()
+	if settingsPath == "" {
+		return
+	}
+	payload := readSettingsPayload(settingsPath)
+	payload["appearance_mode"] = mode
+	_ = writeSettingsPayload(settingsPath, payload)
 }
 
 func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
@@ -328,15 +510,34 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 	systemCheck := widget.NewCheck("Skip common system files", nil)
 	xlsxCheck := widget.NewCheck("Also save an Excel copy", nil)
 	zeroCheck := widget.NewCheck("Keep leading zeros in Excel", nil)
+	deleteCSVCheck := widget.NewCheck("Delete CSV after Excel is created", nil)
+	deleteCSVCard := makeCheckCard(deleteCSVCheck, "Delete the CSV file once the Excel copy is finished.")
 	zeroCheck.Disable()
 	xlsxCheck.OnChanged = func(checked bool) {
 		if checked {
 			zeroCheck.Enable()
+			if !zeroCheck.Checked {
+				zeroCheck.SetChecked(true)
+			}
+			deleteCSVCheck.Enable()
+			if !deleteCSVCheck.Checked {
+				deleteCSVCheck.SetChecked(true)
+			}
+			deleteCSVCard.Show()
 			return
 		}
 		zeroCheck.SetChecked(false)
 		zeroCheck.Disable()
+		deleteCSVCheck.SetChecked(false)
+		deleteCSVCheck.Disable()
+		deleteCSVCard.Hide()
 	}
+	hiddenCheck.SetChecked(true)
+	systemCheck.SetChecked(true)
+	zeroCheck.SetChecked(true)
+	deleteCSVCheck.SetChecked(true)
+	xlsxCheck.SetChecked(true)
+	xlsxCheck.OnChanged(xlsxCheck.Checked)
 
 	statusLabel := widget.NewLabel("Choose a folder to scan, then click Generate Content List.")
 	statusLabel.Wrapping = fyne.TextWrapWord
@@ -372,10 +573,11 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 		fileEntry.SetText(defaultFilename)
 		excludeEntry.SetText("")
 		hashSelect.SetSelected(defaultHashAlgorithm().OptionLabel())
-		hiddenCheck.SetChecked(false)
-		systemCheck.SetChecked(false)
-		xlsxCheck.SetChecked(false)
-		zeroCheck.SetChecked(false)
+		hiddenCheck.SetChecked(true)
+		systemCheck.SetChecked(true)
+		zeroCheck.SetChecked(true)
+		deleteCSVCheck.SetChecked(true)
+		xlsxCheck.SetChecked(true)
 		progressBar.Hide()
 		progressBar.SetValue(0)
 		statusLabel.SetText("Choose a folder to scan, then click Generate Content List.")
@@ -484,6 +686,7 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 					ExcludeSystem: systemCheck.Checked,
 					CreateXLSX:    xlsxCheck.Checked,
 					PreserveZeros: zeroCheck.Checked,
+					DeleteCSV:     deleteCSVCheck.Checked,
 					ExcludedExts:  excluded,
 				})
 				close(doneCh)
@@ -502,7 +705,9 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 					}
 					filesMetric.SetText(strconv.FormatUint(done.files, 10))
 					skippedMetric.SetText(strconv.FormatUint(done.filtered, 10))
-					if done.xlsxPath != "" {
+					if done.xlsxPath != "" && done.csvDeleted {
+						savedMetric.SetText("Report + Excel (CSV removed)")
+					} else if done.xlsxPath != "" {
 						savedMetric.SetText("CSV + Report + Excel")
 					} else {
 						savedMetric.SetText("CSV + Report")
@@ -578,6 +783,7 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 			makeCheckCard(systemCheck, "Skip common system files"),
 			makeCheckCard(xlsxCheck, "Also save an Excel copy"),
 			makeCheckCard(zeroCheck, "Keep leading zeros in Excel"),
+			deleteCSVCard,
 		),
 	)
 

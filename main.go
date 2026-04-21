@@ -43,6 +43,7 @@ const (
 	focusSystem
 	focusXLSX
 	focusPreserveZeros
+	focusDeleteCSV
 	focusStart
 	focusCount
 )
@@ -125,6 +126,7 @@ type model struct {
 	excludeSystem  bool
 	createXLSX     bool
 	preserveZeros  bool
+	deleteCSV      bool
 	spinner        spinner.Model
 	activeFlow     flowMode
 	sourceDir      string
@@ -196,10 +198,11 @@ func runTUI(startDir string) {
 		excludeInput:   excludeInput,
 		settingsFocus:  focusFileName,
 		hashAlgorithm:  defaultHashAlgorithm(),
-		excludeHidden:  false,
-		excludeSystem:  false,
+		excludeHidden:  true,
+		excludeSystem:  true,
 		createXLSX:     true,
 		preserveZeros:  true,
+		deleteCSV:      true,
 		spinner:        spin,
 		activeFlow:     flowScan,
 		sourceDir:      startDir,
@@ -625,11 +628,11 @@ func (m model) updateOutputStage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.syncSettingsFocus()
 		return m, nil
 	case "tab", "down":
-		m.settingsFocus = (m.settingsFocus + 1) % focusCount
+		m.stepSettingsFocus(1)
 		m.syncSettingsFocus()
 		return m, textinput.Blink
 	case "shift+tab", "up":
-		m.settingsFocus = (m.settingsFocus - 1 + focusCount) % focusCount
+		m.stepSettingsFocus(-1)
 		m.syncSettingsFocus()
 		return m, textinput.Blink
 	case " ":
@@ -645,13 +648,23 @@ func (m model) updateOutputStage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case focusXLSX:
 			m.createXLSX = !m.createXLSX
-			if !m.createXLSX {
+			if m.createXLSX {
+				m.preserveZeros = true
+				m.deleteCSV = true
+			} else {
 				m.preserveZeros = false
+				m.deleteCSV = false
 			}
+			m.syncSettingsFocus()
 			return m, nil
 		case focusPreserveZeros:
 			if m.createXLSX {
 				m.preserveZeros = !m.preserveZeros
+			}
+			return m, nil
+		case focusDeleteCSV:
+			if m.createXLSX {
+				m.deleteCSV = !m.deleteCSV
 			}
 			return m, nil
 		}
@@ -668,17 +681,27 @@ func (m model) updateOutputStage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case focusXLSX:
 			m.createXLSX = !m.createXLSX
-			if !m.createXLSX {
+			if m.createXLSX {
+				m.preserveZeros = true
+				m.deleteCSV = true
+			} else {
 				m.preserveZeros = false
+				m.deleteCSV = false
 			}
+			m.syncSettingsFocus()
 			return m, nil
 		case focusPreserveZeros:
 			if m.createXLSX {
 				m.preserveZeros = !m.preserveZeros
 			}
 			return m, nil
+		case focusDeleteCSV:
+			if m.createXLSX {
+				m.deleteCSV = !m.deleteCSV
+			}
+			return m, nil
 		case focusFileName, focusExcludeExts:
-			m.settingsFocus = (m.settingsFocus + 1) % focusCount
+			m.stepSettingsFocus(1)
 			m.syncSettingsFocus()
 			return m, textinput.Blink
 		case focusStart:
@@ -717,6 +740,7 @@ func (m model) updateOutputStage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				ExcludeSystem:    m.excludeSystem,
 				CreateXLSX:       m.createXLSX,
 				PreserveZeros:    m.preserveZeros,
+				DeleteCSV:        m.deleteCSV,
 				ExcludedExts:     excludedMap,
 				ExcludedExtsText: strings.TrimSpace(m.excludeInput.Value()),
 			})
@@ -748,6 +772,7 @@ func (m model) updateConfirmOverwriteStage(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 			ExcludeSystem:    m.excludeSystem,
 			CreateXLSX:       m.createXLSX,
 			PreserveZeros:    m.preserveZeros,
+			DeleteCSV:        m.deleteCSV,
 			ExcludedExts:     excludedMap,
 			ExcludedExtsText: strings.TrimSpace(m.excludeInput.Value()),
 		})
@@ -789,6 +814,9 @@ func (m model) beginEmailCopy() (tea.Model, tea.Cmd) {
 }
 
 func (m *model) syncSettingsFocus() {
+	if !m.isSettingsFocusVisible(m.settingsFocus) {
+		m.settingsFocus = focusXLSX
+	}
 	if m.settingsFocus == focusFileName {
 		m.outputInput.Focus()
 	} else {
@@ -798,6 +826,24 @@ func (m *model) syncSettingsFocus() {
 		m.excludeInput.Focus()
 	} else {
 		m.excludeInput.Blur()
+	}
+}
+
+func (m *model) isSettingsFocusVisible(focus int) bool {
+	if focus == focusDeleteCSV && !m.createXLSX {
+		return false
+	}
+	return true
+}
+
+func (m *model) stepSettingsFocus(delta int) {
+	next := m.settingsFocus
+	for i := 0; i < focusCount; i++ {
+		next = (next + delta + focusCount) % focusCount
+		if m.isSettingsFocusVisible(next) {
+			m.settingsFocus = next
+			return
+		}
 	}
 }
 
@@ -879,8 +925,7 @@ func (m model) viewOutputDirPicker() string {
 }
 
 func (m model) viewOutputForm() string {
-	body := lipgloss.JoinVertical(
-		lipgloss.Left,
+	lines := []string{
 		styleTitle("Output Settings"),
 		"",
 		styleLabel(fmt.Sprintf("Source folder: %s", m.sourceDir)),
@@ -894,6 +939,12 @@ func (m model) viewOutputForm() string {
 		focusedToggle(m.settingsFocus == focusSystem, "Exclude common system files", m.excludeSystem),
 		focusedToggle(m.settingsFocus == focusXLSX, "Create XLSX after scan", m.createXLSX),
 		focusedToggle(m.settingsFocus == focusPreserveZeros, "Preserve leading zeros in XLSX", m.preserveZeros && m.createXLSX),
+	}
+	if m.createXLSX {
+		lines = append(lines, focusedToggle(m.settingsFocus == focusDeleteCSV, "Delete CSV after XLSX is created", m.deleteCSV))
+	}
+	lines = append(
+		lines,
 		focusedAction(m.settingsFocus == focusStart, "Start scan"),
 		"",
 		styleHint("Tab or arrows move between controls. Space or enter changes the focused setting."),
@@ -901,8 +952,9 @@ func (m model) viewOutputForm() string {
 	)
 
 	if m.err != nil {
-		body = lipgloss.JoinVertical(lipgloss.Left, body, "", styleError(m.err.Error()))
+		lines = append(lines, styleError(m.err.Error()))
 	}
+	body := lipgloss.JoinVertical(lipgloss.Left, lines...)
 
 	return styleFrame(body, m.width)
 }
@@ -947,6 +999,7 @@ func (m model) viewScanning() string {
 		styleLabel(fmt.Sprintf("Exclude system: %s", onOff(m.excludeSystem))),
 		styleLabel(fmt.Sprintf("Create XLSX: %s", onOff(m.createXLSX))),
 		styleLabel(fmt.Sprintf("Preserve zeros in XLSX: %s", onOff(m.preserveZeros && m.createXLSX))),
+		styleLabel(fmt.Sprintf("Delete CSV after XLSX: %s", onOff(m.deleteCSV && m.createXLSX))),
 		styleLabel(fmt.Sprintf("Excluded exts: %s", valueOrDefault(strings.TrimSpace(m.excludeInput.Value()), "none"))),
 		"",
 		styleStat("Progress", progressStat),
@@ -1050,6 +1103,8 @@ func (m model) viewDone() string {
 		styleStat("Hash workers", fmt.Sprintf("%d", m.done.hashWorkers)),
 		styleStat("Create XLSX", onOff(m.done.createXLSX)),
 		styleStat("Preserve zeros", onOff(m.done.preserveZeros)),
+		styleStat("Delete CSV after XLSX", onOff(m.done.deleteCSV && m.done.createXLSX)),
+		styleStat("CSV removed after XLSX", onOff(m.done.csvDeleted)),
 		"",
 		countSummary,
 		"",

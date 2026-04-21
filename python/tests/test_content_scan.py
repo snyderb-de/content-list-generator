@@ -34,6 +34,7 @@ class ContentScanTests(unittest.TestCase):
                 excluded_exts=set(),
                 create_xlsx=True,
                 preserve_zeros=True,
+                delete_csv=False,
             )
 
             self.assertEqual(result.files, 1)
@@ -81,11 +82,36 @@ class ContentScanTests(unittest.TestCase):
                 excluded_exts={"log"},
                 create_xlsx=False,
                 preserve_zeros=False,
+                delete_csv=False,
             )
 
             self.assertEqual(result.files, 5)
             self.assertEqual(result.filtered, 3)
             self.assertEqual(output_path.read_text(encoding="utf-8"), expected_path.read_text(encoding="utf-8"))
+
+    def test_run_scan_deletes_csv_after_xlsx_when_enabled(self) -> None:
+        with TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            source = workspace / "source"
+            source.mkdir()
+            (source / "keep.txt").write_text("hello\n", encoding="utf-8")
+            output_path = workspace / "report.csv"
+
+            result = core.run_scan(
+                source,
+                output_path,
+                hash_algorithm=core.HASH_ALGORITHM_OFF,
+                include_hidden=False,
+                include_system=False,
+                excluded_exts=set(),
+                create_xlsx=True,
+                preserve_zeros=True,
+                delete_csv=True,
+            )
+
+            self.assertTrue(result.xlsx_path and result.xlsx_path.exists())
+            self.assertTrue(result.csv_deleted)
+            self.assertFalse(output_path.exists())
 
 
 if __name__ == "__main__":
