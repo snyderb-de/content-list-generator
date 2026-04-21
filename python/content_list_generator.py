@@ -242,6 +242,18 @@ def open_in_file_manager(path: Path) -> None:
     subprocess.run(["xdg-open", str(target)], check=False)
 
 
+def default_scan_output_dir(source_dir: Path) -> Path:
+    source = source_dir.expanduser().resolve()
+    for candidate in (source.parent, Path.home(), Path.cwd()):
+        try:
+            resolved = candidate.expanduser().resolve()
+        except OSError:
+            continue
+        if resolved != source:
+            return resolved
+    return source
+
+
 def choose_directory(parent, title: str, initialdir: str, mustexist: bool, colors: dict[str, str] | None = None) -> str:
     del colors
     if filedialog is None:
@@ -548,7 +560,10 @@ def run_cli_scan(args: argparse.Namespace) -> int:
         print(f"Source folder does not exist: {source_dir}", file=sys.stderr)
         return 1
 
-    output_dir = Path(args.output_dir or prompt("Output folder", str(source_dir))).expanduser().resolve()
+    output_dir = Path(args.output_dir or prompt("Output folder", str(default_scan_output_dir(source_dir)))).expanduser().resolve()
+    if output_dir == source_dir:
+        print("Output folder cannot be the same as the source folder.", file=sys.stderr)
+        return 1
     output_dir.mkdir(parents=True, exist_ok=True)
 
     output_name = args.output_name or prompt("Output file name", default_output_name(source_dir))
@@ -1039,7 +1054,7 @@ class ContentListApp:
 
         cwd = Path(os.getcwd())
         self.source_var = tk.StringVar(value=str(cwd))
-        self.output_dir_var = tk.StringVar(value=str(cwd))
+        self.output_dir_var = tk.StringVar(value=str(default_scan_output_dir(cwd)))
         self.output_name_var = tk.StringVar(value=default_output_name(cwd))
         self.exclude_var = tk.StringVar(value="")
         self.hash_algorithm_var = tk.StringVar(value=hash_algorithm_label(default_hash_algorithm()))
@@ -1054,7 +1069,6 @@ class ContentListApp:
         self.scan_saved_var = tk.StringVar(value="Waiting")
         self.generate_button: ctk.CTkButton | None = None
         self.stop_button: ctk.CTkButton | None = None
-        self.email_button: ctk.CTkButton | None = None
         self.about_button: ctk.CTkButton | None = None
         self.open_folder_button: ctk.CTkButton | None = None
         self.reset_button: ctk.CTkButton | None = None
@@ -1348,8 +1362,7 @@ class ContentListApp:
         ctk.CTkLabel(
             hero,
             text=(
-                "Create a simple file list from a folder, save an Excel copy if you want one, "
-                "or launch the email-copy flow when you need to gather supported email files."
+                "Create a simple file list from a folder and save an Excel copy if you want one."
             ),
             font=ctk.CTkFont(size=14),
             text_color=themed_color("hero_muted"),
@@ -1382,29 +1395,29 @@ class ContentListApp:
         ctk.CTkLabel(options_wrap, text="Choose any extras you want before you generate the file list.", font=ctk.CTkFont(size=13), text_color=themed_color("hint_fg")).grid(row=1, column=0, columnspan=2, sticky="w", pady=(0, 14))
 
         self.make_select_tile(options_wrap, "Verification hash", self.hash_algorithm_var, hash_algorithm_labels()).grid(row=2, column=0, sticky="ew", padx=(0, 10), pady=(0, 10))
-        self.make_option_tile(options_wrap, "Skip hidden files", self.hidden_var).grid(row=2, column=1, sticky="ew", padx=(10, 0), pady=(0, 10))
-        self.make_option_tile(options_wrap, "Skip common system files", self.system_var).grid(row=3, column=0, sticky="ew", padx=(0, 10), pady=(0, 10))
-        self.make_option_tile(options_wrap, "Also save an Excel copy", self.xlsx_var, command=self.sync_xlsx_state).grid(row=3, column=1, sticky="ew", padx=(10, 0), pady=(0, 10))
-        preserve_tile = self.make_option_tile(options_wrap, "Keep leading zeros in Excel", self.preserve_zeros_var)
-        preserve_tile.grid(row=4, column=0, sticky="ew", padx=(0, 10), pady=(0, 10))
-        self.preserve_zeros_toggle = preserve_tile.checkbox
-        self.delete_csv_tile = self.make_option_tile(options_wrap, "Delete CSV after Excel is created", self.delete_csv_var)
-        self.delete_csv_tile.grid(row=4, column=1, sticky="ew", padx=(10, 0), pady=(0, 10))
-        self.delete_csv_toggle = self.delete_csv_tile.checkbox
+        checks_card = ctk.CTkFrame(options_wrap, fg_color=themed_color("card_bg"), corner_radius=18)
+        checks_card.grid(row=2, column=1, rowspan=3, sticky="nsew", padx=(10, 0), pady=(0, 10))
+        checks_card.grid_columnconfigure(0, weight=1)
+        self.make_option_check(checks_card, "Skip hidden files", self.hidden_var).pack(anchor="w", fill="x", padx=16, pady=(14, 6))
+        self.make_option_check(checks_card, "Skip common system files", self.system_var).pack(anchor="w", fill="x", padx=16, pady=6)
+        self.make_option_check(checks_card, "Also save an Excel copy", self.xlsx_var, command=self.sync_xlsx_state).pack(anchor="w", fill="x", padx=16, pady=6)
+        self.preserve_zeros_toggle = self.make_option_check(checks_card, "Keep leading zeros in Excel", self.preserve_zeros_var)
+        self.preserve_zeros_toggle.pack(anchor="w", fill="x", padx=16, pady=6)
+        self.delete_csv_tile = ctk.CTkFrame(checks_card, fg_color="transparent")
+        self.delete_csv_tile.pack(anchor="w", fill="x", padx=16, pady=(6, 14))
+        self.delete_csv_toggle = self.make_option_check(self.delete_csv_tile, "Delete CSV after Excel is created", self.delete_csv_var)
+        self.delete_csv_toggle.pack(anchor="w", fill="x")
 
         actions = ctk.CTkFrame(page, fg_color="transparent")
         actions.grid(row=4, column=0, columnspan=2, sticky="ew", padx=28, pady=(18, 0))
+        self.reset_button = self.make_secondary_button(actions, "Reset", self.reset_fields)
+        self.reset_button.pack(side="left")
         self.generate_button = self.make_primary_button(actions, "Generate Content List", self.start_scan)
-        self.generate_button.pack(side="left")
+        self.generate_button.pack(side="left", padx=(10, 0))
         self.stop_button = self.make_secondary_button(actions, "Stop Scan", self.stop_scan)
         self.stop_button.pack(side="left", padx=(10, 0))
         self.stop_button.configure(state="disabled")
-        self.email_button = self.make_secondary_button(actions, "Copy Email Files", self.open_email_copy_window)
-        self.email_button.pack(side="left", padx=(10, 0))
-        self.make_secondary_button(actions, "Use Source As Output", self.copy_source_to_output).pack(side="left", padx=(10, 0))
-        self.reset_button = self.make_secondary_button(actions, "Reset", self.reset_fields)
-        self.reset_button.pack(side="left", padx=(10, 0))
-        self.open_folder_button = self.make_secondary_button(actions, "Open Output Folder", self.open_output_folder)
+        self.open_folder_button = self.make_secondary_button(actions, "Output Folder", self.open_output_folder)
         self.open_folder_button.pack(side="left", padx=(10, 0))
 
         progress_card = ctk.CTkFrame(page, fg_color=themed_color("card_bg"), corner_radius=22)
@@ -1551,10 +1564,9 @@ class ContentListApp:
         ).pack(fill="x", padx=16, pady=(0, 14))
         return frame
 
-    def make_option_tile(self, parent, text: str, variable: tk.BooleanVar, command=None) -> ctk.CTkFrame:
-        tile = ctk.CTkFrame(parent, fg_color=themed_color("card_bg"), corner_radius=18)
-        checkbox = ctk.CTkCheckBox(
-            tile,
+    def make_option_check(self, parent, text: str, variable: tk.BooleanVar, command=None) -> ctk.CTkCheckBox:
+        return ctk.CTkCheckBox(
+            parent,
             text=text,
             variable=variable,
             command=command,
@@ -1565,9 +1577,6 @@ class ContentListApp:
             checkmark_color=themed_color("primary_fg"),
             corner_radius=8,
         )
-        checkbox.pack(anchor="w", padx=16, pady=16)
-        tile.checkbox = checkbox
-        return tile
 
     def make_select_tile(self, parent, text: str, variable: tk.StringVar, values: list[str]) -> ctk.CTkFrame:
         tile = ctk.CTkFrame(parent, fg_color=themed_color("card_bg"), corner_radius=18)
@@ -1676,9 +1685,10 @@ class ContentListApp:
             self.delete_csv_toggle.configure(state=state)
         if self.delete_csv_tile is not None:
             if self.xlsx_var.get():
-                self.delete_csv_tile.grid()
+                if not self.delete_csv_tile.winfo_manager():
+                    self.delete_csv_tile.pack(anchor="w", fill="x", padx=16, pady=(6, 14))
             else:
-                self.delete_csv_tile.grid_remove()
+                self.delete_csv_tile.pack_forget()
         if self.xlsx_var.get():
             if not self.preserve_zeros_var.get():
                 self.preserve_zeros_var.set(True)
@@ -1694,8 +1704,6 @@ class ContentListApp:
             self.generate_button.configure(state=running_state)
         if self.stop_button is not None:
             self.stop_button.configure(state="normal" if self.running else "disabled")
-        if self.email_button is not None:
-            self.email_button.configure(state=running_state)
         if self.open_folder_button is not None:
             self.open_folder_button.configure(state="normal")
         if self.reset_button is not None:
@@ -1707,12 +1715,25 @@ class ContentListApp:
         chosen = choose_directory(self.root, "Choose Source Folder", self.source_var.get(), True, self.colors)
         if chosen:
             self.source_var.set(chosen)
+            try:
+                if Path(self.output_dir_var.get()).expanduser().resolve() == Path(chosen).expanduser().resolve():
+                    self.output_dir_var.set(str(default_scan_output_dir(Path(chosen))))
+            except OSError:
+                pass
             if not self.output_name_var.get().strip():
                 self.output_name_var.set(default_output_name(Path(chosen)))
 
     def choose_output(self) -> None:
         chosen = choose_directory(self.root, "Choose Output Folder", self.output_dir_var.get(), False, self.colors)
         if chosen:
+            source = Path(self.source_var.get()).expanduser().resolve()
+            output = Path(chosen).expanduser().resolve()
+            if output == source:
+                messagebox.showerror(
+                    "Invalid output folder",
+                    "Output folder cannot be the same as the source folder.",
+                )
+                return
             self.output_dir_var.set(chosen)
 
     def choose_settings_folder(self) -> None:
@@ -1726,13 +1747,10 @@ class ContentListApp:
         save_theme_mode(self.theme_mode_var.get())
         self.status_var.set(f"Settings file location updated: {target}")
 
-    def copy_source_to_output(self) -> None:
-        self.output_dir_var.set(self.source_var.get())
-
     def reset_fields(self) -> None:
         cwd = Path(os.getcwd())
         self.source_var.set(str(cwd))
-        self.output_dir_var.set(str(cwd))
+        self.output_dir_var.set(str(default_scan_output_dir(cwd)))
         self.output_name_var.set(default_output_name(cwd))
         self.exclude_var.set("")
         self.hash_algorithm_var.set(hash_algorithm_label(default_hash_algorithm()))
@@ -1783,6 +1801,12 @@ class ContentListApp:
 
         if not source_dir.is_dir():
             messagebox.showerror("Invalid source folder", f"Source folder does not exist:\n{source_dir}")
+            return
+        if output_dir == source_dir:
+            messagebox.showerror(
+                "Invalid output folder",
+                "Output folder cannot be the same as the source folder.",
+            )
             return
         if not output_name.lower().endswith(".csv"):
             messagebox.showerror("Invalid output file", "Output file name must end in .csv")

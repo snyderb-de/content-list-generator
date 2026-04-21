@@ -489,7 +489,7 @@ func saveAppearanceModeToSettingsFile(mode string) {
 
 func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 	defaultSource := startDir
-	defaultOutput := startDir
+	defaultOutput := defaultScanOutputDir(startDir)
 	defaultFilename := defaultOutputFilename(startDir)
 
 	sourceEntry := widget.NewEntry()
@@ -511,7 +511,7 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 	xlsxCheck := widget.NewCheck("Also save an Excel copy", nil)
 	zeroCheck := widget.NewCheck("Keep leading zeros in Excel", nil)
 	deleteCSVCheck := widget.NewCheck("Delete CSV after Excel is created", nil)
-	deleteCSVCard := makeCheckCard(deleteCSVCheck, "Delete the CSV file once the Excel copy is finished.")
+	deleteCSVRow := container.NewVBox(deleteCSVCheck)
 	zeroCheck.Disable()
 	xlsxCheck.OnChanged = func(checked bool) {
 		if checked {
@@ -523,14 +523,14 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 			if !deleteCSVCheck.Checked {
 				deleteCSVCheck.SetChecked(true)
 			}
-			deleteCSVCard.Show()
+			deleteCSVRow.Show()
 			return
 		}
 		zeroCheck.SetChecked(false)
 		zeroCheck.Disable()
 		deleteCSVCheck.SetChecked(false)
 		deleteCSVCheck.Disable()
-		deleteCSVCard.Hide()
+		deleteCSVRow.Hide()
 	}
 	hiddenCheck.SetChecked(true)
 	systemCheck.SetChecked(true)
@@ -563,10 +563,6 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 	})
 	stopButton.Importance = widget.WarningImportance
 	stopButton.Disable()
-	useSourceButton := widget.NewButton("Use Source As Output", func() {
-		outputEntry.SetText(sourceEntry.Text)
-	})
-	useSourceButton.Importance = widget.LowImportance
 	resetButton := widget.NewButton("Reset", func() {
 		sourceEntry.SetText(defaultSource)
 		outputEntry.SetText(defaultOutput)
@@ -587,7 +583,7 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 		savedMetric.SetText("Waiting")
 	})
 	resetButton.Importance = widget.LowImportance
-	openOutputButton := widget.NewButton("Open Output Folder", func() {
+	openOutputButton := widget.NewButton("Output Folder", func() {
 		openPathInFileManager(outputEntry.Text)
 	})
 	openOutputButton.Importance = widget.LowImportance
@@ -595,7 +591,6 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 		if running {
 			startButton.Disable()
 			stopButton.Enable()
-			useSourceButton.Disable()
 			resetButton.Disable()
 			progressBar.Show()
 			progressBar.SetValue(0)
@@ -603,7 +598,6 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 		}
 		startButton.Enable()
 		stopButton.Disable()
-		useSourceButton.Enable()
 		resetButton.Enable()
 		progressBar.Hide()
 	}
@@ -614,6 +608,10 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 		filename := strings.TrimSpace(fileEntry.Text)
 		if sourceDir == "" || outputDir == "" || filename == "" {
 			dialog.ShowError(fmt.Errorf("source folder, output folder, and file name are required"), window)
+			return
+		}
+		if pathsReferToSameDir(sourceDir, outputDir) {
+			dialog.ShowError(fmt.Errorf("output folder cannot be the same as the source folder"), window)
 			return
 		}
 		if strings.ToLower(filepath.Ext(filename)) != ".csv" {
@@ -759,7 +757,21 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 		makeDetailCard(
 			"Save results to",
 			"Choose where the CSV file should be saved.",
-			pathInputRow(window, outputEntry, "Choose Output Folder", false),
+			container.NewBorder(
+				nil,
+				nil,
+				nil,
+				widget.NewButton("Browse", func() {
+					showFolderPicker(window, "Choose Output Folder", outputEntry.Text, false, func(path string) {
+						if pathsReferToSameDir(path, sourceEntry.Text) {
+							dialog.ShowError(fmt.Errorf("output folder cannot be the same as the source folder"), window)
+							return
+						}
+						outputEntry.SetText(path)
+					})
+				}),
+				outputEntry,
+			),
 		),
 	)
 
@@ -779,19 +791,24 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 		container.NewGridWithColumns(
 			2,
 			makeSelectCard("Verification hash", "Choose how strongly the app verifies files later.", hashSelect),
-			makeCheckCard(hiddenCheck, "Skip hidden files"),
-			makeCheckCard(systemCheck, "Skip common system files"),
-			makeCheckCard(xlsxCheck, "Also save an Excel copy"),
-			makeCheckCard(zeroCheck, "Keep leading zeros in Excel"),
-			deleteCSVCard,
+			widget.NewCard(
+				"",
+				"",
+				container.NewVBox(
+					hiddenCheck,
+					systemCheck,
+					xlsxCheck,
+					zeroCheck,
+					deleteCSVRow,
+				),
+			),
 		),
 	)
 
 	actions := container.NewHBox(
+		resetButton,
 		startButton,
 		stopButton,
-		useSourceButton,
-		resetButton,
 		openOutputButton,
 	)
 
@@ -1190,6 +1207,51 @@ func normalizeFolderPath(path string) string {
 		return parent
 	}
 	return abs
+}
+
+func canonicalDirPath(path string) string {
+	clean := strings.TrimSpace(path)
+	if clean == "" {
+		return ""
+	}
+	abs, err := filepath.Abs(clean)
+	if err != nil {
+		abs = clean
+	}
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+		abs = resolved
+	}
+	return filepath.Clean(abs)
+}
+
+func pathsReferToSameDir(first, second string) bool {
+	firstPath := canonicalDirPath(first)
+	secondPath := canonicalDirPath(second)
+	if firstPath == "" || secondPath == "" {
+		return false
+	}
+	return firstPath == secondPath
+}
+
+func defaultScanOutputDir(source string) string {
+	sourcePath := canonicalDirPath(source)
+	if sourcePath == "" {
+		sourcePath = normalizeFolderPath(source)
+	}
+	candidates := []string{filepath.Dir(sourcePath)}
+	if home, err := os.UserHomeDir(); err == nil {
+		candidates = append(candidates, home)
+	}
+	if wd, err := os.Getwd(); err == nil {
+		candidates = append(candidates, wd)
+	}
+	for _, candidate := range candidates {
+		resolved := canonicalDirPath(candidate)
+		if resolved != "" && resolved != sourcePath {
+			return resolved
+		}
+	}
+	return sourcePath
 }
 
 func folderChildren(currentPath string) []folderChild {
