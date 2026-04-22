@@ -49,7 +49,7 @@ from content_list_core import (
 
 PLACEHOLDER_GITHUB_URL = "https://github.com/placeholder/content-list-generator"
 SETTINGS_FILE_NAME = "content-list-generator-settings.json"
-SETTINGS_LOCATION_PATH = Path.home() / ".content-list-generator-settings-location.json"
+SETTINGS_ENV_VAR = "CONTENT_LIST_GENERATOR_SETTINGS"
 LEGACY_SETTINGS_PATH = Path.home() / ".content-list-generator-settings.json"
 
 def default_settings_path() -> Path:
@@ -74,28 +74,22 @@ def write_json_dict(path: Path, payload: dict[str, object]) -> None:
         return
 
 
+def resolve_env_settings_path(raw_path: str) -> Path:
+    candidate = Path(raw_path).expanduser()
+    if candidate.suffix:
+        return candidate
+    return candidate / SETTINGS_FILE_NAME
+
+
 def current_settings_path() -> Path:
-    data = read_json_dict(SETTINGS_LOCATION_PATH)
-    configured = str(data.get("settings_path", "")).strip()
-    if configured:
-        return Path(configured).expanduser()
+    env_path = os.environ.get(SETTINGS_ENV_VAR, "").strip()
+    if env_path:
+        return resolve_env_settings_path(env_path)
     return default_settings_path()
 
 
-def set_settings_path(path: Path) -> None:
-    target = path.expanduser()
-    current = current_settings_path()
-    current_data = read_json_dict(current)
-    if not current_data:
-        current_data = read_json_dict(LEGACY_SETTINGS_PATH)
-    target_data = read_json_dict(target)
-    target_data.update(current_data)
-    write_json_dict(target, target_data)
-    write_json_dict(SETTINGS_LOCATION_PATH, {"settings_path": str(target)})
-
-
 def load_theme_mode() -> str:
-    for candidate in (current_settings_path(), LEGACY_SETTINGS_PATH):
+    for candidate in (current_settings_path(), LEGACY_SETTINGS_PATH, default_settings_path()):
         data = read_json_dict(candidate)
         mode = str(data.get("appearance_mode", "")).strip().lower()
         if mode in {"dark", "light"}:
@@ -1046,7 +1040,6 @@ class ContentListApp:
         self.theme_mode_var = tk.StringVar(value=current_mode)
         self.colors = palette_for_mode(self.theme_mode_var.get())
         self.root.configure(fg_color=themed_color("app_bg"))
-        self.settings_path_var = tk.StringVar(value=str(current_settings_path()))
 
         self.message_queue: queue.Queue[tuple[str, object]] = queue.Queue()
         self.running = False
@@ -1320,29 +1313,12 @@ class ContentListApp:
         ).pack(anchor="w", padx=16, pady=(0, 12))
         ctk.CTkLabel(
             footer,
-            text="Settings file",
-            font=ctk.CTkFont(size=12, weight="bold"),
-            text_color=themed_color("hint_fg"),
-        ).pack(anchor="w", padx=16, pady=(0, 4))
-        ctk.CTkLabel(
-            footer,
-            textvariable=self.settings_path_var,
-            font=ctk.CTkFont(size=11),
-            text_color=themed_color("body_fg"),
-            wraplength=196,
-            justify="left",
-        ).pack(anchor="w", padx=16, pady=(0, 10))
-        self.make_secondary_button(footer, "Choose Settings Folder", self.choose_settings_folder).pack(
-            anchor="w", padx=16, pady=(0, 12)
-        )
-        ctk.CTkLabel(
-            footer,
             text="The same tools are available in light and dark mode.",
             font=ctk.CTkFont(size=12),
             text_color=themed_color("hint_fg"),
             wraplength=196,
             justify="left",
-        ).pack(anchor="w", padx=16, pady=(0, 16))
+        ).pack(anchor="w", padx=16, pady=(0, 14))
 
     def build_content_page(self, parent) -> ctk.CTkScrollableFrame:
         page = self.build_scrollable_root(parent)
@@ -1735,17 +1711,6 @@ class ContentListApp:
                 )
                 return
             self.output_dir_var.set(chosen)
-
-    def choose_settings_folder(self) -> None:
-        start = str(current_settings_path().parent)
-        chosen = choose_directory(self.root, "Choose Settings Folder", start, False, self.colors)
-        if not chosen:
-            return
-        target = Path(chosen).expanduser() / SETTINGS_FILE_NAME
-        set_settings_path(target)
-        self.settings_path_var.set(str(current_settings_path()))
-        save_theme_mode(self.theme_mode_var.get())
-        self.status_var.set(f"Settings file location updated: {target}")
 
     def reset_fields(self) -> None:
         cwd = Path(os.getcwd())
