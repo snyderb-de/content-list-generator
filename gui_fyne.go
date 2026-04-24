@@ -706,7 +706,11 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 					if done.xlsxPath != "" && done.csvDeleted {
 						savedMetric.SetText("Report + Excel (CSV removed)")
 					} else if done.xlsxPath != "" {
-						savedMetric.SetText("CSV + Report + Excel")
+						if done.xlsxPartCount > 1 {
+							savedMetric.SetText(fmt.Sprintf("CSV + Report + %d Excel files", done.xlsxPartCount))
+						} else {
+							savedMetric.SetText("CSV + Report + Excel")
+						}
 					} else {
 						savedMetric.SetText("CSV + Report")
 					}
@@ -715,7 +719,12 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 					resultLabel.SetText(strings.Join([]string{
 						fmt.Sprintf("Selected folder: %s", done.sourceName),
 						fmt.Sprintf("Saved file list: %s", filepath.Base(done.outputPath)),
+						fmt.Sprintf("CSV files created: %d", done.csvPartCount),
+						fmt.Sprintf("Rows per CSV max: %d", done.maxRowsPerCSV),
+						fmt.Sprintf("CSV parts: %s", summarizeOutputParts(done.outputPaths)),
 						fmt.Sprintf("Excel copy: %s", baseNameOrFallback(done.xlsxPath, "not created")),
+						fmt.Sprintf("XLSX files created: %d", done.xlsxPartCount),
+						fmt.Sprintf("XLSX parts: %s", summarizeOutputParts(done.xlsxPaths)),
 						fmt.Sprintf("Summary report: %s", baseNameOrFallback(done.reportPath, "not created")),
 						fmt.Sprintf("Files included: %d", done.files),
 						fmt.Sprintf("Total size: %s", humanBytes(done.bytes)),
@@ -777,7 +786,7 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 
 	outputDetails := widget.NewCard(
 		"Output details",
-		"Set the saved file name and any file types you want the app to skip.",
+		fmt.Sprintf("Set the saved file name and any file types you want the app to skip. Large scans split every %d rows using names like [name]-001.csv.", defaultMaxRowsPerCSV),
 		container.NewGridWithColumns(
 			2,
 			makeLabeledField("Name for the saved list", "The file name should end in .csv.", fileEntry),

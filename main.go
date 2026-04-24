@@ -933,6 +933,7 @@ func (m model) viewOutputForm() string {
 		"",
 		focusedLine(m.settingsFocus == focusFileName, "File name", m.outputInput.View()),
 		focusedInfo(false, "Format", "Scan writes CSV first. XLSX can be created afterward as a spreadsheet copy."),
+		focusedInfo(false, "Large scans", fmt.Sprintf("CSV splits every %d rows and names parts as [name]-001.csv, [name]-002.csv, and so on.", defaultMaxRowsPerCSV)),
 		focusedLine(m.settingsFocus == focusExcludeExts, "Exclude extensions", m.excludeInput.View()),
 		focusedChoice(m.settingsFocus == focusHashAlgorithm, "Verification hash", m.hashAlgorithm.OptionLabel()),
 		focusedToggle(m.settingsFocus == focusHidden, "Exclude hidden files", m.excludeHidden),
@@ -1060,12 +1061,13 @@ func (m model) viewEmailCopying() string {
 }
 
 func (m model) viewConfirmOverwrite() string {
+	firstPartPath := csvOutputPathForPart(m.pendingPath, 1)
 	body := lipgloss.JoinVertical(
 		lipgloss.Left,
 		styleTitle("File Already Exists"),
 		"",
-		styleLabel("The selected output file already exists:"),
-		styleLabel(m.pendingPath),
+		styleLabel("The first CSV output file already exists:"),
+		styleLabel(firstPartPath),
 		"",
 		styleHint("Press y to overwrite it, or n to go back and choose another name."),
 	)
@@ -1085,7 +1087,12 @@ func (m model) viewDone() string {
 		styleTitle("Scan Complete"),
 		"",
 		styleStat("Output", m.done.outputPath),
+		styleStat("CSV files", fmt.Sprintf("%d", m.done.csvPartCount)),
+		styleStat("Rows per CSV max", fmt.Sprintf("%d", m.done.maxRowsPerCSV)),
+		styleStat("CSV parts", summarizeOutputParts(m.done.outputPaths)),
 		styleStat("XLSX copy", valueOrDefault(m.done.xlsxPath, "not created")),
+		styleStat("XLSX files", fmt.Sprintf("%d", m.done.xlsxPartCount)),
+		styleStat("XLSX parts", summarizeOutputParts(m.done.xlsxPaths)),
 		styleStat("Report", valueOrDefault(m.done.reportPath, "not created")),
 		styleStat("Files", formatUint(m.done.files)),
 		styleStat("Directories", formatUint(m.done.directories)),
@@ -1211,12 +1218,13 @@ func ensureOutputPath(outputPath string) (bool, error) {
 		parent = cwd
 	}
 
-	info, err := os.Stat(outputPath)
+	finalCSVPath := csvOutputPathForPart(outputPath, 1)
+	info, err := os.Stat(finalCSVPath)
 	if err == nil && !info.IsDir() {
 		return true, nil
 	}
 	if err == nil && info.IsDir() {
-		return false, fmt.Errorf("output path is a directory: %s", outputPath)
+		return false, fmt.Errorf("output path is a directory: %s", finalCSVPath)
 	}
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return false, err

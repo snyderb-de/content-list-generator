@@ -6,6 +6,7 @@ import os
 import shutil
 import time
 import zipfile
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -39,6 +40,7 @@ HASH_ALGORITHM_OFF = "off"
 HASH_ALGORITHM_BLAKE3 = "blake3"
 HASH_ALGORITHM_SHA1 = "sha1"
 HASH_ALGORITHM_SHA256 = "sha256"
+DEFAULT_MAX_ROWS_PER_CSV = 300_000
 REPORT_HEADERS = [
     "File Name",
     "Extension",
@@ -69,7 +71,9 @@ class SummaryEntry:
 class ScanResult:
     source_name: str
     output_path: Path
+    output_paths: list[Path]
     xlsx_path: Path | None
+    xlsx_paths: list[Path]
     report_path: Path
     files: int
     directories: int
@@ -84,6 +88,9 @@ class ScanResult:
     preserve_zeros: bool
     delete_csv: bool
     csv_deleted: bool
+    max_rows_per_csv: int
+    csv_parts: int
+    xlsx_parts: int
     hash_workers: int
     top_by_count: list[SummaryEntry]
     top_by_size: list[SummaryEntry]
@@ -267,15 +274,15 @@ def folder_display_name(path: Path) -> str:
     return name or str(path)
 
 
-def collect_files(
+def count_scan_targets(
     source_dir: Path,
     include_hidden: bool,
     include_system: bool,
     excluded_exts: set[str],
     progress_callback: Callable[[ScanProgress], None] | None = None,
     cancel_event=None,
-) -> tuple[list[Path], int, int, int, int, int, int]:
-    kept: list[Path] = []
+) -> tuple[int, int, int, int, int, int, int]:
+    files = 0
     filtered = 0
     filtered_hidden = 0
     filtered_system = 0
@@ -283,37 +290,38 @@ def collect_files(
     directories = 0
     total_bytes = 0
 
-    for root, dirs, files in os.walk(source_dir):
+    for root, dirs, names in os.walk(source_dir):
         if cancel_event is not None and cancel_event.is_set():
             raise ScanCanceled()
         root_path = Path(root)
         directories += 1
+
+        kept_dirs: list[str] = []
+        for directory in dirs:
+            candidate = root_path / directory
+            if not include_hidden and is_hidden_path(candidate, source_dir):
+                filtered += 1
+                filtered_hidden += 1
+                continue
+            kept_dirs.append(directory)
+        dirs[:] = sorted(kept_dirs)
+
         if progress_callback is not None and directories % 100 == 0:
             progress_callback(
                 ScanProgress(
                     phase="counting",
-                    files=len(kept),
+                    files=files,
                     total_files=0,
                     directories=directories,
                     total_directories=0,
-                    bytes=0,
+                    bytes=total_bytes,
                     total_bytes=0,
                     filtered=filtered,
                     current_name=root_path.name,
                 )
             )
-        if not include_hidden:
-            visible_dirs = []
-            for directory in dirs:
-                candidate = root_path / directory
-                if is_hidden_path(candidate, source_dir):
-                    filtered += 1
-                    filtered_hidden += 1
-                    continue
-                visible_dirs.append(directory)
-            dirs[:] = visible_dirs
 
-        for file_name in sorted(files):
+        for file_name in sorted(names):
             if cancel_event is not None and cancel_event.is_set():
                 raise ScanCanceled()
             candidate = root_path / file_name
@@ -327,16 +335,19 @@ def collect_files(
                 elif reason == "excluded extension":
                     filtered_exts += 1
                 continue
-            kept.append(candidate)
             try:
-                total_bytes += candidate.stat().st_size
+                stat = candidate.stat()
             except OSError:
-                pass
-            if progress_callback is not None and len(kept) % 250 == 0:
+                continue
+            if not candidate.is_file():
+                continue
+            files += 1
+            total_bytes += stat.st_size
+            if progress_callback is not None and files % 250 == 0:
                 progress_callback(
                     ScanProgress(
                         phase="counting",
-                        files=len(kept),
+                        files=files,
                         total_files=0,
                         directories=directories,
                         total_directories=0,
@@ -347,12 +358,11 @@ def collect_files(
                     )
                 )
 
-    kept.sort()
     if progress_callback is not None:
         progress_callback(
             ScanProgress(
                 phase="counting",
-                files=len(kept),
+                files=files,
                 total_files=0,
                 directories=directories,
                 total_directories=0,
@@ -361,7 +371,43 @@ def collect_files(
                 filtered=filtered,
             )
         )
-    return kept, filtered, filtered_hidden, filtered_system, filtered_exts, directories, total_bytes
+    return files, filtered, filtered_hidden, filtered_system, filtered_exts, directories, total_bytes
+
+
+def iter_scan_files(
+    source_dir: Path,
+    include_hidden: bool,
+    include_system: bool,
+    excluded_exts: set[str],
+    cancel_event=None,
+):
+    for root, dirs, names in os.walk(source_dir):
+        if cancel_event is not None and cancel_event.is_set():
+            raise ScanCanceled()
+        root_path = Path(root)
+
+        kept_dirs: list[str] = []
+        for directory in dirs:
+            candidate = root_path / directory
+            if not include_hidden and is_hidden_path(candidate, source_dir):
+                continue
+            kept_dirs.append(directory)
+        dirs[:] = sorted(kept_dirs)
+
+        for file_name in sorted(names):
+            if cancel_event is not None and cancel_event.is_set():
+                raise ScanCanceled()
+            candidate = root_path / file_name
+            _, skipped = should_skip(candidate, source_dir, include_hidden, include_system, excluded_exts)
+            if skipped:
+                continue
+            try:
+                stat = candidate.stat()
+            except OSError:
+                continue
+            if not candidate.is_file():
+                continue
+            yield candidate, stat.st_size, candidate.relative_to(source_dir).as_posix()
 
 
 def summarize_entries(summaries: dict[str, dict[str, int]], key: str) -> list[SummaryEntry]:
@@ -376,112 +422,160 @@ def summarize_entries(summaries: dict[str, dict[str, int]], key: str) -> list[Su
     return entries[:8]
 
 
+def csv_output_path_for_part(output_path: Path, part_number: int) -> Path:
+    part_number = max(1, int(part_number))
+    stem = output_path.stem
+    suffix = output_path.suffix or ".csv"
+    return output_path.with_name(f"{stem}-{part_number:03d}{suffix}")
+
+
+class ChunkedCSVReportWriter:
+    def __init__(self, output_path: Path, max_rows_per_csv: int) -> None:
+        self.output_path = output_path
+        self.max_rows_per_csv = max(1, max_rows_per_csv)
+        self.part_paths: list[Path] = []
+        self._part_number = 0
+        self._rows_in_part = 0
+        self._handle = None
+        self._writer = None
+        self._open_next_part()
+
+    def _path_for_part(self, part_number: int) -> Path:
+        return csv_output_path_for_part(self.output_path, part_number)
+
+    def _open_next_part(self) -> None:
+        self.close()
+        self._part_number += 1
+        part_path = self._path_for_part(self._part_number)
+        part_path.parent.mkdir(parents=True, exist_ok=True)
+        self._handle = part_path.open("w", newline="", encoding="utf-8")
+        self._writer = csv.writer(self._handle)
+        self._writer.writerow(REPORT_HEADERS)
+        self._rows_in_part = 0
+        self.part_paths.append(part_path)
+
+    def write_row(self, row: list[str]) -> None:
+        if self._writer is None:
+            raise RuntimeError("CSV writer is not initialized")
+        if self._rows_in_part >= self.max_rows_per_csv:
+            self._open_next_part()
+        self._writer.writerow(row)
+        self._rows_in_part += 1
+
+    def close(self) -> None:
+        if self._handle is not None:
+            self._handle.close()
+            self._handle = None
+            self._writer = None
+
+
 def write_csv_report(
     source_dir: Path,
     output_path: Path,
-    files: list[Path],
+    *,
     hash_algorithm: str,
+    include_hidden: bool,
+    include_system: bool,
+    excluded_exts: set[str],
+    max_rows_per_csv: int,
+    total_expected_files: int,
     total_directories: int,
     filtered: int,
     total_expected_bytes: int,
     progress_callback: Callable[[ScanProgress], None] | None = None,
     cancel_event=None,
-) -> tuple[int, int, dict[str, dict[str, int]], int, str, str]:
+) -> tuple[int, int, dict[str, dict[str, int]], int, str, str, list[Path]]:
     summaries: dict[str, dict[str, int]] = {}
     processed_bytes = 0
+    processed_files = 0
     first_csv_item = ""
     last_csv_item = ""
     hash_workers = 1
-    output_path.parent.mkdir(parents=True, exist_ok=True)
     normalized_algorithm = normalize_hash_algorithm(hash_algorithm)
+    csv_writer = ChunkedCSVReportWriter(output_path, max_rows_per_csv)
 
-    with output_path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.writer(handle)
-        writer.writerow(REPORT_HEADERS)
+    def write_processed_row(file_path: Path, size: int, relative: str, file_hash: str) -> None:
+        nonlocal processed_bytes, processed_files, first_csv_item, last_csv_item
+        ext = normalize_extension(file_path)
+        bucket = summaries.setdefault(summary_key(ext), {"count": 0, "bytes": 0})
+        bucket["count"] += 1
+        bucket["bytes"] += size
+        csv_writer.write_row(
+            [
+                file_path.name,
+                ext,
+                str(size),
+                human_bytes(size),
+                relative,
+                hash_algorithm_csv_name(normalized_algorithm),
+                file_hash,
+            ]
+        )
+        processed_files += 1
+        processed_bytes += size
+        if not first_csv_item:
+            first_csv_item = relative
+        last_csv_item = relative
+        if progress_callback is not None:
+            progress_callback(
+                ScanProgress(
+                    phase="scanning",
+                    files=processed_files,
+                    total_files=total_expected_files,
+                    directories=total_directories,
+                    total_directories=total_directories,
+                    bytes=processed_bytes,
+                    total_bytes=total_expected_bytes,
+                    filtered=filtered,
+                    current_name=file_path.name,
+                )
+            )
 
+    try:
         if normalized_algorithm != HASH_ALGORITHM_OFF:
             hash_workers = max(2, os.cpu_count() or 2)
+            max_in_flight = max(hash_workers*4, 8)
             with ThreadPoolExecutor(max_workers=hash_workers) as pool:
-                iterator = pool.map(lambda path: hash_file(path, normalized_algorithm, cancel_event), files)
-                for index, (file_path, file_hash) in enumerate(zip(files, iterator), start=1):
+                pending = deque()
+                for file_path, size, relative in iter_scan_files(
+                    source_dir,
+                    include_hidden,
+                    include_system,
+                    excluded_exts,
+                    cancel_event=cancel_event,
+                ):
                     if cancel_event is not None and cancel_event.is_set():
                         raise ScanCanceled()
-                    stat = file_path.stat()
-                    size = stat.st_size
-                    processed_bytes += size
-                    ext = normalize_extension(file_path)
-                    bucket = summaries.setdefault(summary_key(ext), {"count": 0, "bytes": 0})
-                    bucket["count"] += 1
-                    bucket["bytes"] += size
-                    writer.writerow(
-                        [
-                            file_path.name,
-                            ext,
+                    pending.append(
+                        (
+                            file_path,
                             size,
-                            human_bytes(size),
-                            file_path.relative_to(source_dir).as_posix(),
-                            hash_algorithm_csv_name(normalized_algorithm),
-                            file_hash,
-                        ]
-                    )
-                    if not first_csv_item:
-                        first_csv_item = file_path.relative_to(source_dir).as_posix()
-                    last_csv_item = file_path.relative_to(source_dir).as_posix()
-                    if progress_callback is not None:
-                        progress_callback(
-                            ScanProgress(
-                                phase="scanning",
-                                files=index,
-                                total_files=len(files),
-                                directories=total_directories,
-                                total_directories=total_directories,
-                                bytes=processed_bytes,
-                                total_bytes=total_expected_bytes,
-                                filtered=filtered,
-                                current_name=file_path.name,
-                            )
+                            relative,
+                            pool.submit(hash_file, file_path, normalized_algorithm, cancel_event),
                         )
+                    )
+                    if len(pending) >= max_in_flight:
+                        next_path, next_size, next_relative, next_future = pending.popleft()
+                        write_processed_row(next_path, next_size, next_relative, next_future.result())
+
+                while pending:
+                    next_path, next_size, next_relative, next_future = pending.popleft()
+                    write_processed_row(next_path, next_size, next_relative, next_future.result())
         else:
-            for index, file_path in enumerate(files, start=1):
+            for file_path, size, relative in iter_scan_files(
+                source_dir,
+                include_hidden,
+                include_system,
+                excluded_exts,
+                cancel_event=cancel_event,
+            ):
                 if cancel_event is not None and cancel_event.is_set():
                     raise ScanCanceled()
-                stat = file_path.stat()
-                size = stat.st_size
-                processed_bytes += size
-                ext = normalize_extension(file_path)
-                bucket = summaries.setdefault(summary_key(ext), {"count": 0, "bytes": 0})
-                bucket["count"] += 1
-                bucket["bytes"] += size
-                writer.writerow(
-                    [
-                        file_path.name,
-                        ext,
-                        size,
-                        human_bytes(size),
-                        file_path.relative_to(source_dir).as_posix(),
-                        "",
-                        "",
-                    ]
-                )
-                if not first_csv_item:
-                    first_csv_item = file_path.relative_to(source_dir).as_posix()
-                last_csv_item = file_path.relative_to(source_dir).as_posix()
-                if progress_callback is not None:
-                    progress_callback(
-                        ScanProgress(
-                            phase="scanning",
-                            files=index,
-                            total_files=len(files),
-                            directories=total_directories,
-                            total_directories=total_directories,
-                            bytes=processed_bytes,
-                            total_bytes=total_expected_bytes,
-                            filtered=filtered,
-                            current_name=file_path.name,
-                        )
-                    )
+                write_processed_row(file_path, size, relative, "")
+    finally:
+        csv_writer.close()
 
-    return len(files), processed_bytes, summaries, hash_workers, first_csv_item, last_csv_item
+    return processed_files, processed_bytes, summaries, hash_workers, first_csv_item, last_csv_item, csv_writer.part_paths
 
 
 def _xlsx_col_name(index: int) -> str:
@@ -506,38 +600,7 @@ def _xlsx_number_cell(ref: str, value: str, style_id: int = 0) -> str:
     return f'<c r="{ref}"{style_attr}><v>{escape(value)}</v></c>'
 
 
-def _build_sheet_xml(rows: list[list[str]], preserve_zeros: bool) -> str:
-    xml_rows: list[str] = []
-    for row_index, row in enumerate(rows, start=1):
-        cells: list[str] = []
-        for col_index, value in enumerate(row, start=1):
-            ref = _xlsx_cell_ref(row_index, col_index)
-            if preserve_zeros:
-                cells.append(_xlsx_inline_cell(ref, value, style_id=1))
-            elif row_index > 1 and col_index == 3 and value.isdigit():
-                cells.append(_xlsx_number_cell(ref, value))
-            else:
-                cells.append(_xlsx_inline_cell(ref, value))
-        xml_rows.append(f'<row r="{row_index}">{"".join(cells)}</row>')
-    dimension = "A1"
-    if rows and rows[0]:
-        dimension = f"A1:{_xlsx_cell_ref(len(rows), len(rows[0]))}"
-    return (
-        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
-        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
-        f"<dimension ref=\"{dimension}\"/>"
-        '<sheetViews><sheetView workbookViewId="0"/></sheetViews>'
-        "<sheetFormatPr defaultRowHeight=\"15\"/>"
-        f"<sheetData>{''.join(xml_rows)}</sheetData>"
-        "</worksheet>"
-    )
-
-
 def convert_csv_to_xlsx(csv_path: Path, xlsx_path: Path, preserve_zeros: bool) -> None:
-    with csv_path.open("r", newline="", encoding="utf-8") as handle:
-        rows = list(csv.reader(handle))
-
     xlsx_path.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(xlsx_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         archive.writestr(
@@ -622,7 +685,32 @@ def convert_csv_to_xlsx(csv_path: Path, xlsx_path: Path, preserve_zeros: bool) -
   </cellStyles>
 </styleSheet>""",
         )
-        archive.writestr("xl/worksheets/sheet1.xml", _build_sheet_xml(rows, preserve_zeros))
+        with csv_path.open("r", newline="", encoding="utf-8") as handle:
+            reader = csv.reader(handle)
+            with archive.open("xl/worksheets/sheet1.xml", "w") as sheet:
+                sheet.write(
+                    (
+                        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+                        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+                        '<sheetViews><sheetView workbookViewId="0"/></sheetViews>'
+                        '<sheetFormatPr defaultRowHeight="15"/>'
+                        "<sheetData>"
+                    ).encode("utf-8")
+                )
+                for row_index, row in enumerate(reader, start=1):
+                    cells: list[str] = []
+                    for col_index, value in enumerate(row, start=1):
+                        ref = _xlsx_cell_ref(row_index, col_index)
+                        if preserve_zeros:
+                            cells.append(_xlsx_inline_cell(ref, value, style_id=1))
+                        elif row_index > 1 and col_index == 3 and value.isdigit():
+                            cells.append(_xlsx_number_cell(ref, value))
+                        else:
+                            cells.append(_xlsx_inline_cell(ref, value))
+                    row_xml = f'<row r="{row_index}">{"".join(cells)}</row>'
+                    sheet.write(row_xml.encode("utf-8"))
+                sheet.write(b"</sheetData></worksheet>")
 
 
 def render_top(title: str, entries: list[SummaryEntry], by_size: bool = False) -> list[str]:
@@ -648,15 +736,19 @@ def run_scan(
     create_xlsx: bool,
     preserve_zeros: bool,
     delete_csv: bool,
+    max_rows_per_csv: int = DEFAULT_MAX_ROWS_PER_CSV,
     progress_callback: Callable[[ScanProgress], None] | None = None,
     cancel_event=None,
 ) -> ScanResult:
     started = time.time()
+    max_rows_per_csv = max(1, int(max_rows_per_csv or DEFAULT_MAX_ROWS_PER_CSV))
+    csv_paths: list[Path] = []
+    xlsx_paths: list[Path] = []
     xlsx_path: Path | None = None
     csv_deleted = False
     report_path = output_path.with_name(f"{output_path.stem}-report.txt")
     try:
-        files, filtered, filtered_hidden, filtered_system, filtered_exts, directories, total_expected_bytes = collect_files(
+        total_files, filtered, filtered_hidden, filtered_system, filtered_exts, directories, total_expected_bytes = count_scan_targets(
             source_dir,
             include_hidden,
             include_system,
@@ -664,29 +756,40 @@ def run_scan(
             progress_callback=progress_callback,
             cancel_event=cancel_event,
         )
-        file_count, total_bytes, summaries, hash_workers, first_csv_item, last_csv_item = write_csv_report(
+        file_count, total_bytes, summaries, hash_workers, first_csv_item, last_csv_item, csv_paths = write_csv_report(
             source_dir,
             output_path,
-            files,
-            hash_algorithm,
-            directories,
-            filtered,
-            total_expected_bytes,
+            hash_algorithm=hash_algorithm,
+            include_hidden=include_hidden,
+            include_system=include_system,
+            excluded_exts=excluded_exts,
+            max_rows_per_csv=max_rows_per_csv,
+            total_expected_files=total_files,
+            total_directories=directories,
+            filtered=filtered,
+            total_expected_bytes=total_expected_bytes,
             progress_callback=progress_callback,
             cancel_event=cancel_event,
         )
         if create_xlsx:
-            xlsx_path = output_path.with_suffix(".xlsx")
-            if cancel_event is not None and cancel_event.is_set():
-                raise ScanCanceled()
-            convert_csv_to_xlsx(output_path, xlsx_path, preserve_zeros)
+            for csv_part_path in csv_paths:
+                if cancel_event is not None and cancel_event.is_set():
+                    raise ScanCanceled()
+                xlsx_part_path = csv_part_path.with_suffix(".xlsx")
+                convert_csv_to_xlsx(csv_part_path, xlsx_part_path, preserve_zeros)
+                xlsx_paths.append(xlsx_part_path)
+            if xlsx_paths:
+                xlsx_path = xlsx_paths[0]
             if delete_csv:
-                output_path.unlink(missing_ok=True)
+                for csv_part_path in csv_paths:
+                    csv_part_path.unlink(missing_ok=True)
                 csv_deleted = True
         result = ScanResult(
             source_name=folder_display_name(source_dir),
-            output_path=output_path,
+            output_path=csv_paths[0] if csv_paths else output_path,
+            output_paths=csv_paths or [output_path],
             xlsx_path=xlsx_path,
+            xlsx_paths=xlsx_paths,
             report_path=report_path,
             files=file_count,
             directories=directories,
@@ -701,6 +804,9 @@ def run_scan(
             preserve_zeros=preserve_zeros,
             delete_csv=delete_csv,
             csv_deleted=csv_deleted,
+            max_rows_per_csv=max_rows_per_csv,
+            csv_parts=len(csv_paths or [output_path]),
+            xlsx_parts=len(xlsx_paths),
             hash_workers=hash_workers,
             top_by_count=summarize_entries(summaries, "count"),
             top_by_size=summarize_entries(summaries, "bytes"),
@@ -710,7 +816,16 @@ def run_scan(
         write_scan_report(result)
         return result
     except ScanCanceled:
-        for path in (output_path, output_path.with_suffix(".xlsx"), report_path):
+        cleanup_paths = list(csv_paths)
+        cleanup_paths.extend(xlsx_paths)
+        cleanup_paths.extend(
+            [
+                output_path,
+                output_path.with_suffix(".xlsx"),
+                report_path,
+            ]
+        )
+        for path in cleanup_paths:
             try:
                 path.unlink()
             except FileNotFoundError:
@@ -722,12 +837,27 @@ def write_scan_report(result: ScanResult) -> None:
     result.report_path.write_text(build_scan_report(result), encoding="utf-8")
 
 
+def summarize_output_parts(paths: list[Path]) -> str:
+    if not paths:
+        return "none"
+    max_shown = 4
+    labels = [path.name for path in paths[:max_shown]]
+    if len(paths) > max_shown:
+        return f"{', '.join(labels)} (+{len(paths) - max_shown} more)"
+    return ", ".join(labels)
+
+
 def build_scan_report(result: ScanResult) -> str:
     lines = [
         "Content List Report",
         f"Selected folder: {result.source_name}",
         f"Saved file list: {result.output_path.name}",
+        f"CSV files created: {result.csv_parts}",
+        f"Rows per CSV max: {result.max_rows_per_csv}",
+        f"CSV parts: {summarize_output_parts(result.output_paths)}",
         f"Excel copy: {result.xlsx_path.name if result.xlsx_path else 'not created'}",
+        f"XLSX files created: {result.xlsx_parts}",
+        f"XLSX parts: {summarize_output_parts(result.xlsx_paths)}",
         f"Summary report: {result.report_path.name}",
         f"Files included: {result.files}",
         f"Folders counted: {result.directories}",
@@ -867,7 +997,12 @@ def build_scan_summary(result: ScanResult) -> str:
         "Your file list is ready.",
         f"Selected folder: {result.source_name}",
         f"Saved file list: {result.output_path.name}",
+        f"CSV files created: {result.csv_parts}",
+        f"Rows per CSV max: {result.max_rows_per_csv}",
+        f"CSV parts: {summarize_output_parts(result.output_paths)}",
         f"Excel copy: {result.xlsx_path.name if result.xlsx_path else 'not created'}",
+        f"XLSX files created: {result.xlsx_parts}",
+        f"XLSX parts: {summarize_output_parts(result.xlsx_paths)}",
         f"Summary report: {result.report_path.name}",
         f"Files included: {result.files}",
         f"Folders counted: {result.directories}",

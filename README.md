@@ -10,6 +10,7 @@ Content List Generator is maintained as two live desktop runtimes that stay in f
 Both runtimes support:
 
 - recursive content-list export to CSV
+- automatic CSV chunking for large scans (default: 300,000 rows per file, named like `report-001.csv`, `report-002.csv`)
 - optional XLSX generation
 - hash verification modes for migration workflows
 - plain-text scan reports

@@ -34,7 +34,9 @@ type scanDoneMsg struct {
 	filtered        uint64
 	sourceName      string
 	outputPath      string
+	outputPaths     []string
 	xlsxPath        string
+	xlsxPaths       []string
 	reportPath      string
 	elapsed         time.Duration
 	topByCount      []summaryEntry
@@ -47,6 +49,9 @@ type scanDoneMsg struct {
 	preserveZeros   bool
 	deleteCSV       bool
 	csvDeleted      bool
+	maxRowsPerCSV   uint64
+	csvPartCount    int
+	xlsxPartCount   int
 	filteredHidden  uint64
 	filteredSystem  uint64
 	filteredExts    uint64
@@ -62,6 +67,7 @@ type scanOptions struct {
 	CreateXLSX       bool
 	PreserveZeros    bool
 	DeleteCSV        bool
+	MaxRowsPerCSV    uint64
 	ExcludedExts     map[string]struct{}
 	ExcludedExtsText string
 }
@@ -201,28 +207,35 @@ type reportWriter interface {
 	WriteRow([]string) error
 	Finalize(uint64) error
 	Close() error
+	CSVPaths() []string
 }
 
 type csvReportWriter struct {
-	file   *os.File
-	buffer *bufio.Writer
-	writer *csv.Writer
+	baseOutputPath    string
+	maxRowsPerFile    uint64
+	rowsInCurrentFile uint64
+	currentPart       int
+	outputPaths       []string
+	file              *os.File
+	buffer            *bufio.Writer
+	writer            *csv.Writer
 }
 
-func newReportWriter(outputPath string) (reportWriter, error) {
-	if err := os.MkdirAll(filepath.Dir(outputPath), 0o755); err != nil {
+const defaultMaxRowsPerCSV uint64 = 300000
+
+func newReportWriter(outputPath string, maxRowsPerFile uint64) (reportWriter, error) {
+	if maxRowsPerFile == 0 {
+		maxRowsPerFile = defaultMaxRowsPerCSV
+	}
+	writer := &csvReportWriter{
+		baseOutputPath: outputPath,
+		maxRowsPerFile: maxRowsPerFile,
+		outputPaths:    make([]string, 0, 4),
+	}
+	if err := writer.openPart(1); err != nil {
 		return nil, err
 	}
-	file, err := os.Create(outputPath)
-	if err != nil {
-		return nil, err
-	}
-	buffer := bufio.NewWriterSize(file, 1<<20)
-	return &csvReportWriter{
-		file:   file,
-		buffer: buffer,
-		writer: csv.NewWriter(buffer),
-	}, nil
+	return writer, nil
 }
 
 func (w *csvReportWriter) WriteHeader() error {
@@ -238,19 +251,86 @@ func (w *csvReportWriter) WriteHeader() error {
 }
 
 func (w *csvReportWriter) WriteRow(values []string) error {
+	if w.rowsInCurrentFile >= w.maxRowsPerFile {
+		if err := w.openPart(w.currentPart + 1); err != nil {
+			return err
+		}
+		if err := w.WriteHeader(); err != nil {
+			return err
+		}
+	}
+	w.rowsInCurrentFile++
 	return w.writer.Write(values)
 }
 
 func (w *csvReportWriter) Finalize(_ uint64) error {
-	w.writer.Flush()
-	if err := w.writer.Error(); err != nil {
-		return err
-	}
-	return w.buffer.Flush()
+	return w.flushCurrent()
 }
 
 func (w *csvReportWriter) Close() error {
-	return w.file.Close()
+	return w.closeCurrent()
+}
+
+func (w *csvReportWriter) CSVPaths() []string {
+	return slices.Clone(w.outputPaths)
+}
+
+func (w *csvReportWriter) outputPathForPart(part int) string {
+	return csvOutputPathForPart(w.baseOutputPath, part)
+}
+
+func (w *csvReportWriter) openPart(part int) error {
+	if err := w.closeCurrent(); err != nil {
+		return err
+	}
+
+	pathValue := w.outputPathForPart(part)
+	if err := os.MkdirAll(filepath.Dir(pathValue), 0o755); err != nil {
+		return err
+	}
+	file, err := os.Create(pathValue)
+	if err != nil {
+		return err
+	}
+
+	w.file = file
+	w.buffer = bufio.NewWriterSize(file, 1<<20)
+	w.writer = csv.NewWriter(w.buffer)
+	w.rowsInCurrentFile = 0
+	w.currentPart = part
+	w.outputPaths = append(w.outputPaths, pathValue)
+	return nil
+}
+
+func (w *csvReportWriter) flushCurrent() error {
+	if w.writer != nil {
+		w.writer.Flush()
+		if err := w.writer.Error(); err != nil {
+			return err
+		}
+	}
+	if w.buffer != nil {
+		if err := w.buffer.Flush(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (w *csvReportWriter) closeCurrent() error {
+	if err := w.flushCurrent(); err != nil {
+		return err
+	}
+	if w.file != nil {
+		err := w.file.Close()
+		w.file = nil
+		w.buffer = nil
+		w.writer = nil
+		return err
+	}
+	w.buffer = nil
+	w.writer = nil
+	return nil
 }
 
 func runScan(sourceDir, outputPath string, options scanOptions) (scanDoneMsg, error) {
@@ -278,11 +358,16 @@ func runScanWithContext(parent context.Context, sourceDir, outputPath string, op
 		return scanDoneMsg{}, err
 	}
 
-	reportWriter, err := newReportWriter(outputPath)
+	reportWriter, err := newReportWriter(outputPath, options.MaxRowsPerCSV)
 	if err != nil {
 		return scanDoneMsg{}, err
 	}
-	defer reportWriter.Close()
+	writerClosed := false
+	defer func() {
+		if !writerClosed {
+			_ = reportWriter.Close()
+		}
+	}()
 
 	if err := reportWriter.WriteHeader(); err != nil {
 		return scanDoneMsg{}, err
@@ -532,44 +617,73 @@ func runScanWithContext(parent context.Context, sourceDir, outputPath string, op
 		return scanDoneMsg{}, walkErr
 	}
 	if errors.Is(ctx.Err(), context.Canceled) {
-		cleanupScanArtifacts(outputPath, "", "")
+		_ = reportWriter.Close()
+		writerClosed = true
+		cleanupScanArtifacts(reportWriter.CSVPaths()...)
 		return scanDoneMsg{}, ctx.Err()
 	}
 	if err := reportWriter.Finalize(stats.files.Load()); err != nil {
 		return scanDoneMsg{}, err
 	}
+	if err := reportWriter.Close(); err != nil {
+		return scanDoneMsg{}, err
+	}
+	writerClosed = true
 
-	xlsxPath := ""
+	csvPaths := reportWriter.CSVPaths()
+	if len(csvPaths) == 0 {
+		csvPaths = []string{outputPath}
+	}
+	maxRowsPerCSV := options.MaxRowsPerCSV
+	if maxRowsPerCSV == 0 {
+		maxRowsPerCSV = defaultMaxRowsPerCSV
+	}
+
+	xlsxPaths := make([]string, 0, len(csvPaths))
 	csvDeleted := false
 	if options.CreateXLSX {
-		nextXLSXPath := strings.TrimSuffix(outputPath, filepath.Ext(outputPath)) + ".xlsx"
 		xlsxStartedAt := time.Now()
-		setProgress(globalProgress{
-			phase:            progressPhaseXLSX,
-			files:            stats.files.Load(),
-			directories:      stats.directories.Load(),
-			bytes:            stats.bytes.Load(),
-			filtered:         stats.filtered.Load(),
-			totalFiles:       counts.files,
-			totalDirectories: counts.directories,
-			totalBytes:       counts.bytes,
-			currentItem:      filepath.Base(nextXLSXPath),
-			startedAt:        startedAt,
-			phaseStartedAt:   xlsxStartedAt,
-		})
-		xlsxPath = nextXLSXPath
-		if err := convertCSVToXLSX(outputPath, xlsxPath, options.PreserveZeros); err != nil {
-			if errors.Is(err, context.Canceled) {
-				cleanupScanArtifacts(outputPath, xlsxPath, "")
+		for index, csvPartPath := range csvPaths {
+			nextXLSXPath := strings.TrimSuffix(csvPartPath, filepath.Ext(csvPartPath)) + ".xlsx"
+			currentLabel := filepath.Base(nextXLSXPath)
+			if len(csvPaths) > 1 {
+				currentLabel = fmt.Sprintf("%s (%d/%d)", currentLabel, index+1, len(csvPaths))
 			}
-			return scanDoneMsg{}, err
+			setProgress(globalProgress{
+				phase:            progressPhaseXLSX,
+				files:            stats.files.Load(),
+				directories:      stats.directories.Load(),
+				bytes:            stats.bytes.Load(),
+				filtered:         stats.filtered.Load(),
+				totalFiles:       counts.files,
+				totalDirectories: counts.directories,
+				totalBytes:       counts.bytes,
+				currentItem:      currentLabel,
+				startedAt:        startedAt,
+				phaseStartedAt:   xlsxStartedAt,
+			})
+			if err := convertCSVToXLSX(csvPartPath, nextXLSXPath, options.PreserveZeros); err != nil {
+				if errors.Is(err, context.Canceled) {
+					cleanupPaths := append([]string{}, csvPaths...)
+					cleanupPaths = append(cleanupPaths, xlsxPaths...)
+					cleanupScanArtifacts(cleanupPaths...)
+				}
+				return scanDoneMsg{}, err
+			}
+			xlsxPaths = append(xlsxPaths, nextXLSXPath)
 		}
 		if options.DeleteCSV {
-			if err := os.Remove(outputPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-				return scanDoneMsg{}, err
+			for _, csvPartPath := range csvPaths {
+				if err := os.Remove(csvPartPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+					return scanDoneMsg{}, err
+				}
 			}
 			csvDeleted = true
 		}
+	}
+	xlsxPath := ""
+	if len(xlsxPaths) > 0 {
+		xlsxPath = xlsxPaths[0]
 	}
 
 	reportPath := strings.TrimSuffix(outputPath, filepath.Ext(outputPath)) + "-report.txt"
@@ -580,8 +694,10 @@ func runScanWithContext(parent context.Context, sourceDir, outputPath string, op
 		errors:          stats.errors.Load(),
 		filtered:        stats.filtered.Load(),
 		sourceName:      folderDisplayName(sourceDir),
-		outputPath:      outputPath,
+		outputPath:      csvPaths[0],
+		outputPaths:     csvPaths,
 		xlsxPath:        xlsxPath,
+		xlsxPaths:       xlsxPaths,
 		reportPath:      reportPath,
 		elapsed:         time.Since(startedAt),
 		topByCount:      summarizeByCount(typeTotals, 8),
@@ -594,6 +710,9 @@ func runScanWithContext(parent context.Context, sourceDir, outputPath string, op
 		preserveZeros:   options.PreserveZeros,
 		deleteCSV:       options.DeleteCSV,
 		csvDeleted:      csvDeleted,
+		maxRowsPerCSV:   maxRowsPerCSV,
+		csvPartCount:    len(csvPaths),
+		xlsxPartCount:   len(xlsxPaths),
 		filteredHidden:  filteredHidden,
 		filteredSystem:  filteredSystem,
 		filteredExts:    filteredExts,
@@ -605,7 +724,10 @@ func runScanWithContext(parent context.Context, sourceDir, outputPath string, op
 		return scanDoneMsg{}, err
 	}
 	if errors.Is(ctx.Err(), context.Canceled) {
-		cleanupScanArtifacts(outputPath, xlsxPath, reportPath)
+		cleanupPaths := append([]string{}, csvPaths...)
+		cleanupPaths = append(cleanupPaths, xlsxPaths...)
+		cleanupPaths = append(cleanupPaths, reportPath)
+		cleanupScanArtifacts(cleanupPaths...)
 		return scanDoneMsg{}, ctx.Err()
 	}
 
@@ -630,7 +752,12 @@ func buildScanReport(done scanDoneMsg) string {
 		"Content List Report",
 		fmt.Sprintf("Selected folder: %s", valueOrDefault(done.sourceName, "unknown")),
 		fmt.Sprintf("Saved file list: %s", filepath.Base(done.outputPath)),
+		fmt.Sprintf("CSV files created: %d", done.csvPartCount),
+		fmt.Sprintf("Rows per CSV max: %d", done.maxRowsPerCSV),
+		fmt.Sprintf("CSV parts: %s", summarizeOutputParts(done.outputPaths)),
 		fmt.Sprintf("Excel copy: %s", baseNameOrFallback(done.xlsxPath, "not created")),
+		fmt.Sprintf("XLSX files created: %d", done.xlsxPartCount),
+		fmt.Sprintf("XLSX parts: %s", summarizeOutputParts(done.xlsxPaths)),
 		fmt.Sprintf("Summary report: %s", filepath.Base(done.reportPath)),
 		fmt.Sprintf("Files included: %d", done.files),
 		fmt.Sprintf("Folders counted: %d", done.directories),
@@ -670,6 +797,33 @@ func baseNameOrFallback(pathValue, fallback string) string {
 		return fallback
 	}
 	return filepath.Base(pathValue)
+}
+
+func summarizeOutputParts(paths []string) string {
+	if len(paths) == 0 {
+		return "none"
+	}
+	const maxShown = 4
+	labels := make([]string, 0, min(len(paths), maxShown))
+	for index, pathValue := range paths {
+		if index >= maxShown {
+			break
+		}
+		labels = append(labels, filepath.Base(pathValue))
+	}
+	if len(paths) > maxShown {
+		return fmt.Sprintf("%s (+%d more)", strings.Join(labels, ", "), len(paths)-maxShown)
+	}
+	return strings.Join(labels, ", ")
+}
+
+func csvOutputPathForPart(baseOutputPath string, part int) string {
+	if part <= 0 {
+		part = 1
+	}
+	ext := filepath.Ext(baseOutputPath)
+	base := strings.TrimSuffix(baseOutputPath, ext)
+	return fmt.Sprintf("%s-%03d%s", base, part, ext)
 }
 
 func copyEmailFiles(sourceDir, destDir string) (string, uint64, error) {
@@ -856,11 +1010,7 @@ func convertCSVToXLSX(csvPath, xlsxPath string, preserveZeros bool) error {
 	}
 	defer file.Close()
 
-	reader := csv.NewReader(file)
-	rows, err := reader.ReadAll()
-	if err != nil {
-		return err
-	}
+	reader := csv.NewReader(bufio.NewReaderSize(file, 1<<20))
 
 	workbook := excelize.NewFile()
 	defer workbook.Close()
@@ -879,8 +1029,22 @@ func convertCSVToXLSX(csvPath, xlsxPath string, preserveZeros bool) error {
 		}
 	}
 
-	for rowIndex, row := range rows {
-		cellName, err := excelize.CoordinatesToCellName(1, rowIndex+1)
+	rowCount := 0
+	maxCols := 0
+	for {
+		row, readErr := reader.Read()
+		if errors.Is(readErr, io.EOF) {
+			break
+		}
+		if readErr != nil {
+			return readErr
+		}
+		rowCount++
+		if len(row) > maxCols {
+			maxCols = len(row)
+		}
+
+		cellName, err := excelize.CoordinatesToCellName(1, rowCount)
 		if err != nil {
 			return err
 		}
@@ -891,7 +1055,7 @@ func convertCSVToXLSX(csvPath, xlsxPath string, preserveZeros bool) error {
 				cells = append(cells, excelize.Cell{StyleID: textStyleID, Value: value})
 				continue
 			}
-			if rowIndex > 0 && colIndex == 2 {
+			if rowCount > 1 && colIndex == 2 {
 				cells = append(cells, parseUintString(value))
 				continue
 			}
@@ -907,8 +1071,8 @@ func convertCSVToXLSX(csvPath, xlsxPath string, preserveZeros bool) error {
 		return err
 	}
 
-	if len(rows) > 0 {
-		lastCell, err := excelize.CoordinatesToCellName(6, len(rows))
+	if rowCount > 1 && maxCols > 0 {
+		lastCell, err := excelize.CoordinatesToCellName(maxCols, rowCount)
 		if err == nil {
 			showRows := true
 			_ = workbook.AddTable(sheet, &excelize.Table{
@@ -927,6 +1091,9 @@ func convertCSVToXLSX(csvPath, xlsxPath string, preserveZeros bool) error {
 }
 
 func parseUintString(value string) interface{} {
+	if value == "" {
+		return value
+	}
 	var parsed uint64
 	for _, char := range value {
 		if char < '0' || char > '9' {

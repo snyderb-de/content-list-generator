@@ -40,8 +40,9 @@ class ContentScanTests(unittest.TestCase):
             self.assertEqual(result.files, 1)
             self.assertTrue(result.xlsx_path and result.xlsx_path.exists())
             self.assertTrue(result.report_path.exists())
+            self.assertEqual(result.output_path.name, "report-001.csv")
 
-            with (workspace / "report.csv").open("r", newline="", encoding="utf-8") as handle:
+            with result.output_path.open("r", newline="", encoding="utf-8") as handle:
                 rows = list(csv.reader(handle))
             self.assertEqual(rows[1][0], "0007.txt")
             self.assertEqual(rows[1][5], "BLAKE3")
@@ -87,7 +88,7 @@ class ContentScanTests(unittest.TestCase):
 
             self.assertEqual(result.files, 5)
             self.assertEqual(result.filtered, 3)
-            self.assertEqual(output_path.read_text(encoding="utf-8"), expected_path.read_text(encoding="utf-8"))
+            self.assertEqual(result.output_path.read_text(encoding="utf-8"), expected_path.read_text(encoding="utf-8"))
 
     def test_run_scan_deletes_csv_after_xlsx_when_enabled(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -111,7 +112,39 @@ class ContentScanTests(unittest.TestCase):
 
             self.assertTrue(result.xlsx_path and result.xlsx_path.exists())
             self.assertTrue(result.csv_deleted)
-            self.assertFalse(output_path.exists())
+            self.assertFalse(result.output_path.exists())
+
+    def test_run_scan_splits_csv_and_converts_all_parts(self) -> None:
+        with TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            source = workspace / "source"
+            source.mkdir()
+            for index in range(5):
+                (source / f"file-{index}.txt").write_text(f"value-{index}\n", encoding="utf-8")
+
+            output_path = workspace / "report.csv"
+            result = core.run_scan(
+                source,
+                output_path,
+                hash_algorithm=core.HASH_ALGORITHM_OFF,
+                include_hidden=False,
+                include_system=False,
+                excluded_exts=set(),
+                create_xlsx=True,
+                preserve_zeros=True,
+                delete_csv=True,
+                max_rows_per_csv=2,
+            )
+
+            self.assertEqual(result.csv_parts, 3)
+            self.assertEqual(result.xlsx_parts, 3)
+            self.assertEqual(len(result.output_paths), 3)
+            self.assertEqual(len(result.xlsx_paths), 3)
+            self.assertTrue(result.csv_deleted)
+            for csv_part in result.output_paths:
+                self.assertFalse(csv_part.exists())
+            for xlsx_part in result.xlsx_paths:
+                self.assertTrue(xlsx_part.exists())
 
 
 if __name__ == "__main__":

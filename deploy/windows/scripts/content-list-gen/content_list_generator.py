@@ -27,6 +27,7 @@ except Exception:  # pragma: no cover
     ctk = None
 
 from content_list_core import (
+    DEFAULT_MAX_ROWS_PER_CSV,
     EMAIL_EXTENSIONS,
     EmailCopyProgress,
     EmailCopyResult,
@@ -35,6 +36,7 @@ from content_list_core import (
     ScanProgress,
     build_scan_summary,
     copy_email_files,
+    csv_output_path_for_part,
     default_output_name,
     default_hash_algorithm,
     hash_algorithm_label,
@@ -195,6 +197,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--xlsx", action=argparse.BooleanOptionalAction, dest="create_xlsx", default=True)
     parser.add_argument("--preserve-zeros", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--delete-csv-after-xlsx", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--max-rows-per-csv", type=int, default=DEFAULT_MAX_ROWS_PER_CSV)
     parser.add_argument("--cli", action="store_true", help="Force CLI mode instead of Tkinter GUI")
     return parser.parse_args()
 
@@ -599,11 +602,16 @@ def run_cli_scan(args: argparse.Namespace) -> int:
             delete_csv_after_xlsx = prompt_yes_no("Delete CSV after creating XLSX?", default=True)
 
     output_path = output_dir / output_name
-    if output_path.exists() and not args.overwrite:
-        overwrite = prompt_yes_no(f"{output_path} already exists. Overwrite?", default=False)
+    first_csv_output_path = csv_output_path_for_part(output_path, 1)
+    if first_csv_output_path.exists() and not args.overwrite:
+        overwrite = prompt_yes_no(f"{first_csv_output_path} already exists. Overwrite?", default=False)
         if not overwrite:
             print("Canceled.")
             return 1
+
+    if args.max_rows_per_csv <= 0:
+        print("--max-rows-per-csv must be greater than 0", file=sys.stderr)
+        return 1
 
     if hash_algorithm == "blake3" and not is_blake3_available():
         print(
@@ -624,6 +632,7 @@ def run_cli_scan(args: argparse.Namespace) -> int:
         create_xlsx=create_xlsx,
         preserve_zeros=preserve_zeros,
         delete_csv=delete_csv_after_xlsx,
+        max_rows_per_csv=args.max_rows_per_csv,
     )
     print(build_scan_summary(result))
     return 0
@@ -1357,11 +1366,19 @@ class ContentListApp:
         naming_card.grid(row=2, column=0, columnspan=2, sticky="ew", padx=28, pady=(18, 0))
         naming_card.grid_columnconfigure((0, 1), weight=1)
         ctk.CTkLabel(naming_card, text="Output details", font=ctk.CTkFont(size=20, weight="bold"), text_color=themed_color("body_fg")).grid(row=0, column=0, columnspan=2, sticky="w", padx=24, pady=(20, 12))
-        file_card = self.make_text_field_card(naming_card, "Name for the saved list", self.output_name_var, hint="The file name should end in .csv.")
-        file_card.grid(row=1, column=0, sticky="ew", padx=(24, 10), pady=(0, 20))
+        ctk.CTkLabel(
+            naming_card,
+            text=f"Large scans split every {DEFAULT_MAX_ROWS_PER_CSV:,} rows using [name]-001.csv, [name]-002.csv, and so on.",
+            font=ctk.CTkFont(size=12),
+            text_color=themed_color("hint_fg"),
+            wraplength=900,
+            justify="left",
+        ).grid(row=1, column=0, columnspan=2, sticky="w", padx=24, pady=(0, 12))
+        file_card = self.make_text_field_card(naming_card, "Name for the saved list", self.output_name_var, hint="The file name should end in .csv. The first part will be saved as [name]-001.csv.")
+        file_card.grid(row=2, column=0, sticky="ew", padx=(24, 10), pady=(0, 20))
         self.file_entry = file_card.entry
         exclude_card = self.make_text_field_card(naming_card, "Skip file types (optional)", self.exclude_var, hint="Example: tmp,log,bak")
-        exclude_card.grid(row=1, column=1, sticky="ew", padx=(10, 24), pady=(0, 20))
+        exclude_card.grid(row=2, column=1, sticky="ew", padx=(10, 24), pady=(0, 20))
         self.exclude_entry = exclude_card.entry
 
         options_wrap = ctk.CTkFrame(page, fg_color="transparent")
@@ -1778,8 +1795,9 @@ class ContentListApp:
             return
 
         output_path = output_dir / output_name
-        if output_path.exists():
-            confirmed = messagebox.askyesno("Overwrite file?", f"{output_path}\n\nalready exists. Overwrite it?")
+        first_csv_output_path = csv_output_path_for_part(output_path, 1)
+        if first_csv_output_path.exists():
+            confirmed = messagebox.askyesno("Overwrite file?", f"{first_csv_output_path}\n\nalready exists. Overwrite it?")
             if not confirmed:
                 return
 
@@ -1834,6 +1852,7 @@ class ContentListApp:
                 create_xlsx=self.xlsx_var.get(),
                 preserve_zeros=self.preserve_zeros_var.get(),
                 delete_csv=self.delete_csv_var.get(),
+                max_rows_per_csv=DEFAULT_MAX_ROWS_PER_CSV,
                 progress_callback=on_progress,
                 cancel_event=self.scan_cancel_event,
             )
@@ -1877,7 +1896,10 @@ class ContentListApp:
                     if result.xlsx_path and result.csv_deleted:
                         self.scan_saved_var.set("Report + Excel (CSV removed)")
                     elif result.xlsx_path:
-                        self.scan_saved_var.set("CSV + Report + Excel")
+                        if result.xlsx_parts > 1:
+                            self.scan_saved_var.set(f"CSV + Report + {result.xlsx_parts} Excel files")
+                        else:
+                            self.scan_saved_var.set("CSV + Report + Excel")
                     else:
                         self.scan_saved_var.set("CSV + Report")
                     self.append_summary(build_scan_summary(result))

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -35,6 +36,9 @@ func TestRunScanWritesCSVAndHashes(t *testing.T) {
 	if done.files != 2 {
 		t.Fatalf("expected 2 files, got %d", done.files)
 	}
+	if filepath.Base(done.outputPath) != "report-001.csv" {
+		t.Fatalf("expected first output part to be report-001.csv, got %s", filepath.Base(done.outputPath))
+	}
 	if done.hashWorkers < 2 {
 		t.Fatalf("expected parallel hash workers when hashing is enabled, got %d", done.hashWorkers)
 	}
@@ -53,7 +57,7 @@ func TestRunScanWritesCSVAndHashes(t *testing.T) {
 		t.Fatalf("expected report to include first/last csv items, got %q", reportText)
 	}
 
-	rows := readCSVRows(t, output)
+	rows := readCSVRows(t, done.outputPath)
 	if len(rows) != 3 {
 		t.Fatalf("expected 3 rows, got %d", len(rows))
 	}
@@ -109,7 +113,7 @@ func TestRunScanAppliesFilters(t *testing.T) {
 		t.Fatalf("expected 3 filtered files/directories, got %d", done.filtered)
 	}
 
-	rows := readCSVRows(t, output)
+	rows := readCSVRows(t, done.outputPath)
 	if len(rows) != 2 {
 		t.Fatalf("expected header plus one row, got %d rows", len(rows))
 	}
@@ -182,7 +186,7 @@ func TestRunScanDeletesCSVAfterXLSXWhenEnabled(t *testing.T) {
 	if !done.csvDeleted {
 		t.Fatalf("expected csvDeleted to be true")
 	}
-	if _, err := os.Stat(output); !os.IsNotExist(err) {
+	if _, err := os.Stat(done.outputPath); !os.IsNotExist(err) {
 		t.Fatalf("expected csv output to be removed, got err=%v", err)
 	}
 	if done.xlsxPath == "" {
@@ -190,6 +194,57 @@ func TestRunScanDeletesCSVAfterXLSXWhenEnabled(t *testing.T) {
 	}
 	if _, err := os.Stat(done.xlsxPath); err != nil {
 		t.Fatalf("expected xlsx file to exist: %v", err)
+	}
+}
+
+func TestRunScanSplitsCSVAndConvertsAllParts(t *testing.T) {
+	workspace := t.TempDir()
+	source := filepath.Join(workspace, "source")
+	if err := ensureDir(source); err != nil {
+		t.Fatalf("mkdir source: %v", err)
+	}
+	for index := 1; index <= 5; index++ {
+		name := filepath.Join(source, fmt.Sprintf("file-%d.txt", index))
+		if err := writeFixtureFile(name, fmt.Sprintf("value-%d", index)); err != nil {
+			t.Fatalf("write fixture file %d: %v", index, err)
+		}
+	}
+
+	output := filepath.Join(workspace, "report.csv")
+	done, err := runScan(source, output, scanOptions{
+		CreateXLSX:    true,
+		PreserveZeros: true,
+		DeleteCSV:     true,
+		MaxRowsPerCSV: 2,
+		ExcludedExts:  map[string]struct{}{},
+	})
+	if err != nil {
+		t.Fatalf("runScan failed: %v", err)
+	}
+	if done.csvPartCount != 3 {
+		t.Fatalf("expected 3 csv parts, got %d", done.csvPartCount)
+	}
+	if done.xlsxPartCount != 3 {
+		t.Fatalf("expected 3 xlsx parts, got %d", done.xlsxPartCount)
+	}
+	if !done.csvDeleted {
+		t.Fatalf("expected csv parts to be deleted after xlsx conversion")
+	}
+	if done.maxRowsPerCSV != 2 {
+		t.Fatalf("expected max rows per csv to be 2, got %d", done.maxRowsPerCSV)
+	}
+	if len(done.outputPaths) != 3 || len(done.xlsxPaths) != 3 {
+		t.Fatalf("expected three output and xlsx paths, got %d and %d", len(done.outputPaths), len(done.xlsxPaths))
+	}
+	for _, csvPath := range done.outputPaths {
+		if _, err := os.Stat(csvPath); !os.IsNotExist(err) {
+			t.Fatalf("expected csv part to be removed: %s (err=%v)", csvPath, err)
+		}
+	}
+	for _, xlsxPath := range done.xlsxPaths {
+		if _, err := os.Stat(xlsxPath); err != nil {
+			t.Fatalf("expected xlsx part to exist: %s (err=%v)", xlsxPath, err)
+		}
 	}
 }
 
@@ -244,7 +299,7 @@ func TestRunScanMatchesGoldenFixture(t *testing.T) {
 		t.Fatalf("unexpected counts: files=%d filtered=%d", done.files, done.filtered)
 	}
 
-	actualRows := readCSVRows(t, output)
+	actualRows := readCSVRows(t, done.outputPath)
 	expectedRows := readCSVRows(t, filepath.Join("testing", "content-scan", "fixtures", "expected-scan-hash.csv"))
 	assertRowsEqual(t, actualRows, expectedRows)
 }
