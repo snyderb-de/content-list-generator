@@ -96,13 +96,15 @@ App struct bound to Wails runtime. All scan logic delegates to existing `core.go
 - ✅ Delete Fyne files — `gui_fyne.go` deleted (1827 lines)
 
 ### Phase 5 — Polish
-- Light/dark mode verified on both platforms
-- Error states: scan failure, unwritable output dir, bad path
-- Overwrite confirmation dialog (existing output file)
-- Settings persist between launches (hash algo, toggle state)
-- Window min-size enforced (800×600)
-- Test large scan (>300k rows, CSV chunking visible in progress)
-- Test email copy, clone compare end-to-end
+- ✅ Light/dark/system mode — cycles, persists to localStorage, tracks OS preference
+- ✅ Error states: bad path (inline), unwritable output dir, scan failure
+- ✅ Overwrite confirmation dialog (existing output file)
+- ✅ Settings persist between launches (hash algo, toggles via SaveSettings)
+- ✅ Window min-size enforced (800×600)
+- ✅ Auto-detect GUI context — .app bundle launches without --gui flag
+- ⬜ Test large scan (>300k rows, CSV chunking visible in progress)
+- ⬜ Test email copy, clone compare end-to-end in release binary
+- ⬜ App icon (build/darwin/icon.icns)
 
 ## File Map
 

@@ -20,9 +20,9 @@ Both runtimes support:
 
 Core app/runtime files:
 
-- `main.go`, `core.go`, `gui_fyne.go`, `scan_*.go`
-- `python/content_list_generator.py`
-- `python/content_list_core.py`
+- `main.go`, `core.go`, `app.go`, `app_types.go`, `gui_wails.go`, `scan_*.go` — Go runtime
+- `frontend/` — React + TypeScript UI (Vite, built into the Wails app bundle)
+- `python/content_list_generator.py`, `python/content_list_core.py` — Python runtime
 
 Deploy and distribution files that must stay aligned with the app:
 
@@ -61,9 +61,11 @@ Local launchers:
 
 macOS and Linux:
 
-- use the Go app
+- use the Go app (Wails GUI or Bubble Tea TUI)
+- GUI: double-click `releases/macos/Content List Generator.app` or run `./run-go-gui.sh` in dev mode
+- TUI: run the CLI binary directly (no `--gui` flag, no `.app` bundle)
 - local binaries are built into `build/`
-- local release packages are produced by `./scripts/package_macos_local.sh` or `./scripts/package_linux_local.sh`
+- local release packages are produced by `./scripts/build_releases.sh`
 
 Windows portable Python path:
 
@@ -85,7 +87,6 @@ Automated checks:
 
 ```bash
 go test ./...
-go test -tags gui ./...
 python3 -m unittest discover -s ./python/tests -p 'test_*.py'
 python3 -m py_compile python/content_list_core.py python/content_list_generator.py scripts/copy_email_files.py
 ```

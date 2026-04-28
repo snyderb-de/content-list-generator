@@ -1,9 +1,13 @@
 # TODO
 
 ## Active
-- **Wails GUI rewrite** — see [WAILS_PLAN.md](WAILS_PLAN.md) for full phased plan
+- **App icon** — create 1024×1024 PNG, convert to `build/darwin/icon.icns`, rebuild releases
+- **Test large scan** — verify >300k rows triggers CSV chunking visible in GUI progress
+- **Windows build** — run `wails build -platform windows/amd64` on Windows host; copy `.exe` to `releases/windows-go/`
 
 ## Backlog
+- Windows code-signing for Wails exe
+- Auto-update mechanism for Wails app
 - Decide the final public GitHub repo URL and replace placeholder links
 - Transfer repo ownership or publishing control to `dpa-snyder`
 - Decide the final project license
@@ -13,5 +17,4 @@
 - Investigate MacBook touchpad scrolling in the Python GUI and add proper macOS trackpad scroll handling if possible
 - Decide whether release bundles stay portable-only or move toward installer-style distribution
 - Package the Linux release from a Linux build host
-- Windows code-signing for Wails exe
-- Auto-update mechanism for Wails app
+- Live diff table virtual scrolling (cap at 5000 rows currently — DOM choke risk at 100k+)
