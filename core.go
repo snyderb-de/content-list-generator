@@ -827,10 +827,10 @@ func csvOutputPathForPart(baseOutputPath string, part int) string {
 }
 
 func copyEmailFiles(sourceDir, destDir string) (string, uint64, error) {
-	return copyEmailFilesWithProgress(sourceDir, destDir, nil)
+	return copyEmailFilesWithProgress(context.Background(), sourceDir, destDir, nil)
 }
 
-func copyEmailFilesWithProgress(sourceDir, destDir string, progress func(emailCopyProgress)) (string, uint64, error) {
+func copyEmailFilesWithProgress(ctx context.Context, sourceDir, destDir string, progress func(emailCopyProgress)) (string, uint64, error) {
 	sourceAbs, err := filepath.Abs(sourceDir)
 	if err != nil {
 		return "", 0, err
@@ -875,6 +875,9 @@ func copyEmailFilesWithProgress(sourceDir, destDir string, progress func(emailCo
 	matches := make([]string, 0, 256)
 	var scanned uint64
 	err = filepath.WalkDir(sourceAbs, func(path string, d fs.DirEntry, walkErr error) error {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		if walkErr != nil || d.IsDir() {
 			return nil
 		}
@@ -918,6 +921,9 @@ func copyEmailFilesWithProgress(sourceDir, destDir string, progress func(emailCo
 
 	var copied uint64
 	for _, path := range matches {
+		if ctx.Err() != nil {
+			return manifestPath, copied, ctx.Err()
+		}
 		relative, err := filepath.Rel(sourceAbs, path)
 		if err != nil {
 			continue

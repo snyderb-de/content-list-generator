@@ -181,6 +181,7 @@ func compareScanOutputs(
 	diffPath string,
 	reportPath string,
 	progress func(cloneCompareProgress),
+	diffRow func(DiffRowPayload),
 ) (cloneVerificationDone, error) {
 	startedAt := time.Now()
 	result := cloneVerificationDone{
@@ -305,6 +306,16 @@ func compareScanOutputs(
 				}); err != nil {
 					return writeErr(err)
 				}
+				if diffRow != nil {
+					diffRow(DiffRowPayload{
+						DiffType: diffType,
+						Path:     nextA.relativePath,
+						SizeA:    strconv.FormatUint(nextA.size, 10),
+						SizeB:    strconv.FormatUint(nextB.size, 10),
+						HashA:    nextA.hashValue,
+						HashB:    nextB.hashValue,
+					})
+				}
 			}
 			nextProgress(nextA.relativePath)
 			nextA, err = driveAIter.Next()
@@ -338,6 +349,14 @@ func compareScanOutputs(
 			}); err != nil {
 				return writeErr(err)
 			}
+			if diffRow != nil {
+				diffRow(DiffRowPayload{
+					DiffType: "missing from 2nd Drive",
+					Path:     nextA.relativePath,
+					SizeA:    strconv.FormatUint(nextA.size, 10),
+					HashA:    nextA.hashValue,
+				})
+			}
 			nextProgress(nextA.relativePath)
 			nextA, err = driveAIter.Next()
 			if err != nil && !errors.Is(err, io.EOF) {
@@ -362,6 +381,14 @@ func compareScanOutputs(
 				nextB.hashValue,
 			}); err != nil {
 				return writeErr(err)
+			}
+			if diffRow != nil {
+				diffRow(DiffRowPayload{
+					DiffType: "extra on 2nd Drive",
+					Path:     nextB.relativePath,
+					SizeB:    strconv.FormatUint(nextB.size, 10),
+					HashB:    nextB.hashValue,
+				})
 			}
 			nextProgress(nextB.relativePath)
 			nextB, err = driveBIter.Next()

@@ -19,6 +19,11 @@ __pycache__/
 /testing/manual-samples/*
 !/testing/manual-samples/.gitkeep
 
+# Wails frontend build artifacts
+/frontend/node_modules/
+/frontend/dist/*
+!/frontend/dist/gitkeep
+
 # Local test and design assets should stay untracked
 *_test.go
 /python/tests/

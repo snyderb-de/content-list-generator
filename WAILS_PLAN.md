@@ -88,12 +88,12 @@ App struct bound to Wails runtime. All scan logic delegates to existing `core.go
 - GitHub link (opens in browser)
 - License
 
-### Phase 4 — Build Pipeline
-- `wails build -platform darwin/universal` (fat binary arm64+amd64)
-- `wails build -platform windows/amd64`
-- Update `scripts/build_releases.sh` to call `wails build` instead of `go build -tags gui`
-- Remove `fyne.io/fyne/v2` from `go.mod` after Wails confirmed working
-- Keep Fyne files around (git) until Wails is fully validated, then delete
+### Phase 4 — Build Pipeline ✅
+- ✅ `wails build -platform darwin/universal` (fat binary arm64+amd64) — in `scripts/build_releases.sh`
+- ✅ `wails build -platform windows/amd64` — noted in script; requires Windows host (can't cross-compile WebView2)
+- ✅ Update `scripts/build_releases.sh` to call `wails build` instead of `go build -tags gui`
+- ✅ Remove `fyne.io/fyne/v2` from `go.mod` — done via `go mod tidy` after deleting `gui_fyne.go`
+- ✅ Delete Fyne files — `gui_fyne.go` deleted (1827 lines)
 
 ### Phase 5 — Polish
 - Light/dark mode verified on both platforms

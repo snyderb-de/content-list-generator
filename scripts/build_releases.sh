@@ -12,8 +12,42 @@ mkdir -p "$MACOS_DIR" "$LINUX_DIR" "$WINDOWS_GO_DIR" "$WINDOWS_PY_DIR"
 
 cd "$ROOT_DIR"
 
+export PATH="$PATH:$(go env GOPATH)/bin"
+
+echo "── Tests ────────────────────────────────────────────────────"
 go test ./...
 
-GOOS=darwin GOARCH=arm64 go build -o "$MACOS_DIR/content-list-generator-darwin-arm64" .
-GOOS=windows GOARCH=amd64 go build -o "$WINDOWS_GO_DIR/content-list-generator-windows-amd64.exe" .
-GOOS=windows GOARCH=arm64 go build -o "$WINDOWS_GO_DIR/content-list-generator-windows-arm64.exe" .
+echo "── CLI / TUI binaries (go build) ───────────────────────────"
+GOOS=darwin  GOARCH=arm64 go build -o "$MACOS_DIR/content-list-generator-darwin-arm64"                  .
+GOOS=darwin  GOARCH=amd64 go build -o "$MACOS_DIR/content-list-generator-darwin-amd64"                  .
+GOOS=windows GOARCH=amd64 go build -o "$WINDOWS_GO_DIR/content-list-generator-windows-amd64.exe"        .
+GOOS=windows GOARCH=arm64 go build -o "$WINDOWS_GO_DIR/content-list-generator-windows-arm64.exe"        .
+GOOS=linux   GOARCH=amd64 go build -o "$LINUX_DIR/content-list-generator-linux-amd64"                   .
+
+echo "── GUI app — macOS universal (wails build) ──────────────────"
+wails build -platform darwin/universal -clean -o "content-list-generator"
+# Output: build/bin/content-list-generator.app  (wails wraps in .app)
+APP_SRC="$ROOT_DIR/build/bin/content-list-generator.app"
+if [ -d "$APP_SRC" ]; then
+    rm -rf "$MACOS_DIR/content-list-generator.app"
+    cp -r "$APP_SRC" "$MACOS_DIR/content-list-generator.app"
+    cd "$MACOS_DIR" && zip -qr "content-list-generator-gui-darwin-universal.zip" "content-list-generator.app"
+    echo "  → $MACOS_DIR/content-list-generator-gui-darwin-universal.zip"
+else
+    # wails may use the name from wails.json ("Content List Generator")
+    APP_SRC2="$ROOT_DIR/build/bin/Content List Generator.app"
+    if [ -d "$APP_SRC2" ]; then
+        rm -rf "$MACOS_DIR/Content List Generator.app"
+        cp -r "$APP_SRC2" "$MACOS_DIR/Content List Generator.app"
+        cd "$MACOS_DIR" && zip -qr "content-list-generator-gui-darwin-universal.zip" "Content List Generator.app"
+        echo "  → $MACOS_DIR/content-list-generator-gui-darwin-universal.zip"
+    fi
+fi
+cd "$ROOT_DIR"
+
+# Windows GUI requires running on Windows — wails cannot cross-compile the WebView2 wrapper.
+# Run on a Windows host: wails build -platform windows/amd64 -o content-list-generator-gui.exe
+# Then copy the .exe to releases/windows-go/.
+
+echo "── Done ─────────────────────────────────────────────────────"
+ls -lh "$MACOS_DIR" "$WINDOWS_GO_DIR" "$LINUX_DIR" 2>/dev/null | grep -v "^total\|^$" || true
