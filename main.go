@@ -161,7 +161,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if hasArg("--gui") {
+	if hasArg("--gui") || isGUIContext() {
 		if err := launchGUI(startDir); err != nil {
 			fmt.Fprintf(os.Stderr, "gui error: %v\n", err)
 			os.Exit(1)
@@ -223,6 +223,21 @@ func runTUI(startDir string) {
 func hasArg(flag string) bool {
 	for _, arg := range os.Args[1:] {
 		if arg == flag {
+			return true
+		}
+	}
+	return false
+}
+
+func isGUIContext() bool {
+	exe := os.Args[0]
+	// macOS .app bundle
+	if strings.Contains(exe, ".app/Contents/MacOS/") {
+		return true
+	}
+	// Wails dev mode passes devserver URL flag
+	for _, arg := range os.Args[1:] {
+		if strings.HasPrefix(arg, "--wails-devserverurl") || strings.HasPrefix(arg, "--wails-devserver-url") {
 			return true
 		}
 	}
