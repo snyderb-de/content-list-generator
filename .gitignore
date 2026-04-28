@@ -18,3 +18,10 @@ __pycache__/
 !/testing/manual-output/.gitkeep
 /testing/manual-samples/*
 !/testing/manual-samples/.gitkeep
+
+# Local test and design assets should stay untracked
+*_test.go
+/python/tests/
+/testing/
+/project-dashboard/
+/design/

@@ -506,6 +506,10 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 
 	hashSelect := widget.NewSelect(hashAlgorithmOptionLabels(), nil)
 	hashSelect.SetSelected(defaultHashAlgorithm().OptionLabel())
+	cloneCheck := widget.NewCheck("Verify Clones", nil)
+	cloneDetail := widget.NewLabel("Turn this on to scan the 1st Drive first, then choose the 2nd Drive after the 1st Drive finishes.")
+	cloneDetail.Wrapping = fyne.TextWrapWord
+	var startButton *widget.Button
 	hiddenCheck := widget.NewCheck("Skip hidden files", nil)
 	systemCheck := widget.NewCheck("Skip common system files", nil)
 	xlsxCheck := widget.NewCheck("Also save an Excel copy", nil)
@@ -532,14 +536,32 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 		deleteCSVCheck.Disable()
 		deleteCSVRow.Hide()
 	}
+	syncCloneState := func(enabled bool) {
+		if enabled {
+			hashSelect.SetSelected(hashAlgorithmBLAKE3.OptionLabel())
+			hashSelect.Disable()
+			cloneDetail.SetText("Clone verification uses the fastest full-file hash automatically: BLAKE3.")
+			if startButton != nil {
+				startButton.SetText("Verify")
+			}
+			return
+		}
+		hashSelect.Enable()
+		cloneDetail.SetText("Turn this on to scan the 1st Drive first, then choose the 2nd Drive after the 1st Drive finishes.")
+		if startButton != nil {
+			startButton.SetText("Generate")
+		}
+	}
+	cloneCheck.OnChanged = syncCloneState
 	hiddenCheck.SetChecked(true)
 	systemCheck.SetChecked(true)
 	zeroCheck.SetChecked(true)
 	deleteCSVCheck.SetChecked(true)
 	xlsxCheck.SetChecked(true)
 	xlsxCheck.OnChanged(xlsxCheck.Checked)
+	syncCloneState(false)
 
-	statusLabel := widget.NewLabel("Choose a folder to scan, then click Generate Content List.")
+	statusLabel := widget.NewLabel("Choose a folder to scan, then click Generate.")
 	statusLabel.Wrapping = fyne.TextWrapWord
 	progressBar := widget.NewProgressBar()
 	progressBar.Min = 0
@@ -554,10 +576,20 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 	savedMetric := widget.NewLabel("Waiting")
 	savedMetric.TextStyle = fyne.TextStyle{Bold: true}
 
-	startButton := widget.NewButton("Generate Content List", nil)
+	startButton = widget.NewButton("Generate", nil)
 	startButton.Importance = widget.HighImportance
+	var cloneCompareCancel context.CancelFunc
 	stopButton := widget.NewButton("Stop Scan", func() {
+		stopped := false
 		if cancelActiveScan() {
+			stopped = true
+		}
+		if cloneCompareCancel != nil {
+			cloneCompareCancel()
+			cloneCompareCancel = nil
+			stopped = true
+		}
+		if stopped {
 			statusLabel.SetText("Stopping scan...")
 		}
 	})
@@ -569,6 +601,7 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 		fileEntry.SetText(defaultFilename)
 		excludeEntry.SetText("")
 		hashSelect.SetSelected(defaultHashAlgorithm().OptionLabel())
+		cloneCheck.SetChecked(false)
 		hiddenCheck.SetChecked(true)
 		systemCheck.SetChecked(true)
 		zeroCheck.SetChecked(true)
@@ -576,7 +609,7 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 		xlsxCheck.SetChecked(true)
 		progressBar.Hide()
 		progressBar.SetValue(0)
-		statusLabel.SetText("Choose a folder to scan, then click Generate Content List.")
+		statusLabel.SetText("Choose a folder to scan, then click Generate.")
 		resultLabel.SetText("Your results will appear here after the file list is finished.")
 		filesMetric.SetText("0")
 		skippedMetric.SetText("0")
@@ -600,8 +633,285 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 		stopButton.Disable()
 		resetButton.Enable()
 		progressBar.Hide()
+		cloneCompareCancel = nil
 	}
 
+	setSingleScanResult := func(done scanDoneMsg) {
+		filesMetric.SetText(strconv.FormatUint(done.files, 10))
+		skippedMetric.SetText(strconv.FormatUint(done.filtered, 10))
+		if done.xlsxPath != "" && done.csvDeleted {
+			savedMetric.SetText("Report + Excel (CSV removed)")
+		} else if done.xlsxPath != "" {
+			if done.xlsxPartCount > 1 {
+				savedMetric.SetText(fmt.Sprintf("CSV + Report + %d Excel files", done.xlsxPartCount))
+			} else {
+				savedMetric.SetText("CSV + Report + Excel")
+			}
+		} else {
+			savedMetric.SetText("CSV + Report")
+		}
+		progressBar.SetValue(1)
+		statusLabel.SetText(fmt.Sprintf("Your file list is ready. %d files were included.", done.files))
+		resultLabel.SetText(strings.Join([]string{
+			fmt.Sprintf("Selected folder: %s", done.sourceName),
+			fmt.Sprintf("Saved file list: %s", filepath.Base(done.outputPath)),
+			fmt.Sprintf("CSV files created: %d", done.csvPartCount),
+			fmt.Sprintf("Rows per CSV max: %d", done.maxRowsPerCSV),
+			fmt.Sprintf("CSV parts: %s", summarizeOutputParts(done.outputPaths)),
+			fmt.Sprintf("Excel copy: %s", baseNameOrFallback(done.xlsxPath, "not created")),
+			fmt.Sprintf("XLSX files created: %d", done.xlsxPartCount),
+			fmt.Sprintf("XLSX parts: %s", summarizeOutputParts(done.xlsxPaths)),
+			fmt.Sprintf("Summary report: %s", baseNameOrFallback(done.reportPath, "not created")),
+			fmt.Sprintf("Files included: %d", done.files),
+			fmt.Sprintf("Total size: %s", humanBytes(done.bytes)),
+			fmt.Sprintf("Items skipped: %d", done.filtered),
+			fmt.Sprintf("Verification hash: %s", done.hashAlgorithm.OptionLabel()),
+			fmt.Sprintf("First file in CSV: %s", valueOrDefault(done.firstCSVItem, "none")),
+			fmt.Sprintf("Last file in CSV: %s", valueOrDefault(done.lastCSVItem, "none")),
+			fmt.Sprintf("Finished in: %s", done.elapsed.Round(time.Millisecond)),
+		}, "\n"))
+	}
+	setCloneResult := func(result cloneVerificationDone) {
+		filesMetric.SetText(fmt.Sprintf("1st: %d  2nd: %d", result.driveA.files, result.driveB.files))
+		skippedMetric.SetText(fmt.Sprintf("1st: %d  2nd: %d", result.driveA.filtered, result.driveB.filtered))
+		savedMetric.SetText("2 Lists + Diff Report")
+		progressBar.SetValue(1)
+		if result.differences == 0 {
+			statusLabel.SetText("Clone verification finished. No differences were found.")
+		} else {
+			statusLabel.SetText(fmt.Sprintf("Clone verification finished. %d differences were found.", result.differences))
+		}
+		resultLabel.SetText(buildCloneVerificationSummary(result))
+	}
+	startProgressTicker := func(doneCh <-chan struct{}) {
+		go func() {
+			ticker := time.NewTicker(250 * time.Millisecond)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-doneCh:
+					return
+				case <-ticker.C:
+					stats := currentProgress()
+					progressLine := fmt.Sprintf(
+						"%s... Files: %d  Folders: %d  Size: %s  Skipped: %d  Time: %s",
+						progressPhaseLabel(stats.phase),
+						stats.files,
+						stats.directories,
+						humanBytes(stats.bytes),
+						stats.filtered,
+						time.Since(stats.startedAt).Round(time.Second),
+					)
+					if stats.phase == progressPhaseScanning && stats.totalFiles > 0 {
+						progressLine = fmt.Sprintf(
+							"%s... %s complete  Files: %d/%d  Folders: %d/%d  Size: %s/%s  Skipped: %d  ETA: %s  Current: %s",
+							progressPhaseLabel(stats.phase),
+							formatPercent(progressFraction(stats)),
+							stats.files,
+							stats.totalFiles,
+							stats.directories,
+							stats.totalDirectories,
+							humanBytes(stats.bytes),
+							humanBytes(stats.totalBytes),
+							stats.filtered,
+							valueOrDefaultDuration(progressETA(stats, time.Now()), "calculating"),
+							valueOrDefault(stats.currentItem, "waiting for first file"),
+						)
+					}
+					fyne.Do(func() {
+						if stats.phase == progressPhaseScanning {
+							progressBar.SetValue(progressFraction(stats))
+						}
+						statusLabel.SetText(progressLine)
+					})
+				}
+			}
+		}()
+	}
+	runSingleScan := func(sourceDir, outputPath string, options scanOptions) {
+		setRunning(true)
+		statusLabel.SetText("Getting everything ready...")
+		filesMetric.SetText("0")
+		skippedMetric.SetText("0")
+		savedMetric.SetText("Working")
+		doneCh := make(chan struct{})
+		startProgressTicker(doneCh)
+		go func() {
+			done, err := runScan(sourceDir, outputPath, options)
+			close(doneCh)
+			fyne.Do(func() {
+				setRunning(false)
+				if err != nil {
+					if errors.Is(err, context.Canceled) {
+						statusLabel.SetText("Scan stopped. Partial output was removed.")
+						resultLabel.SetText("Scan stopped before completion.")
+						savedMetric.SetText("Stopped")
+						return
+					}
+					statusLabel.SetText("Something went wrong while making the file list.")
+					dialog.ShowError(err, window)
+					return
+				}
+				setSingleScanResult(done)
+			})
+		}()
+	}
+	runCloneVerification := func(sourceDir, outputPath string, options scanOptions) {
+		setRunning(true)
+		statusLabel.SetText("Preparing the 1st Drive for clone verification...")
+		filesMetric.SetText("0")
+		skippedMetric.SetText("0")
+		savedMetric.SetText("Working")
+		firstDoneCh := make(chan struct{})
+		startProgressTicker(firstDoneCh)
+		go func() {
+			driveAOptions := options
+			driveAOptions.HashAlgorithm = hashAlgorithmBLAKE3
+			driveAOptions.DeleteCSV = false
+			driveAResult, err := runScan(sourceDir, outputPath, driveAOptions)
+			close(firstDoneCh)
+			fyne.Do(func() {
+				if err != nil {
+					setRunning(false)
+					if errors.Is(err, context.Canceled) {
+						statusLabel.SetText("Scan stopped. Partial output was removed.")
+						resultLabel.SetText("Scan stopped before completion.")
+						savedMetric.SetText("Stopped")
+						return
+					}
+					statusLabel.SetText("Something went wrong while making the file list.")
+					dialog.ShowError(err, window)
+					return
+				}
+				filesMetric.SetText(strconv.FormatUint(driveAResult.files, 10))
+				skippedMetric.SetText(strconv.FormatUint(driveAResult.filtered, 10))
+				savedMetric.SetText("1st Drive Saved")
+				progressBar.SetValue(1)
+				statusLabel.SetText("1st Drive completed. Choose whether to eject it before continuing to the Clone/2nd Drive.")
+				resultLabel.SetText(strings.Join([]string{
+					"1st Drive content list is saved.",
+					fmt.Sprintf("1st Drive list: %s", filepath.Base(driveAResult.outputPath)),
+					fmt.Sprintf("1st Drive report: %s", filepath.Base(driveAResult.reportPath)),
+				}, "\n"))
+				browseDriveB := func() {
+					statusLabel.SetText("Please connect the Clone/2nd Drive. You will be asked to choose it next.")
+					showCloneSecondDriveReadyDialog(window, func() {
+						statusLabel.SetText("Choose the Clone/2nd Drive.")
+						showFolderPickerWithHandlers(window, "Choose Clone/2nd Drive", sourceDir, true, func(driveBPath string) {
+							if pathsReferToSameDir(sourceDir, driveBPath) {
+								setRunning(false)
+								dialog.ShowError(fmt.Errorf("the 2nd Drive must be different from the 1st Drive"), window)
+								statusLabel.SetText("The Clone/2nd Drive was not chosen. The 1st Drive content list remains saved.")
+								savedMetric.SetText("1st Drive Only")
+								return
+							}
+							statusLabel.SetText("Getting the 2nd Drive ready...")
+							savedMetric.SetText("Comparing")
+							progressBar.SetValue(0)
+							secondDoneCh := make(chan struct{})
+							startProgressTicker(secondDoneCh)
+							go func() {
+								driveBOutputPath := cloneOutputPathForDriveB(outputPath)
+								driveBResult, driveBErr := runScan(driveBPath, driveBOutputPath, driveAOptions)
+								close(secondDoneCh)
+								if driveBErr != nil {
+									fyne.Do(func() {
+										setRunning(false)
+										if errors.Is(driveBErr, context.Canceled) {
+											statusLabel.SetText("Clone verification stopped. The 1st Drive remains saved and partial 2nd Drive output was removed.")
+											savedMetric.SetText("1st Drive Saved")
+											resultLabel.SetText(strings.Join([]string{
+												"1st Drive content list remains saved.",
+												fmt.Sprintf("1st Drive list: %s", filepath.Base(driveAResult.outputPath)),
+											}, "\n"))
+											return
+										}
+										statusLabel.SetText("Something went wrong while comparing the drives.")
+										dialog.ShowError(driveBErr, window)
+									})
+									return
+								}
+								compareCtx, compareCancel := context.WithCancel(context.Background())
+								cloneCompareCancel = compareCancel
+								diffPath := cloneDiffCSVPath(outputPath)
+								reportPath := cloneDiffReportPath(outputPath)
+								cloneResult, compareErr := compareScanOutputs(compareCtx, driveAResult, driveBResult, diffPath, reportPath, func(progress cloneCompareProgress) {
+									fyne.Do(func() {
+										progressBar.SetValue(compareProgressFraction(progress))
+										statusLabel.SetText(fmt.Sprintf(
+											"Comparing the 1st Drive and 2nd Drive... %d items checked, %d differences found: %s",
+											progress.compared,
+											progress.differences,
+											valueOrDefault(progress.currentItem, "waiting for first item"),
+										))
+									})
+								})
+								cloneCompareCancel = nil
+								if compareErr == nil && options.DeleteCSV && options.CreateXLSX {
+									compareErr = deleteDeferredScanCSVs(&driveAResult, true)
+									if compareErr == nil {
+										compareErr = deleteDeferredScanCSVs(&driveBResult, true)
+									}
+									cloneResult.driveA = driveAResult
+									cloneResult.driveB = driveBResult
+									cloneResult.csvDeferredDeletion = true
+								}
+								fyne.Do(func() {
+									setRunning(false)
+									if compareErr != nil {
+										if errors.Is(compareErr, context.Canceled) {
+											statusLabel.SetText("Clone verification stopped. The 1st Drive remains saved and partial 2nd Drive output was removed.")
+											savedMetric.SetText("1st Drive Saved")
+											resultLabel.SetText(strings.Join([]string{
+												"1st Drive content list remains saved.",
+												fmt.Sprintf("1st Drive list: %s", filepath.Base(driveAResult.outputPath)),
+											}, "\n"))
+											return
+										}
+										statusLabel.SetText("Something went wrong while comparing the drives.")
+										dialog.ShowError(compareErr, window)
+										return
+									}
+									setCloneResult(cloneResult)
+								})
+							}()
+						}, func() {
+							setRunning(false)
+							statusLabel.SetText("The Clone/2nd Drive was not chosen. The 1st Drive content list remains saved.")
+							savedMetric.SetText("1st Drive Only")
+						})
+					})
+				}
+				dialog.ShowConfirm("1st Drive Completed", "1st Drive completed.\n\nDo you want to eject it before you continue to the Clone/2nd Drive?", func(ok bool) {
+					if ok {
+						if ejectErr := ejectDriveOrFolder(sourceDir); ejectErr != nil {
+							resultLabel.SetText(strings.Join([]string{
+								"1st Drive content list is saved.",
+								fmt.Sprintf("1st Drive list: %s", filepath.Base(driveAResult.outputPath)),
+								fmt.Sprintf("1st Drive report: %s", filepath.Base(driveAResult.reportPath)),
+								"",
+								"Automatic eject did not complete.",
+								ejectErr.Error(),
+								"Remove the 1st Drive manually if needed, then continue to the Clone/2nd Drive.",
+							}, "\n"))
+							statusLabel.SetText("Please connect the Clone/2nd Drive. You will be asked to choose it next.")
+						} else {
+							resultLabel.SetText(strings.Join([]string{
+								"1st Drive content list is saved.",
+								fmt.Sprintf("1st Drive list: %s", filepath.Base(driveAResult.outputPath)),
+								fmt.Sprintf("1st Drive report: %s", filepath.Base(driveAResult.reportPath)),
+								"",
+								"1st Drive was ejected.",
+								"Please connect the Clone/2nd Drive. You will be asked to choose it next.",
+							}, "\n"))
+							statusLabel.SetText("1st Drive was ejected. Please connect the Clone/2nd Drive. You will be asked to choose it next.")
+						}
+					}
+					browseDriveB()
+				}, window)
+			})
+		}()
+	}
 	startScan := func() {
 		sourceDir := strings.TrimSpace(sourceEntry.Text)
 		outputDir := strings.TrimSpace(outputEntry.Text)
@@ -626,116 +936,21 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 			return
 		}
 
+		options := scanOptions{
+			HashAlgorithm: parseHashAlgorithm(hashSelect.Selected),
+			ExcludeHidden: hiddenCheck.Checked,
+			ExcludeSystem: systemCheck.Checked,
+			CreateXLSX:    xlsxCheck.Checked,
+			PreserveZeros: zeroCheck.Checked,
+			DeleteCSV:     deleteCSVCheck.Checked,
+			ExcludedExts:  excluded,
+		}
 		run := func() {
-			setRunning(true)
-			statusLabel.SetText("Getting everything ready...")
-			filesMetric.SetText("0")
-			skippedMetric.SetText("0")
-			savedMetric.SetText("Working")
-			doneCh := make(chan struct{})
-			go func() {
-				ticker := time.NewTicker(250 * time.Millisecond)
-				defer ticker.Stop()
-				for {
-					select {
-					case <-doneCh:
-						return
-					case <-ticker.C:
-						stats := currentProgress()
-						progressLine := fmt.Sprintf(
-							"%s... Files: %d  Folders: %d  Size: %s  Skipped: %d  Time: %s",
-							progressPhaseLabel(stats.phase),
-							stats.files,
-							stats.directories,
-							humanBytes(stats.bytes),
-							stats.filtered,
-							time.Since(stats.startedAt).Round(time.Second),
-						)
-						if stats.phase == progressPhaseScanning && stats.totalFiles > 0 {
-							progressLine = fmt.Sprintf(
-								"%s... %s complete  Files: %d/%d  Folders: %d/%d  Size: %s/%s  Skipped: %d  ETA: %s  Current: %s",
-								progressPhaseLabel(stats.phase),
-								formatPercent(progressFraction(stats)),
-								stats.files,
-								stats.totalFiles,
-								stats.directories,
-								stats.totalDirectories,
-								humanBytes(stats.bytes),
-								humanBytes(stats.totalBytes),
-								stats.filtered,
-								valueOrDefaultDuration(progressETA(stats, time.Now()), "calculating"),
-								valueOrDefault(stats.currentItem, "waiting for first file"),
-							)
-						}
-						fyne.Do(func() {
-							if stats.phase == progressPhaseScanning {
-								progressBar.SetValue(progressFraction(stats))
-							}
-							statusLabel.SetText(progressLine)
-						})
-					}
-				}
-			}()
-
-			go func() {
-				done, err := runScan(sourceDir, outputPath, scanOptions{
-					HashAlgorithm: parseHashAlgorithm(hashSelect.Selected),
-					ExcludeHidden: hiddenCheck.Checked,
-					ExcludeSystem: systemCheck.Checked,
-					CreateXLSX:    xlsxCheck.Checked,
-					PreserveZeros: zeroCheck.Checked,
-					DeleteCSV:     deleteCSVCheck.Checked,
-					ExcludedExts:  excluded,
-				})
-				close(doneCh)
-				fyne.Do(func() {
-					setRunning(false)
-					if err != nil {
-						if errors.Is(err, context.Canceled) {
-							statusLabel.SetText("Scan stopped. Partial output was removed.")
-							resultLabel.SetText("Scan stopped before completion.")
-							savedMetric.SetText("Stopped")
-							return
-						}
-						statusLabel.SetText("Something went wrong while making the file list.")
-						dialog.ShowError(err, window)
-						return
-					}
-					filesMetric.SetText(strconv.FormatUint(done.files, 10))
-					skippedMetric.SetText(strconv.FormatUint(done.filtered, 10))
-					if done.xlsxPath != "" && done.csvDeleted {
-						savedMetric.SetText("Report + Excel (CSV removed)")
-					} else if done.xlsxPath != "" {
-						if done.xlsxPartCount > 1 {
-							savedMetric.SetText(fmt.Sprintf("CSV + Report + %d Excel files", done.xlsxPartCount))
-						} else {
-							savedMetric.SetText("CSV + Report + Excel")
-						}
-					} else {
-						savedMetric.SetText("CSV + Report")
-					}
-					progressBar.SetValue(1)
-					statusLabel.SetText(fmt.Sprintf("Your file list is ready. %d files were included.", done.files))
-					resultLabel.SetText(strings.Join([]string{
-						fmt.Sprintf("Selected folder: %s", done.sourceName),
-						fmt.Sprintf("Saved file list: %s", filepath.Base(done.outputPath)),
-						fmt.Sprintf("CSV files created: %d", done.csvPartCount),
-						fmt.Sprintf("Rows per CSV max: %d", done.maxRowsPerCSV),
-						fmt.Sprintf("CSV parts: %s", summarizeOutputParts(done.outputPaths)),
-						fmt.Sprintf("Excel copy: %s", baseNameOrFallback(done.xlsxPath, "not created")),
-						fmt.Sprintf("XLSX files created: %d", done.xlsxPartCount),
-						fmt.Sprintf("XLSX parts: %s", summarizeOutputParts(done.xlsxPaths)),
-						fmt.Sprintf("Summary report: %s", baseNameOrFallback(done.reportPath, "not created")),
-						fmt.Sprintf("Files included: %d", done.files),
-						fmt.Sprintf("Total size: %s", humanBytes(done.bytes)),
-						fmt.Sprintf("Items skipped: %d", done.filtered),
-						fmt.Sprintf("Verification hash: %s", done.hashAlgorithm.OptionLabel()),
-						fmt.Sprintf("First file in CSV: %s", valueOrDefault(done.firstCSVItem, "none")),
-						fmt.Sprintf("Last file in CSV: %s", valueOrDefault(done.lastCSVItem, "none")),
-						fmt.Sprintf("Finished in: %s", done.elapsed.Round(time.Millisecond)),
-					}, "\n"))
-				})
-			}()
+			if cloneCheck.Checked {
+				runCloneVerification(sourceDir, outputPath, options)
+				return
+			}
+			runSingleScan(sourceDir, outputPath, options)
 		}
 
 		exists, err := ensureOutputPath(outputPath)
@@ -794,6 +1009,15 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 		),
 	)
 
+	cloneOptions := widget.NewCard(
+		"Clone Drive Verification",
+		"Scan the 1st Drive first, then choose the Clone/2nd Drive after the 1st Drive finishes. The app compares both content lists and only reports differences.",
+		container.NewVBox(
+			cloneCheck,
+			cloneDetail,
+		),
+	)
+
 	options := widget.NewCard(
 		"Options",
 		"Choose any extras you want before you generate the file list.",
@@ -841,10 +1065,11 @@ func buildScanTab(window fyne.Window, startDir string) fyne.CanvasObject {
 	return container.NewVBox(
 		makeHeroCard(
 			"Create a Content List",
-			"Choose a folder, choose where to save the results, and click Generate Content List.",
+			"Choose a folder, choose where to save the results, and click Generate.",
 		),
 		pathGrid,
 		outputDetails,
+		cloneOptions,
 		options,
 		widget.NewCard("", "", actions),
 		progressCard,
@@ -1175,12 +1400,31 @@ func pathInputRow(window fyne.Window, entry *widget.Entry, title string, mustExi
 }
 
 func showFolderPicker(window fyne.Window, _ string, startPath string, _ bool, onSelect func(string)) {
+	showFolderPickerWithHandlers(window, "", startPath, true, onSelect, nil)
+}
+
+func showCloneSecondDriveReadyDialog(window fyne.Window, onReady func()) {
+	content := container.NewVBox(
+		widget.NewLabel("Please connect the Clone/2nd Drive."),
+		widget.NewLabel("You will be asked to choose it next."),
+	)
+	dialog.ShowCustomConfirm("Choose Clone/2nd Drive", "I'm ready", "Cancel", content, func(ok bool) {
+		if ok && onReady != nil {
+			onReady()
+		}
+	}, window)
+}
+
+func showFolderPickerWithHandlers(window fyne.Window, _ string, startPath string, _ bool, onSelect func(string), onCancel func()) {
 	openDialog := dialog.NewFolderOpen(func(uri fyne.ListableURI, err error) {
 		if err != nil {
 			dialog.ShowError(err, window)
 			return
 		}
 		if uri == nil {
+			if onCancel != nil {
+				onCancel()
+			}
 			return
 		}
 		selected := strings.TrimPrefix(uri.String(), "file://")
@@ -1498,6 +1742,81 @@ func openURLInBrowser(url string) {
 		return
 	}
 	_ = cmd.Start()
+}
+
+func ejectableVolumeRoot(path string) string {
+	clean := canonicalDirPath(path)
+	if clean == "" {
+		clean = filepath.Clean(path)
+	}
+	switch runtime.GOOS {
+	case "darwin":
+		prefix := filepath.Clean("/Volumes") + string(filepath.Separator)
+		if !strings.HasPrefix(clean, prefix) {
+			return ""
+		}
+		remainder := strings.TrimPrefix(clean, prefix)
+		parts := strings.Split(remainder, string(filepath.Separator))
+		if len(parts) == 0 || strings.TrimSpace(parts[0]) == "" {
+			return ""
+		}
+		return filepath.Join("/Volumes", parts[0])
+	case "linux":
+		for _, prefix := range []string{
+			filepath.Clean("/media") + string(filepath.Separator),
+			filepath.Clean("/run/media") + string(filepath.Separator),
+			filepath.Clean("/mnt") + string(filepath.Separator),
+		} {
+			if !strings.HasPrefix(clean, prefix) {
+				continue
+			}
+			remainder := strings.TrimPrefix(clean, prefix)
+			parts := strings.Split(remainder, string(filepath.Separator))
+			if len(parts) == 0 || strings.TrimSpace(parts[0]) == "" {
+				return ""
+			}
+			if strings.Contains(prefix, filepath.Clean("/run/media")) || strings.Contains(prefix, filepath.Clean("/media")) {
+				if len(parts) < 2 || strings.TrimSpace(parts[1]) == "" {
+					return ""
+				}
+				return filepath.Join(strings.TrimSuffix(prefix, string(filepath.Separator)), parts[0], parts[1])
+			}
+			return filepath.Join(strings.TrimSuffix(prefix, string(filepath.Separator)), parts[0])
+		}
+	case "windows":
+		volume := filepath.VolumeName(clean)
+		if strings.TrimSpace(volume) == "" {
+			return ""
+		}
+		return volume + `\`
+	}
+	return ""
+}
+
+func ejectDriveOrFolder(path string) error {
+	root := ejectableVolumeRoot(path)
+	if root == "" {
+		return fmt.Errorf("the selected Drive/Folder A is not on a removable volume the app can eject automatically")
+	}
+
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("diskutil", "eject", root)
+	case "linux":
+		cmd = exec.Command("umount", root)
+	default:
+		return fmt.Errorf("automatic eject is not available on this platform")
+	}
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		message := strings.TrimSpace(string(output))
+		if message == "" {
+			return err
+		}
+		return fmt.Errorf("%s", message)
+	}
+	return nil
 }
 
 func maxFloat32(a, b float32) float32 {

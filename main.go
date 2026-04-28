@@ -236,7 +236,7 @@ func newSourceList(currentDir string) list.Model {
 func newActionList() list.Model {
 	items := []list.Item{
 		actionItem{
-			title:       "Generate Content List",
+			title:       "Generate",
 			description: "Scan a folder to CSV, with optional hashing, filters, and XLSX export.",
 			flow:        flowScan,
 		},

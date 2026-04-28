@@ -27,16 +27,27 @@ except Exception:  # pragma: no cover
     ctk = None
 
 from content_list_core import (
+    CloneCompareProgress,
+    CloneVerificationResult,
     DEFAULT_MAX_ROWS_PER_CSV,
     EMAIL_EXTENSIONS,
     EmailCopyProgress,
     EmailCopyResult,
+    HASH_ALGORITHM_BLAKE3,
+    HASH_ALGORITHM_SHA1,
     HASH_ALGORITHM_SHA256,
     ScanCanceled,
     ScanProgress,
+    build_clone_verification_summary,
     build_scan_summary,
+    clone_diff_csv_path,
+    clone_diff_report_path,
+    clone_output_path_for_drive_b,
+    compare_progress_fraction,
+    compare_scan_outputs,
     copy_email_files,
     csv_output_path_for_part,
+    delete_deferred_scan_csvs,
     default_output_name,
     default_hash_algorithm,
     hash_algorithm_label,
@@ -53,6 +64,14 @@ PLACEHOLDER_GITHUB_URL = "https://github.com/placeholder/content-list-generator"
 SETTINGS_FILE_NAME = "content-list-generator-settings.json"
 SETTINGS_ENV_VAR = "CONTENT_LIST_GENERATOR_SETTINGS"
 LEGACY_SETTINGS_PATH = Path.home() / ".content-list-generator-settings.json"
+THEME_MODE_SYSTEM = "system"
+THEME_MODE_LIGHT = "light"
+THEME_MODE_DARK = "dark"
+THEME_MODE_LABELS = {
+    THEME_MODE_SYSTEM: "System",
+    THEME_MODE_LIGHT: "Light",
+    THEME_MODE_DARK: "Dark",
+}
 
 def default_settings_path() -> Path:
     return Path.home() / "scripts" / "settings" / SETTINGS_FILE_NAME
@@ -90,18 +109,49 @@ def current_settings_path() -> Path:
     return default_settings_path()
 
 
+def normalize_theme_mode(value: str) -> str:
+    mode = str(value or "").strip().lower()
+    if mode in {THEME_MODE_SYSTEM, THEME_MODE_LIGHT, THEME_MODE_DARK}:
+        return mode
+    return THEME_MODE_SYSTEM
+
+
+def theme_mode_label(value: str) -> str:
+    return THEME_MODE_LABELS[normalize_theme_mode(value)]
+
+
+def theme_mode_from_label(value: str) -> str:
+    mode = str(value or "").strip().lower()
+    for key, label in THEME_MODE_LABELS.items():
+        if mode == label.lower():
+            return key
+    return normalize_theme_mode(mode)
+
+
+def effective_theme_mode(preferred_mode: str) -> str:
+    preferred = normalize_theme_mode(preferred_mode)
+    if preferred != THEME_MODE_SYSTEM:
+        return preferred
+    if ctk is None:
+        return THEME_MODE_LIGHT
+    resolved = str(ctk.get_appearance_mode() or "").strip().lower()
+    if resolved == THEME_MODE_DARK:
+        return THEME_MODE_DARK
+    return THEME_MODE_LIGHT
+
+
 def load_theme_mode() -> str:
     for candidate in (current_settings_path(), LEGACY_SETTINGS_PATH, default_settings_path()):
         data = read_json_dict(candidate)
-        mode = str(data.get("appearance_mode", "")).strip().lower()
-        if mode in {"dark", "light"}:
+        mode = normalize_theme_mode(str(data.get("appearance_mode", "")))
+        if mode in {THEME_MODE_SYSTEM, THEME_MODE_DARK, THEME_MODE_LIGHT}:
             return mode
-    return "light"
+    return THEME_MODE_SYSTEM
 
 
 def save_theme_mode(mode: str) -> None:
     data = read_json_dict(current_settings_path())
-    data["appearance_mode"] = "dark" if mode == "dark" else "light"
+    data["appearance_mode"] = normalize_theme_mode(mode)
     write_json_dict(current_settings_path(), data)
 
 
@@ -237,6 +287,52 @@ def open_in_file_manager(path: Path) -> None:
         os.startfile(str(target))  # type: ignore[attr-defined]
         return
     subprocess.run(["xdg-open", str(target)], check=False)
+
+
+def ejectable_volume_root(path: Path) -> Path | None:
+    target = path.expanduser().resolve()
+    path_str = str(target)
+    if sys.platform == "darwin":
+        parts = target.parts
+        if len(parts) >= 3 and parts[0] == "/" and parts[1] == "Volumes":
+            return Path("/", "Volumes", parts[2])
+        return None
+    if os.name == "nt":
+        drive = target.drive
+        if drive:
+            return Path(f"{drive}\\")
+        return None
+    for prefix in (Path("/media"), Path("/run/media"), Path("/mnt")):
+        prefix_str = str(prefix)
+        if not path_str.startswith(prefix_str + os.sep):
+            continue
+        relative_parts = target.relative_to(prefix).parts
+        if prefix in {Path("/media"), Path("/run/media")}:
+            if len(relative_parts) >= 2:
+                return prefix / relative_parts[0] / relative_parts[1]
+            return None
+        if relative_parts:
+            return prefix / relative_parts[0]
+    return None
+
+
+def eject_drive_or_folder(path: Path) -> tuple[bool, str]:
+    root = ejectable_volume_root(path)
+    if root is None:
+        return False, "The selected Drive/Folder A is not on a removable volume the app can eject automatically."
+    if sys.platform == "darwin":
+        command = ["diskutil", "eject", str(root)]
+    elif os.name == "nt":
+        return False, "Automatic eject is not available in this build on Windows. Remove the 1st Drive manually, then continue to the Clone/2nd Drive."
+    else:
+        command = ["umount", str(root)]
+    completed = subprocess.run(command, capture_output=True, text=True, check=False)
+    if completed.returncode != 0:
+        details = (completed.stderr or completed.stdout or "").strip()
+        if details:
+            return False, details
+        return False, "The app could not eject Drive/Folder A automatically."
+    return True, f"Ejected {root}. You can now continue to the Clone/2nd Drive."
 
 
 def default_scan_output_dir(source_dir: Path) -> Path:
@@ -1041,13 +1137,13 @@ class ContentListApp:
     def __init__(self) -> None:
         current_mode = load_theme_mode()
         ctk.set_default_color_theme("blue")
-        ctk.set_appearance_mode(current_mode)
+        ctk.set_appearance_mode(theme_mode_label(current_mode))
         self.root = ctk.CTk()
         self.root.title("Content List Generator")
         self.root.geometry("1360x860")
         self.root.minsize(1160, 760)
-        self.theme_mode_var = tk.StringVar(value=current_mode)
-        self.colors = palette_for_mode(self.theme_mode_var.get())
+        self.theme_mode_var = tk.StringVar(value=theme_mode_label(current_mode))
+        self.colors = palette_for_mode(effective_theme_mode(current_mode))
         self.root.configure(fg_color=themed_color("app_bg"))
 
         self.message_queue: queue.Queue[tuple[str, object]] = queue.Queue()
@@ -1060,12 +1156,14 @@ class ContentListApp:
         self.output_name_var = tk.StringVar(value=default_output_name(cwd))
         self.exclude_var = tk.StringVar(value="")
         self.hash_algorithm_var = tk.StringVar(value=hash_algorithm_label(default_hash_algorithm()))
+        self.clone_verify_var = tk.BooleanVar(value=False)
+        self.clone_note_var = tk.StringVar(value="Turn this on to scan the 1st Drive first, then choose the 2nd Drive after the 1st Drive finishes.")
         self.hidden_var = tk.BooleanVar(value=True)
         self.system_var = tk.BooleanVar(value=True)
         self.xlsx_var = tk.BooleanVar(value=True)
         self.preserve_zeros_var = tk.BooleanVar(value=True)
         self.delete_csv_var = tk.BooleanVar(value=True)
-        self.status_var = tk.StringVar(value="Choose a folder to scan, then click Generate Content List.")
+        self.status_var = tk.StringVar(value="Choose a folder to scan, then click Generate.")
         self.scan_files_var = tk.StringVar(value="0")
         self.scan_skipped_var = tk.StringVar(value="0")
         self.scan_saved_var = tk.StringVar(value="Waiting")
@@ -1080,10 +1178,12 @@ class ContentListApp:
         self.exclude_entry: ctk.CTkEntry | None = None
         self.summary: ctk.CTkTextbox | None = None
         self.progress: ctk.CTkProgressBar | None = None
+        self.hash_select_tile: ctk.CTkFrame | None = None
         self.scan_cancel_event: threading.Event | None = None
         self.preserve_zeros_toggle: ctk.CTkCheckBox | None = None
         self.delete_csv_toggle: ctk.CTkCheckBox | None = None
         self.delete_csv_tile: ctk.CTkFrame | None = None
+        self.pending_clone_result: CloneVerificationResult | None = None
         self.page_frames: dict[str, ctk.CTkFrame] = {}
         self.nav_buttons: dict[str, ctk.CTkButton] = {}
         self.email_page = None
@@ -1310,19 +1410,24 @@ class ContentListApp:
             font=ctk.CTkFont(size=12, weight="bold"),
             text_color=themed_color("hint_fg"),
         ).pack(anchor="w", padx=16, pady=(16, 6))
-        ctk.CTkSwitch(
+        appearance_menu = ctk.CTkOptionMenu(
             footer,
-            text="Dark mode",
+            values=[THEME_MODE_LABELS[THEME_MODE_SYSTEM], THEME_MODE_LABELS[THEME_MODE_LIGHT], THEME_MODE_LABELS[THEME_MODE_DARK]],
             variable=self.theme_mode_var,
-            onvalue="dark",
-            offvalue="light",
-            command=self.toggle_theme,
+            command=lambda _value: self.toggle_theme(),
+            fg_color=themed_color("secondary_bg"),
+            button_color=themed_color("primary_bg"),
+            button_hover_color=themed_color("primary_hover"),
             text_color=themed_color("body_fg"),
-            progress_color=themed_color("progress_fill"),
-        ).pack(anchor="w", padx=16, pady=(0, 12))
+            dropdown_fg_color=themed_color("card_bg"),
+            dropdown_hover_color=themed_color("secondary_hover"),
+            dropdown_text_color=themed_color("body_fg"),
+            corner_radius=10,
+        )
+        appearance_menu.pack(fill="x", padx=16, pady=(0, 12))
         ctk.CTkLabel(
             footer,
-            text="The same tools are available in light and dark mode.",
+            text="Choose System, Light, or Dark. System follows the desktop appearance when supported.",
             font=ctk.CTkFont(size=12),
             text_color=themed_color("hint_fg"),
             wraplength=196,
@@ -1381,13 +1486,41 @@ class ContentListApp:
         exclude_card.grid(row=2, column=1, sticky="ew", padx=(10, 24), pady=(0, 20))
         self.exclude_entry = exclude_card.entry
 
+        clone_card = ctk.CTkFrame(page, fg_color=themed_color("hero_card_bg"), corner_radius=22)
+        clone_card.grid(row=3, column=0, columnspan=2, sticky="ew", padx=28, pady=(18, 0))
+        clone_card.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(
+            clone_card,
+            text="Clone Drive Verification",
+            font=ctk.CTkFont(size=20, weight="bold"),
+            text_color=themed_color("body_fg"),
+        ).grid(row=0, column=0, sticky="w", padx=24, pady=(20, 8))
+        ctk.CTkLabel(
+            clone_card,
+            text="Scan the 1st Drive, then choose the Clone/2nd Drive after the 1st Drive finishes. The app compares both content lists and only reports differences.",
+            font=ctk.CTkFont(size=13),
+            text_color=themed_color("hint_fg"),
+            wraplength=920,
+            justify="left",
+        ).grid(row=1, column=0, sticky="w", padx=24, pady=(0, 10))
+        self.make_option_check(clone_card, "Verify Clones", self.clone_verify_var, command=self.sync_clone_state).grid(row=2, column=0, sticky="w", padx=24, pady=(0, 8))
+        ctk.CTkLabel(
+            clone_card,
+            textvariable=self.clone_note_var,
+            font=ctk.CTkFont(size=12),
+            text_color=themed_color("hint_fg"),
+            wraplength=920,
+            justify="left",
+        ).grid(row=3, column=0, sticky="w", padx=24, pady=(0, 20))
+
         options_wrap = ctk.CTkFrame(page, fg_color="transparent")
-        options_wrap.grid(row=3, column=0, columnspan=2, sticky="ew", padx=28, pady=(18, 0))
+        options_wrap.grid(row=4, column=0, columnspan=2, sticky="ew", padx=28, pady=(18, 0))
         options_wrap.grid_columnconfigure((0, 1), weight=1)
         ctk.CTkLabel(options_wrap, text="Options", font=ctk.CTkFont(size=20, weight="bold"), text_color=themed_color("body_fg")).grid(row=0, column=0, sticky="w", pady=(0, 10))
         ctk.CTkLabel(options_wrap, text="Choose any extras you want before you generate the file list.", font=ctk.CTkFont(size=13), text_color=themed_color("hint_fg")).grid(row=1, column=0, columnspan=2, sticky="w", pady=(0, 14))
 
-        self.make_select_tile(options_wrap, "Verification hash", self.hash_algorithm_var, hash_algorithm_labels()).grid(row=2, column=0, sticky="ew", padx=(0, 10), pady=(0, 10))
+        self.hash_select_tile = self.make_select_tile(options_wrap, "Verification hash", self.hash_algorithm_var, hash_algorithm_labels())
+        self.hash_select_tile.grid(row=2, column=0, sticky="ew", padx=(0, 10), pady=(0, 10))
         checks_card = ctk.CTkFrame(options_wrap, fg_color=themed_color("card_bg"), corner_radius=18)
         checks_card.grid(row=2, column=1, rowspan=3, sticky="nsew", padx=(10, 0), pady=(0, 10))
         checks_card.grid_columnconfigure(0, weight=1)
@@ -1402,10 +1535,10 @@ class ContentListApp:
         self.delete_csv_toggle.pack(anchor="w", fill="x")
 
         actions = ctk.CTkFrame(page, fg_color="transparent")
-        actions.grid(row=4, column=0, columnspan=2, sticky="ew", padx=28, pady=(18, 0))
+        actions.grid(row=5, column=0, columnspan=2, sticky="ew", padx=28, pady=(18, 0))
         self.reset_button = self.make_secondary_button(actions, "Reset", self.reset_fields)
         self.reset_button.pack(side="left")
-        self.generate_button = self.make_primary_button(actions, "Generate Content List", self.start_scan)
+        self.generate_button = self.make_primary_button(actions, "Generate", self.start_scan)
         self.generate_button.pack(side="left", padx=(10, 0))
         self.stop_button = self.make_secondary_button(actions, "Stop Scan", self.stop_scan)
         self.stop_button.pack(side="left", padx=(10, 0))
@@ -1414,7 +1547,7 @@ class ContentListApp:
         self.open_folder_button.pack(side="left", padx=(10, 0))
 
         progress_card = ctk.CTkFrame(page, fg_color=themed_color("card_bg"), corner_radius=22)
-        progress_card.grid(row=5, column=0, columnspan=2, sticky="ew", padx=28, pady=(18, 0))
+        progress_card.grid(row=6, column=0, columnspan=2, sticky="ew", padx=28, pady=(18, 0))
         progress_card.grid_columnconfigure((0, 1, 2), weight=1)
         ctk.CTkLabel(progress_card, text="Progress", font=ctk.CTkFont(size=20, weight="bold"), text_color=themed_color("body_fg")).grid(row=0, column=0, sticky="w", padx=24, pady=(20, 10))
         metric_row = ctk.CTkFrame(progress_card, fg_color="transparent")
@@ -1430,7 +1563,7 @@ class ContentListApp:
         ctk.CTkLabel(progress_card, textvariable=self.status_var, text_color=themed_color("body_fg"), wraplength=940, justify="left").grid(row=3, column=0, columnspan=3, sticky="w", padx=24, pady=(12, 18))
 
         summary_card = ctk.CTkFrame(page, fg_color=themed_color("card_bg"), corner_radius=22)
-        summary_card.grid(row=6, column=0, columnspan=2, sticky="nsew", padx=28, pady=(18, 28))
+        summary_card.grid(row=7, column=0, columnspan=2, sticky="nsew", padx=28, pady=(18, 28))
         summary_card.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(summary_card, text="Summary", font=ctk.CTkFont(size=20, weight="bold"), text_color=themed_color("body_fg")).grid(row=0, column=0, sticky="w", padx=24, pady=(20, 10))
         self.summary = ctk.CTkTextbox(
@@ -1443,6 +1576,7 @@ class ContentListApp:
             font=("Menlo", 11),
         )
         self.summary.grid(row=1, column=0, sticky="nsew", padx=24, pady=(0, 24))
+        self.sync_clone_state()
         return page
 
     def build_email_page(self, parent) -> ctk.CTkScrollableFrame:
@@ -1640,9 +1774,10 @@ class ContentListApp:
         return card
 
     def toggle_theme(self) -> None:
-        self.colors = palette_for_mode(self.theme_mode_var.get())
-        save_theme_mode(self.theme_mode_var.get())
-        ctk.set_appearance_mode(self.theme_mode_var.get())
+        selected_mode = theme_mode_from_label(self.theme_mode_var.get())
+        save_theme_mode(selected_mode)
+        ctk.set_appearance_mode(theme_mode_label(selected_mode))
+        self.colors = palette_for_mode(effective_theme_mode(selected_mode))
         self.root.configure(fg_color=themed_color("app_bg"))
         self.configure_style()
         self.show_page(self.active_page)
@@ -1691,6 +1826,30 @@ class ContentListApp:
             self.preserve_zeros_var.set(False)
             self.delete_csv_var.set(False)
 
+    def clone_hash_algorithm(self) -> str:
+        if is_blake3_available():
+            return HASH_ALGORITHM_BLAKE3
+        return HASH_ALGORITHM_SHA1
+
+    def sync_clone_state(self) -> None:
+        if self.clone_verify_var.get():
+            algorithm = self.clone_hash_algorithm()
+            self.hash_algorithm_var.set(hash_algorithm_label(algorithm))
+            if self.hash_select_tile is not None and hasattr(self.hash_select_tile, "menu"):
+                self.hash_select_tile.menu.configure(state="disabled")
+            note = "Clone verification uses the fastest full-file hash automatically: BLAKE3."
+            if algorithm == HASH_ALGORITHM_SHA1:
+                note = "BLAKE3 is not installed, so clone verification will use SHA-1 for this run and the app will tell you before scanning."
+            self.clone_note_var.set(note)
+            if self.generate_button is not None:
+                self.generate_button.configure(text="Verify")
+            return
+        if self.hash_select_tile is not None and hasattr(self.hash_select_tile, "menu"):
+            self.hash_select_tile.menu.configure(state="normal")
+        self.clone_note_var.set("Turn this on to scan the 1st Drive first, then choose the 2nd Drive after the 1st Drive finishes.")
+        if self.generate_button is not None:
+            self.generate_button.configure(text="Generate")
+
     def sync_action_buttons(self) -> None:
         running_state = "disabled" if self.running else "normal"
         if self.generate_button is not None:
@@ -1736,6 +1895,11 @@ class ContentListApp:
         self.output_name_var.set(default_output_name(cwd))
         self.exclude_var.set("")
         self.hash_algorithm_var.set(hash_algorithm_label(default_hash_algorithm()))
+        loaded_mode = load_theme_mode()
+        self.theme_mode_var.set(theme_mode_label(loaded_mode))
+        ctk.set_appearance_mode(theme_mode_label(loaded_mode))
+        self.colors = palette_for_mode(effective_theme_mode(loaded_mode))
+        self.clone_verify_var.set(False)
         self.hidden_var.set(True)
         self.system_var.set(True)
         self.xlsx_var.set(True)
@@ -1743,12 +1907,15 @@ class ContentListApp:
         self.delete_csv_var.set(True)
         if self.progress is not None:
             self.progress.set(0)
-        self.status_var.set("Choose a folder to scan, then click Generate Content List.")
+        self.status_var.set("Choose a folder to scan, then click Generate.")
         self.scan_files_var.set("0")
         self.scan_skipped_var.set("0")
         self.scan_saved_var.set("Waiting")
         self.append_summary("")
         self.sync_xlsx_state()
+        self.sync_clone_state()
+        self.root.configure(fg_color=themed_color("app_bg"))
+        self.configure_style()
         self.show_page("content")
         self.focus_source_entry()
 
@@ -1771,6 +1938,69 @@ class ContentListApp:
         self.summary.delete("1.0", "end")
         self.summary.insert("end", text)
         self.summary.configure(state="disabled")
+
+    def selected_scan_hash(self) -> str:
+        if self.clone_verify_var.get():
+            return self.clone_hash_algorithm()
+        return normalize_hash_algorithm(self.hash_algorithm_var.get())
+
+    def begin_scan_run(self) -> None:
+        self.running = True
+        self.scan_cancel_event = threading.Event()
+        self.pending_clone_result = None
+        self.sync_action_buttons()
+        if self.progress is not None:
+            self.progress.stop()
+            self.progress.configure(mode="determinate")
+            self.progress.set(0)
+        self.status_var.set("Getting everything ready...")
+        self.scan_files_var.set("0")
+        self.scan_skipped_var.set("0")
+        self.scan_saved_var.set("Working")
+        self.show_page("content")
+
+    def launch_scan_thread(self, payload: dict[str, object]) -> None:
+        thread = threading.Thread(
+            target=self.run_scan_thread,
+            args=(payload,),
+            daemon=True,
+        )
+        thread.start()
+
+    def prompt_for_clone_drive_b(self, source_dir: Path) -> Path | None:
+        self.status_var.set("1st Drive completed. Choose whether to eject it before continuing to the Clone/2nd Drive.")
+        wants_eject = messagebox.askyesno(
+            "1st Drive Completed",
+            "1st Drive completed.\n\nDo you want to eject it before you continue to the Clone/2nd Drive?",
+        )
+        if wants_eject:
+            ejected, message = eject_drive_or_folder(source_dir)
+            if ejected:
+                messagebox.showinfo("1st Drive Ejected", message)
+                self.status_var.set("1st Drive was ejected. Choose the Clone/2nd Drive next.")
+            else:
+                messagebox.showinfo("Eject Not Completed", message + "\n\nChoose the Clone/2nd Drive when you are ready.")
+                self.status_var.set("Choose the Clone/2nd Drive.")
+        else:
+            self.status_var.set("Choose the Clone/2nd Drive.")
+        while True:
+            chosen = choose_directory(
+                self.root,
+                "Choose Clone/2nd Drive",
+                str(source_dir.parent),
+                True,
+                self.colors,
+            )
+            if not chosen:
+                return None
+            drive_b = Path(chosen).expanduser().resolve()
+            if not drive_b.is_dir():
+                messagebox.showerror("Invalid Clone/2nd Drive", f"The Clone/2nd Drive does not exist:\n{drive_b}")
+                continue
+            if drive_b == source_dir:
+                messagebox.showerror("Invalid Clone/2nd Drive", "The Clone/2nd Drive must be different from the 1st Drive.")
+                continue
+            return drive_b
 
     def start_scan(self) -> None:
         if self.running:
@@ -1801,32 +2031,49 @@ class ContentListApp:
             if not confirmed:
                 return
 
-        selected_hash = normalize_hash_algorithm(self.hash_algorithm_var.get())
-        if selected_hash == "blake3" and not is_blake3_available():
+        selected_hash = self.selected_scan_hash()
+        if self.clone_verify_var.get() and selected_hash == HASH_ALGORITHM_SHA1 and not is_blake3_available():
+            messagebox.showinfo(
+                "Clone verification hash",
+                "BLAKE3 is not installed, so Verify Clones will use SHA-1 for this run.",
+            )
+        elif selected_hash == "blake3" and not is_blake3_available():
             messagebox.showerror(
                 "BLAKE3 not installed",
                 "BLAKE3 was selected, but the Python 'blake3' package is not installed.\n\nInstall it with: pip install -r requirements.txt",
             )
             return
 
-        self.running = True
-        self.scan_cancel_event = threading.Event()
-        self.sync_action_buttons()
-        if self.progress is not None:
-            self.progress.set(0)
-        self.status_var.set("Getting everything ready...")
-        self.scan_files_var.set("0")
-        self.scan_skipped_var.set("0")
-        self.scan_saved_var.set("Working")
-        self.append_summary("Preparing your file list...")
-        self.show_page("content")
+        self.begin_scan_run()
+        if self.clone_verify_var.get():
+            self.append_summary("Preparing the 1st Drive for clone verification...")
+            self.launch_scan_thread(
+                {
+                    "mode": "clone-drive-a",
+                    "source_dir": source_dir,
+                    "output_path": output_path,
+                    "excluded_exts": excluded_exts,
+                    "hash_algorithm": selected_hash,
+                    "create_xlsx": self.xlsx_var.get(),
+                    "preserve_zeros": self.preserve_zeros_var.get(),
+                    "delete_csv_requested": self.delete_csv_var.get(),
+                }
+            )
+            return
 
-        thread = threading.Thread(
-            target=self.run_scan_thread,
-            args=(source_dir, output_path, excluded_exts),
-            daemon=True,
+        self.append_summary("Preparing your file list...")
+        self.launch_scan_thread(
+            {
+                "mode": "scan",
+                "source_dir": source_dir,
+                "output_path": output_path,
+                "excluded_exts": excluded_exts,
+                "hash_algorithm": selected_hash,
+                "create_xlsx": self.xlsx_var.get(),
+                "preserve_zeros": self.preserve_zeros_var.get(),
+                "delete_csv_requested": self.delete_csv_var.get(),
+            }
         )
-        thread.start()
 
     def stop_scan(self) -> None:
         if self.scan_cancel_event is None:
@@ -1834,10 +2081,17 @@ class ContentListApp:
         self.scan_cancel_event.set()
         self.status_var.set("Stopping scan...")
 
-    def run_scan_thread(self, source_dir: Path, output_path: Path, excluded_exts: set[str]) -> None:
+    def run_scan_thread(self, payload: dict[str, object]) -> None:
         try:
             self.message_queue.put(("status", "Counting files and folders..."))
-            selected_hash = normalize_hash_algorithm(self.hash_algorithm_var.get())
+            source_dir = payload["source_dir"]
+            output_path = payload["output_path"]
+            excluded_exts = payload["excluded_exts"]
+            selected_hash = payload["hash_algorithm"]
+            create_xlsx = payload["create_xlsx"]
+            preserve_zeros = payload["preserve_zeros"]
+            delete_csv_requested = payload["delete_csv_requested"]
+            mode = payload["mode"]
 
             def on_progress(progress: ScanProgress) -> None:
                 self.message_queue.put(("progress", progress))
@@ -1849,15 +2103,58 @@ class ContentListApp:
                 include_hidden=not self.hidden_var.get(),
                 include_system=not self.system_var.get(),
                 excluded_exts=excluded_exts,
-                create_xlsx=self.xlsx_var.get(),
-                preserve_zeros=self.preserve_zeros_var.get(),
-                delete_csv=self.delete_csv_var.get(),
+                create_xlsx=create_xlsx,
+                preserve_zeros=preserve_zeros,
+                delete_csv=False if mode != "scan" and delete_csv_requested else delete_csv_requested,
                 max_rows_per_csv=DEFAULT_MAX_ROWS_PER_CSV,
                 progress_callback=on_progress,
                 cancel_event=self.scan_cancel_event,
             )
+
+            if mode == "clone-drive-a":
+                self.message_queue.put(
+                    (
+                        "clone_drive_a_done",
+                        {
+                            "drive_a_result": result,
+                            "source_dir": source_dir,
+                            "output_path": output_path,
+                            "excluded_exts": excluded_exts,
+                            "hash_algorithm": selected_hash,
+                            "create_xlsx": create_xlsx,
+                            "preserve_zeros": preserve_zeros,
+                            "delete_csv_requested": delete_csv_requested,
+                        },
+                    )
+                )
+                return
+
+            if mode == "clone-drive-b":
+                drive_a_result = payload["drive_a_result"]
+                diff_path = clone_diff_csv_path(payload["base_output_path"])
+                report_path = clone_diff_report_path(payload["base_output_path"])
+
+                def on_compare(progress: CloneCompareProgress) -> None:
+                    self.message_queue.put(("clone_progress", progress))
+
+                clone_result = compare_scan_outputs(
+                    drive_a_result,
+                    result,
+                    diff_path,
+                    report_path,
+                    progress_callback=on_compare,
+                    cancel_event=self.scan_cancel_event,
+                )
+                delete_deferred_scan_csvs(drive_a_result, delete_csv_requested)
+                delete_deferred_scan_csvs(result, delete_csv_requested)
+                self.message_queue.put(("clone_done", clone_result))
+                return
+
             self.message_queue.put(("done", result))
         except ScanCanceled:
+            if payload["mode"] == "clone-drive-b":
+                self.message_queue.put(("clone_canceled", payload.get("drive_a_result")))
+                return
             self.message_queue.put(("canceled", None))
         except Exception as exc:  # pragma: no cover
             self.message_queue.put(("error", str(exc)))
@@ -1886,6 +2183,58 @@ class ContentListApp:
                         self.status_var.set(
                             f"Scanning... {progress.files} of {progress.total_files} files, {human_bytes(progress.bytes)} of {human_bytes(progress.total_bytes)}: {progress.current_name}"
                         )
+                elif kind == "clone_progress":
+                    progress: CloneCompareProgress = payload
+                    if self.progress is not None:
+                        self.progress.stop()
+                        self.progress.configure(mode="determinate")
+                        self.progress.set(compare_progress_fraction(progress))
+                    self.status_var.set(
+                        f"Comparing the 1st Drive and 2nd Drive... {progress.compared} items checked, {progress.differences} differences found: {progress.current_name}"
+                    )
+                elif kind == "clone_drive_a_done":
+                    payload_map = payload
+                    drive_a_result = payload_map["drive_a_result"]
+                    self.status_var.set("The 1st Drive content list is ready. Continue to the Clone/2nd Drive next.")
+                    self.scan_files_var.set(str(drive_a_result.files))
+                    self.scan_skipped_var.set(str(drive_a_result.filtered))
+                    self.scan_saved_var.set("1st Drive Saved")
+                    self.append_summary(build_scan_summary(drive_a_result))
+                    if self.progress is not None:
+                        self.progress.stop()
+                        self.progress.configure(mode="determinate")
+                        self.progress.set(1)
+
+                    drive_b_dir = self.prompt_for_clone_drive_b(payload_map["source_dir"])
+                    if drive_b_dir is None:
+                        self.running = False
+                        self.scan_cancel_event = None
+                        self.status_var.set("The Clone/2nd Drive was not chosen. The 1st Drive content list remains saved.")
+                        self.scan_saved_var.set("1st Drive Only")
+                        self.sync_action_buttons()
+                        continue
+
+                    if self.progress is not None:
+                        self.progress.stop()
+                        self.progress.configure(mode="determinate")
+                        self.progress.set(0)
+                    self.status_var.set("Counting files and folders for the 2nd Drive...")
+                    self.scan_saved_var.set("Comparing")
+                    self.append_summary("The 1st Drive content list is saved. Scanning the 2nd Drive next...")
+                    self.launch_scan_thread(
+                        {
+                            "mode": "clone-drive-b",
+                            "source_dir": drive_b_dir,
+                            "output_path": clone_output_path_for_drive_b(payload_map["output_path"]),
+                            "base_output_path": payload_map["output_path"],
+                            "excluded_exts": payload_map["excluded_exts"],
+                            "hash_algorithm": payload_map["hash_algorithm"],
+                            "create_xlsx": payload_map["create_xlsx"],
+                            "preserve_zeros": payload_map["preserve_zeros"],
+                            "delete_csv_requested": payload_map["delete_csv_requested"],
+                            "drive_a_result": drive_a_result,
+                        }
+                    )
                 elif kind == "done":
                     self.running = False
                     self.scan_cancel_event = None
@@ -1908,12 +2257,48 @@ class ContentListApp:
                         self.progress.configure(mode="determinate")
                         self.progress.set(1)
                     self.sync_action_buttons()
+                elif kind == "clone_done":
+                    self.running = False
+                    self.scan_cancel_event = None
+                    result: CloneVerificationResult = payload
+                    self.pending_clone_result = result
+                    self.status_var.set(
+                        "Clone verification finished. No differences were found."
+                        if result.differences == 0
+                        else f"Clone verification finished. {result.differences} differences were found."
+                    )
+                    self.scan_files_var.set(f"1st: {result.drive_a.files}  2nd: {result.drive_b.files}")
+                    self.scan_skipped_var.set(f"1st: {result.drive_a.filtered}  2nd: {result.drive_b.filtered}")
+                    self.scan_saved_var.set("2 Lists + Diff Report")
+                    self.append_summary(build_clone_verification_summary(result))
+                    if self.progress is not None:
+                        self.progress.stop()
+                        self.progress.configure(mode="determinate")
+                        self.progress.set(1)
+                    self.sync_action_buttons()
                 elif kind == "canceled":
                     self.running = False
                     self.scan_cancel_event = None
                     self.status_var.set("Scan stopped. Partial output was removed.")
                     self.scan_saved_var.set("Stopped")
                     self.append_summary("Scan stopped before completion.")
+                    if self.progress is not None:
+                        self.progress.stop()
+                        self.progress.configure(mode="determinate")
+                        self.progress.set(0)
+                    self.sync_action_buttons()
+                elif kind == "clone_canceled":
+                    self.running = False
+                    self.scan_cancel_event = None
+                    drive_a_result = payload
+                    self.status_var.set("Clone verification stopped. The 1st Drive remains saved and partial 2nd Drive output was removed.")
+                    self.scan_saved_var.set("1st Drive Saved")
+                    if drive_a_result is not None:
+                        self.scan_files_var.set(str(drive_a_result.files))
+                        self.scan_skipped_var.set(str(drive_a_result.filtered))
+                        self.append_summary(build_scan_summary(drive_a_result))
+                    else:
+                        self.append_summary("Clone verification stopped before the 2nd Drive finished.")
                     if self.progress is not None:
                         self.progress.stop()
                         self.progress.configure(mode="determinate")

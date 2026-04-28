@@ -123,3 +123,19 @@ Canonical docs now live in:
 - `README.md` for setup, structure, runtime, and testing
 - `TODO.md` for active follow-up work
 - `project-dashboard/` for a lightweight static project overview
+
+## Local GUI Reference
+
+For Python GUI work that depends on `customtkinter`, we also have a local fork checked out at:
+
+- `/Users/baghead/code/CustomTkinter`
+
+Use that local repo as an offline reference for:
+
+- source-level behavior review
+- examples and usage patterns
+- platform-specific GUI behavior checks
+- future work such as matching the system light/dark mode on Windows, Linux, and macOS
+- verifying that text is not clipped or truncated in widgets and layouts
+
+When making Python GUI changes in this repo, prefer checking the local `CustomTkinter` fork before assuming behavior from memory or from internet docs.
