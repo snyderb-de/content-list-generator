@@ -2263,9 +2263,7 @@ class ContentListApp:
                     result: CloneVerificationResult = payload
                     self.pending_clone_result = result
                     self.status_var.set(
-                        "Clone verification finished. No differences were found."
-                        if result.differences == 0
-                        else f"Clone verification finished. {result.differences} differences were found."
+                        f"Clone verification finished. Verdict: {result.verdict}."
                     )
                     self.scan_files_var.set(f"1st: {result.drive_a.files}  2nd: {result.drive_b.files}")
                     self.scan_skipped_var.set(f"1st: {result.drive_a.filtered}  2nd: {result.drive_b.filtered}")

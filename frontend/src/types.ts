@@ -51,6 +51,7 @@ export interface ScanDonePayload {
   filteredHidden: number
   filteredSystem: number
   filteredExts: number
+  filteredOSNoise: number
   sourceName: string
   outputPath: string
   outputPaths: string[]
@@ -99,16 +100,25 @@ export interface CloneCompareOptions {
 
 export interface CloneProgressPayload {
   phase: string
+  subPhase: string
   percent: number
   compared: number
   total: number
   differences: number
   currentItem: string
+  files: number
+  totalFiles: number
+  bytes: number
+  totalBytes: number
+  bytesPerSec: number
+  etaSecs: number
+  elapsedSecs: number
 }
 
 export interface DiffRowPayload {
   diffType: string
-  path: string
+  pathA: string
+  pathB: string
   sizeA: string
   sizeB: string
   hashA: string
@@ -120,12 +130,17 @@ export interface CloneDonePayload {
   reportPath: string
   hashAlgorithm: string
   elapsedSecs: number
+  verdict: string
   compared: number
   differences: number
-  missingFromDriveB: number
-  extraOnDriveB: number
+  movedFiles: number
+  duplicatesOnB: number
+  duplicatesOnA: number
+  missingNoMatch: number
+  extraNoMatch: number
   sizeMismatches: number
   hashMismatches: number
+  excludedSystem: number
 }
 
 export const HASH_ALGORITHMS = [

@@ -603,6 +603,38 @@ html, body {
   color: var(--warning);
 }
 
+.diff-type-moved {
+  background: rgba(99, 102, 241, 0.12);
+  color: #6366f1;
+}
+
+.diff-type-duplicate {
+  background: rgba(245, 158, 11, 0.1);
+  color: var(--warning);
+}
+
+.diff-row-alarming td {
+  background: var(--danger-bg);
+}
+
+.diff-section-alarming {
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+
+.diff-section-alarming-header {
+  background: var(--danger-bg);
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 /* ─── Extension Table ────────────────────────────────────────── */
 .ext-table {
   width: 100%;

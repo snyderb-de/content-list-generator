@@ -6,16 +6,16 @@ export function CancelCloneCompare() {
   return window['go']['main']['App']['CancelCloneCompare']();
 }
 
-export function CheckOutputExists(arg1) {
-  return window['go']['main']['App']['CheckOutputExists'](arg1);
-}
-
 export function CancelEmailCopy() {
   return window['go']['main']['App']['CancelEmailCopy']();
 }
 
 export function CancelScan() {
   return window['go']['main']['App']['CancelScan']();
+}
+
+export function CheckOutputExists(arg1) {
+  return window['go']['main']['App']['CheckOutputExists'](arg1);
 }
 
 export function GetAppVersion() {
@@ -32,6 +32,10 @@ export function OpenPath(arg1) {
 
 export function PickFolder(arg1) {
   return window['go']['main']['App']['PickFolder'](arg1);
+}
+
+export function ResumeCloneWithDriveB(arg1) {
+  return window['go']['main']['App']['ResumeCloneWithDriveB'](arg1);
 }
 
 export function SaveSettings(arg1) {

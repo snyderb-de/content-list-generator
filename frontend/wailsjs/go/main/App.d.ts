@@ -4,11 +4,11 @@ import {main} from '../models';
 
 export function CancelCloneCompare():Promise<void>;
 
-export function CheckOutputExists(arg1:main.ScanOptions):Promise<boolean>;
-
 export function CancelEmailCopy():Promise<void>;
 
 export function CancelScan():Promise<void>;
+
+export function CheckOutputExists(arg1:main.ScanOptions):Promise<boolean>;
 
 export function GetAppVersion():Promise<string>;
 
@@ -17,6 +17,8 @@ export function GetScanDefaults():Promise<main.ScanOptions>;
 export function OpenPath(arg1:string):Promise<void>;
 
 export function PickFolder(arg1:string):Promise<string>;
+
+export function ResumeCloneWithDriveB(arg1:string):Promise<void>;
 
 export function SaveSettings(arg1:main.ScanOptions):Promise<void>;
 

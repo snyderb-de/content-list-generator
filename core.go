@@ -55,6 +55,7 @@ type scanDoneMsg struct {
 	filteredHidden  uint64
 	filteredSystem  uint64
 	filteredExts    uint64
+	filteredOSNoise uint64
 	filteredSamples []string
 	firstCSVItem    string
 	lastCSVItem     string
@@ -151,6 +152,9 @@ func countScanTargets(ctx context.Context, sourceDir string, options scanOptions
 		}
 
 		if d.IsDir() {
+			if path != sourceDir && isAlwaysExcludedDir(d.Name()) {
+				return filepath.SkipDir
+			}
 			if path != sourceDir && options.ExcludeHidden && isHiddenName(d.Name()) {
 				setProgress(globalProgress{
 					phase:          progressPhaseCounting,
@@ -395,9 +399,10 @@ func runScanWithContext(parent context.Context, sourceDir, outputPath string, op
 	walkErrCh := make(chan error, 1)
 	typeTotals := make(map[string]summaryEntry)
 	pending := make(map[uint64]scanResult)
-	filteredHidden := uint64(0)
-	filteredSystem := uint64(0)
-	filteredExts := uint64(0)
+	filteredHidden  := uint64(0)
+	filteredSystem  := uint64(0)
+	filteredExts    := uint64(0)
+	filteredOSNoise := uint64(0)
 	filteredSamples := make([]string, 0, 8)
 	firstCSVItem := ""
 	lastCSVItem := ""
@@ -441,6 +446,12 @@ func runScanWithContext(parent context.Context, sourceDir, outputPath string, op
 			}
 
 			if d.IsDir() {
+				if path != sourceDir && isAlwaysExcludedDir(d.Name()) {
+					stats.filtered.Add(1)
+					filteredOSNoise++
+					filteredSamples = appendFilteredSample(filteredSamples, fmt.Sprintf("%s -> os noise directory", filepath.ToSlash(path)))
+					return filepath.SkipDir
+				}
 				if path != sourceDir && options.ExcludeHidden && isHiddenName(d.Name()) {
 					stats.filtered.Add(1)
 					filteredHidden++
@@ -486,6 +497,8 @@ func runScanWithContext(parent context.Context, sourceDir, outputPath string, op
 					filteredSystem++
 				case "excluded extension":
 					filteredExts++
+				case "os noise":
+					filteredOSNoise++
 				}
 				filteredSamples = appendFilteredSample(filteredSamples, fmt.Sprintf("%s -> %s", filepath.ToSlash(path), reason))
 				setProgress(globalProgress{
@@ -716,6 +729,7 @@ func runScanWithContext(parent context.Context, sourceDir, outputPath string, op
 		filteredHidden:  filteredHidden,
 		filteredSystem:  filteredSystem,
 		filteredExts:    filteredExts,
+		filteredOSNoise: filteredOSNoise,
 		filteredSamples: filteredSamples,
 		firstCSVItem:    firstCSVItem,
 		lastCSVItem:     lastCSVItem,
@@ -763,6 +777,7 @@ func buildScanReport(done scanDoneMsg) string {
 		fmt.Sprintf("Folders counted: %d", done.directories),
 		fmt.Sprintf("Total size: %s", humanBytes(done.bytes)),
 		fmt.Sprintf("Items skipped: %d", done.filtered),
+		fmt.Sprintf("OS noise excluded: %d", done.filteredOSNoise),
 		fmt.Sprintf("Verification hash: %s", done.hashAlgorithm.OptionLabel()),
 		fmt.Sprintf("First file in CSV: %s", valueOrDefault(done.firstCSVItem, "none")),
 		fmt.Sprintf("Last file in CSV: %s", valueOrDefault(done.lastCSVItem, "none")),

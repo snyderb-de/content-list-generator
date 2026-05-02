@@ -53,6 +53,7 @@ type ScanDonePayload struct {
 	FilteredHidden  uint64         `json:"filteredHidden"`
 	FilteredSystem  uint64         `json:"filteredSystem"`
 	FilteredExts    uint64         `json:"filteredExts"`
+	FilteredOSNoise uint64         `json:"filteredOSNoise"`
 	SourceName      string         `json:"sourceName"`
 	OutputPath      string         `json:"outputPath"`
 	OutputPaths     []string       `json:"outputPaths"`
@@ -101,16 +102,25 @@ type CloneCompareOptions struct {
 
 type CloneProgressPayload struct {
 	Phase       string  `json:"phase"`
+	SubPhase    string  `json:"subPhase"`
 	Percent     float64 `json:"percent"`
 	Compared    uint64  `json:"compared"`
 	Total       uint64  `json:"total"`
 	Differences uint64  `json:"differences"`
 	CurrentItem string  `json:"currentItem"`
+	Files       uint64  `json:"files"`
+	TotalFiles  uint64  `json:"totalFiles"`
+	Bytes       uint64  `json:"bytes"`
+	TotalBytes  uint64  `json:"totalBytes"`
+	BytesPerSec float64 `json:"bytesPerSec"`
+	ETASecs     float64 `json:"etaSecs"`
+	ElapsedSecs float64 `json:"elapsedSecs"`
 }
 
 type DiffRowPayload struct {
 	DiffType string `json:"diffType"`
-	Path     string `json:"path"`
+	PathA    string `json:"pathA"`
+	PathB    string `json:"pathB"`
 	SizeA    string `json:"sizeA"`
 	SizeB    string `json:"sizeB"`
 	HashA    string `json:"hashA"`
@@ -118,14 +128,19 @@ type DiffRowPayload struct {
 }
 
 type CloneDonePayload struct {
-	DiffPath          string  `json:"diffPath"`
-	ReportPath        string  `json:"reportPath"`
-	HashAlgorithm     string  `json:"hashAlgorithm"`
-	ElapsedSecs       float64 `json:"elapsedSecs"`
-	Compared          uint64  `json:"compared"`
-	Differences       uint64  `json:"differences"`
-	MissingFromDriveB uint64  `json:"missingFromDriveB"`
-	ExtraOnDriveB     uint64  `json:"extraOnDriveB"`
-	SizeMismatches    uint64  `json:"sizeMismatches"`
-	HashMismatches    uint64  `json:"hashMismatches"`
+	DiffPath       string  `json:"diffPath"`
+	ReportPath     string  `json:"reportPath"`
+	HashAlgorithm  string  `json:"hashAlgorithm"`
+	ElapsedSecs    float64 `json:"elapsedSecs"`
+	Verdict        string  `json:"verdict"`
+	Compared       uint64  `json:"compared"`
+	Differences    uint64  `json:"differences"`
+	MovedFiles     uint64  `json:"movedFiles"`
+	DuplicatesOnB  uint64  `json:"duplicatesOnB"`
+	DuplicatesOnA  uint64  `json:"duplicatesOnA"`
+	MissingNoMatch uint64  `json:"missingNoMatch"`
+	ExtraNoMatch   uint64  `json:"extraNoMatch"`
+	SizeMismatches uint64  `json:"sizeMismatches"`
+	HashMismatches uint64  `json:"hashMismatches"`
+	ExcludedSystem uint64  `json:"excludedSystem"`
 }

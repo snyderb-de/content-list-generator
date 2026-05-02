@@ -20,6 +20,23 @@ except Exception:  # pragma: no cover
 
 
 SYSTEM_FILES = {".ds_store", "thumbs.db", "desktop.ini", "ehthumbs.db"}
+
+# Always-excluded OS infrastructure — never archival content, no user toggle.
+OS_NOISE_DIRS = {
+    "$recycle.bin",
+    "system volume information",
+    ".spotlight-v100",
+    ".trashes",
+    ".fseventsd",
+    ".temporaryitems",
+    ".documentrevisions-v100",
+}
+OS_NOISE_FILES_EXACT = {
+    "pagefile.sys", "hiberfil.sys", "swapfile.sys",
+    "thumbs.db", "ehthumbs.db", "desktop.ini", ".ds_store",
+}
+OS_NOISE_PREFIXES = ("~$", ".~lock.", "._")
+OS_NOISE_SUFFIXES = (".tmp",)
 EMAIL_EXTENSIONS = {
     ".dbx",
     ".eml",
@@ -60,8 +77,9 @@ EMAIL_MANIFEST_HEADERS = [
 ]
 CLONE_DIFF_HEADERS = [
     "Difference Type",
-    "Path From Root Folder",
+    "1st Drive Path From Root Folder",
     "1st Drive File Name",
+    "2nd Drive Path From Root Folder",
     "2nd Drive File Name",
     "1st Drive Size in Bytes",
     "2nd Drive Size in Bytes",
@@ -70,6 +88,10 @@ CLONE_DIFF_HEADERS = [
     "1st Drive Hash Value",
     "2nd Drive Hash Value",
 ]
+
+CLONE_VERDICT_EXACT   = "Exact Clone"
+CLONE_VERDICT_CONTENT = "Content Clone"
+CLONE_VERDICT_NOT     = "Not a Clone"
 
 
 @dataclass
@@ -94,6 +116,7 @@ class ScanResult:
     filtered_hidden: int
     filtered_system: int
     filtered_exts: int
+    filtered_os_noise: int
     elapsed: float
     hash_algorithm: str
     create_xlsx: bool
@@ -126,12 +149,17 @@ class CloneVerificationResult:
     report_path: Path
     hash_algorithm: str
     elapsed: float
+    verdict: str
     compared: int
     differences: int
-    missing_from_drive_b: int
-    extra_on_drive_b: int
+    moved_files: int
+    duplicates_on_b: int
+    duplicates_on_a: int
+    missing_no_match: int
+    extra_no_match: int
     size_mismatches: int
     hash_mismatches: int
+    excluded_system: int
 
 
 @dataclass
@@ -260,6 +288,23 @@ def summary_key(ext: str) -> str:
     return f".{ext}" if ext else "[no extension]"
 
 
+def is_always_excluded_dir(name: str) -> bool:
+    return name.lower() in OS_NOISE_DIRS
+
+
+def is_always_excluded_file(name: str) -> bool:
+    lower = name.lower()
+    if lower in OS_NOISE_FILES_EXACT:
+        return True
+    if any(lower.startswith(p) for p in OS_NOISE_PREFIXES if p != "._"):
+        return True
+    if name.startswith("._"):  # macOS resource forks — case-sensitive prefix
+        return True
+    if any(lower.endswith(s) for s in OS_NOISE_SUFFIXES):
+        return True
+    return False
+
+
 def is_hidden_path(path: Path, source_root: Path) -> bool:
     relative = path.relative_to(source_root)
     return any(part.startswith(".") for part in relative.parts)
@@ -272,6 +317,8 @@ def should_skip(
     include_system: bool,
     excluded_exts: set[str],
 ) -> tuple[str, bool]:
+    if is_always_excluded_file(path.name):
+        return "os noise", True
     if not include_hidden and is_hidden_path(path, source_root):
         return "hidden path", True
     if not include_system and path.name.lower() in SYSTEM_FILES:
@@ -333,6 +380,7 @@ def count_scan_targets(
     filtered_hidden = 0
     filtered_system = 0
     filtered_exts = 0
+    filtered_os_noise = 0
     directories = 0
     total_bytes = 0
 
@@ -344,6 +392,10 @@ def count_scan_targets(
 
         kept_dirs: list[str] = []
         for directory in dirs:
+            if is_always_excluded_dir(directory):
+                filtered += 1
+                filtered_os_noise += 1
+                continue
             candidate = root_path / directory
             if not include_hidden and is_hidden_path(candidate, source_dir):
                 filtered += 1
@@ -380,6 +432,8 @@ def count_scan_targets(
                     filtered_system += 1
                 elif reason == "excluded extension":
                     filtered_exts += 1
+                elif reason == "os noise":
+                    filtered_os_noise += 1
                 continue
             try:
                 stat = candidate.stat()
@@ -417,7 +471,7 @@ def count_scan_targets(
                 filtered=filtered,
             )
         )
-    return files, filtered, filtered_hidden, filtered_system, filtered_exts, directories, total_bytes
+    return files, filtered, filtered_hidden, filtered_system, filtered_exts, filtered_os_noise, directories, total_bytes
 
 
 def iter_scan_files(
@@ -434,6 +488,8 @@ def iter_scan_files(
 
         kept_dirs: list[str] = []
         for directory in dirs:
+            if is_always_excluded_dir(directory):
+                continue
             candidate = root_path / directory
             if not include_hidden and is_hidden_path(candidate, source_dir):
                 continue
@@ -835,7 +891,7 @@ def run_scan(
     csv_deleted = False
     report_path = output_path.with_name(f"{output_path.stem}-report.txt")
     try:
-        total_files, filtered, filtered_hidden, filtered_system, filtered_exts, directories, total_expected_bytes = count_scan_targets(
+        total_files, filtered, filtered_hidden, filtered_system, filtered_exts, filtered_os_noise, directories, total_expected_bytes = count_scan_targets(
             source_dir,
             include_hidden,
             include_system,
@@ -885,6 +941,7 @@ def run_scan(
             filtered_hidden=filtered_hidden,
             filtered_system=filtered_system,
             filtered_exts=filtered_exts,
+            filtered_os_noise=filtered_os_noise,
             elapsed=time.time() - started,
             hash_algorithm=normalize_hash_algorithm(hash_algorithm),
             create_xlsx=create_xlsx,
@@ -950,6 +1007,7 @@ def build_scan_report(result: ScanResult) -> str:
         f"Folders counted: {result.directories}",
         f"Total size: {human_bytes(result.total_bytes)}",
         f"Items skipped: {result.filtered}",
+        f"OS noise excluded: {result.filtered_os_noise}",
         f"Verification hash: {hash_algorithm_label(result.hash_algorithm)}",
         f"First file in CSV: {result.first_csv_item or 'none'}",
         f"Last file in CSV: {result.last_csv_item or 'none'}",
@@ -964,6 +1022,22 @@ def build_scan_report(result: ScanResult) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _compute_verdict(
+    missing_no_match: int,
+    extra_no_match: int,
+    hash_mismatches: int,
+    size_mismatches: int,
+    moved_files: int,
+    duplicates_on_a: int,
+    duplicates_on_b: int,
+) -> str:
+    if missing_no_match > 0 or extra_no_match > 0 or hash_mismatches > 0 or size_mismatches > 0:
+        return CLONE_VERDICT_NOT
+    if moved_files > 0 or duplicates_on_a > 0 or duplicates_on_b > 0:
+        return CLONE_VERDICT_CONTENT
+    return CLONE_VERDICT_EXACT
+
+
 def compare_scan_outputs(
     drive_a: ScanResult,
     drive_b: ScanResult,
@@ -975,8 +1049,11 @@ def compare_scan_outputs(
     started = time.time()
     compared = 0
     differences = 0
-    missing_from_drive_b = 0
-    extra_on_drive_b = 0
+    moved_files = 0
+    duplicates_on_b = 0
+    duplicates_on_a = 0
+    missing_no_match = 0
+    extra_no_match = 0
     size_mismatches = 0
     hash_mismatches = 0
     diff_path.parent.mkdir(parents=True, exist_ok=True)
@@ -984,37 +1061,41 @@ def compare_scan_outputs(
     iterator_a = iter_scan_csv_rows(drive_a.output_paths)
     iterator_b = iter_scan_csv_rows(drive_b.output_paths)
 
-    def safe_next(iterator):
+    def safe_next(it):
         try:
-            return next(iterator)
+            return next(it)
         except StopIteration:
             return None
 
     def send_progress(current_name: str) -> None:
         if progress_callback is None:
             return
-        progress_callback(
-            CloneCompareProgress(
-                compared=compared,
-                total=max(drive_a.files, drive_b.files),
-                differences=differences,
-                current_name=current_name,
-            )
-        )
+        progress_callback(CloneCompareProgress(
+            compared=compared,
+            total=max(drive_a.files, drive_b.files),
+            differences=differences,
+            current_name=current_name,
+        ))
 
     next_a = safe_next(iterator_a)
     next_b = safe_next(iterator_b)
+
+    # unmatched_a / unmatched_b: hash → list[ScanCSVRow] for path-only rows
+    unmatched_a: dict[str, list] = {}
+    unmatched_b: dict[str, list] = {}
 
     try:
         with diff_path.open("w", newline="", encoding="utf-8") as handle:
             writer = csv.writer(handle)
             writer.writerow(CLONE_DIFF_HEADERS)
 
+            # ── Pass 1: streaming sorted merge ───────────────────────────────
             while next_a is not None or next_b is not None:
                 if cancel_event is not None and cancel_event.is_set():
                     raise ScanCanceled()
 
-                if next_a is not None and next_b is not None and next_a.relative_path == next_b.relative_path:
+                if (next_a is not None and next_b is not None
+                        and next_a.relative_path == next_b.relative_path):
                     compared += 1
                     size_mismatch = next_a.size != next_b.size
                     hash_mismatch = (
@@ -1034,69 +1115,104 @@ def compare_scan_outputs(
                         hash_mismatches += 1
                     if diff_type:
                         differences += 1
-                        writer.writerow(
-                            [
-                                diff_type,
-                                next_a.relative_path,
-                                next_a.file_name,
-                                next_b.file_name,
-                                str(next_a.size),
-                                str(next_b.size),
-                                next_a.hash_algorithm,
-                                next_b.hash_algorithm,
-                                next_a.hash_value,
-                                next_b.hash_value,
-                            ]
-                        )
+                        writer.writerow([
+                            diff_type,
+                            next_a.relative_path, next_a.file_name,
+                            next_b.relative_path, next_b.file_name,
+                            str(next_a.size), str(next_b.size),
+                            next_a.hash_algorithm, next_b.hash_algorithm,
+                            next_a.hash_value, next_b.hash_value,
+                        ])
                     send_progress(next_a.relative_path)
                     next_a = safe_next(iterator_a)
                     next_b = safe_next(iterator_b)
-                    continue
 
-                if next_b is None or (next_a is not None and next_a.relative_path < next_b.relative_path):
-                    differences += 1
-                    missing_from_drive_b += 1
-                    writer.writerow(
-                        [
-                            "missing from 2nd Drive",
-                            next_a.relative_path,
-                            next_a.file_name,
-                            "",
-                            str(next_a.size),
-                            "",
-                            next_a.hash_algorithm,
-                            "",
-                            next_a.hash_value,
-                            "",
-                        ]
-                    )
+                elif next_b is None or (next_a is not None
+                        and next_a.relative_path < next_b.relative_path):
+                    unmatched_a.setdefault(next_a.hash_value, []).append(next_a)
                     send_progress(next_a.relative_path)
                     next_a = safe_next(iterator_a)
+
+                else:
+                    unmatched_b.setdefault(next_b.hash_value, []).append(next_b)
+                    send_progress(next_b.relative_path)
+                    next_b = safe_next(iterator_b)
+
+            # ── Pass 2: in-memory hash cross-reference ────────────────────────
+            for hash_val, a_rows in unmatched_a.items():
+                b_rows = unmatched_b.pop(hash_val, [])
+                if not b_rows:
+                    for r in a_rows:
+                        differences += 1
+                        missing_no_match += 1
+                        writer.writerow([
+                            "missing from 2nd Drive (no match)",
+                            r.relative_path, r.file_name,
+                            "", "",
+                            str(r.size), "",
+                            r.hash_algorithm, "",
+                            r.hash_value, "",
+                        ])
                     continue
 
-                differences += 1
-                extra_on_drive_b += 1
-                writer.writerow(
-                    [
-                        "extra on 2nd Drive",
-                        next_b.relative_path,
-                        "",
-                        next_b.file_name,
-                        "",
-                        str(next_b.size),
-                        "",
-                        next_b.hash_algorithm,
-                        "",
-                        next_b.hash_value,
-                    ]
-                )
-                send_progress(next_b.relative_path)
-                next_b = safe_next(iterator_b)
+                match_count = min(len(a_rows), len(b_rows))
+                for i in range(match_count):
+                    a, b = a_rows[i], b_rows[i]
+                    differences += 1
+                    moved_files += 1
+                    writer.writerow([
+                        "moved/renamed",
+                        a.relative_path, a.file_name,
+                        b.relative_path, b.file_name,
+                        str(a.size), str(b.size),
+                        a.hash_algorithm, b.hash_algorithm,
+                        a.hash_value, b.hash_value,
+                    ])
+                for b in b_rows[match_count:]:
+                    differences += 1
+                    duplicates_on_b += 1
+                    writer.writerow([
+                        "duplicate on 2nd Drive",
+                        "", "",
+                        b.relative_path, b.file_name,
+                        "", str(b.size),
+                        "", b.hash_algorithm,
+                        "", b.hash_value,
+                    ])
+                for a in a_rows[match_count:]:
+                    differences += 1
+                    duplicates_on_a += 1
+                    writer.writerow([
+                        "duplicate on 1st Drive",
+                        a.relative_path, a.file_name,
+                        "", "",
+                        str(a.size), "",
+                        a.hash_algorithm, "",
+                        a.hash_value, "",
+                    ])
+
+            for b_rows in unmatched_b.values():
+                for b in b_rows:
+                    differences += 1
+                    extra_no_match += 1
+                    writer.writerow([
+                        "extra on 2nd Drive (no match)",
+                        "", "",
+                        b.relative_path, b.file_name,
+                        "", str(b.size),
+                        "", b.hash_algorithm,
+                        "", b.hash_value,
+                    ])
+
     except Exception:
         diff_path.unlink(missing_ok=True)
         report_path.unlink(missing_ok=True)
         raise
 
+    verdict = _compute_verdict(
+        missing_no_match, extra_no_match, hash_mismatches, size_mismatches,
+        moved_files, duplicates_on_a, duplicates_on_b,
+    )
     result = CloneVerificationResult(
         drive_a=drive_a,
         drive_b=drive_b,
@@ -1104,12 +1220,17 @@ def compare_scan_outputs(
         report_path=report_path,
         hash_algorithm=normalize_hash_algorithm(drive_a.hash_algorithm),
         elapsed=time.time() - started,
+        verdict=verdict,
         compared=compared,
         differences=differences,
-        missing_from_drive_b=missing_from_drive_b,
-        extra_on_drive_b=extra_on_drive_b,
+        moved_files=moved_files,
+        duplicates_on_b=duplicates_on_b,
+        duplicates_on_a=duplicates_on_a,
+        missing_no_match=missing_no_match,
+        extra_no_match=extra_no_match,
         size_mismatches=size_mismatches,
         hash_mismatches=hash_mismatches,
+        excluded_system=drive_a.filtered_os_noise + drive_b.filtered_os_noise,
     )
     write_clone_verification_report(result)
     return result
@@ -1119,11 +1240,38 @@ def write_clone_verification_report(result: CloneVerificationResult) -> None:
     result.report_path.write_text(build_clone_verification_report(result), encoding="utf-8")
 
 
+def _verdict_summary_lines(result: CloneVerificationResult) -> list[str]:
+    if result.verdict == CLONE_VERDICT_EXACT:
+        return [
+            "EXACT CLONE — All files verified present on both drives at identical paths.",
+            "No files are missing, moved, or corrupted.",
+        ]
+    if result.verdict == CLONE_VERDICT_CONTENT:
+        lines = [
+            "CONTENT CLONE — All files verified present on both drives.",
+            f"{result.moved_files} file(s) detected at different paths (folder renamed or moved).",
+            "No files are missing or corrupted.",
+        ]
+        if result.duplicates_on_b:
+            lines.append(f"{result.duplicates_on_b} extra duplicate(s) found on 2nd Drive.")
+        if result.duplicates_on_a:
+            lines.append(f"{result.duplicates_on_a} extra duplicate(s) found on 1st Drive.")
+        return lines
+    lines = ["NOT A CLONE — Verification failed."]
+    if result.missing_no_match:
+        lines.append(f"{result.missing_no_match} file(s) missing from 2nd Drive with no hash match anywhere.")
+    if result.extra_no_match:
+        lines.append(f"{result.extra_no_match} extra file(s) on 2nd Drive with no hash match anywhere.")
+    if result.hash_mismatches:
+        lines.append(f"{result.hash_mismatches} file(s) at matching paths have different hash values (possible corruption).")
+    return lines
+
+
 def build_clone_verification_report(result: CloneVerificationResult) -> str:
-    status = "match" if result.differences == 0 else "differences found"
     lines = [
         "Clone Verification Report",
-        f"Verification result: {status}",
+        f"Verdict: {result.verdict}",
+        "━" * 38,
         f"1st Drive folder: {result.drive_a.source_name}",
         f"2nd Drive folder: {result.drive_b.source_name}",
         f"1st Drive content list: {result.drive_a.output_path.name}",
@@ -1132,33 +1280,37 @@ def build_clone_verification_report(result: CloneVerificationResult) -> str:
         f"2nd Drive summary report: {result.drive_b.report_path.name}",
         f"Differences CSV: {result.diff_path.name}",
         f"Verification hash: {hash_algorithm_label(result.hash_algorithm)}",
-        f"Matched paths checked: {result.compared}",
-        f"Missing from 2nd Drive: {result.missing_from_drive_b}",
-        f"Extra on 2nd Drive: {result.extra_on_drive_b}",
-        f"Size mismatches: {result.size_mismatches}",
+        "",
+        f"Exact path + content matches: {result.compared}",
+        f"Content matches (moved/renamed): {result.moved_files}",
         f"Hash mismatches: {result.hash_mismatches}",
-        f"Total differences: {result.differences}",
+        "",
+        f"⚠ Missing from 2nd Drive (no hash match): {result.missing_no_match}",
+        f"⚠ Extra on 2nd Drive (no hash match): {result.extra_no_match}",
+        "",
+        f"Duplicates on 2nd Drive: {result.duplicates_on_b}",
+        f"Duplicates on 1st Drive: {result.duplicates_on_a}",
+        f"System paths excluded: {result.excluded_system}",
         f"Finished in: {result.elapsed:.2f}s",
+        "",
     ]
+    lines.extend(_verdict_summary_lines(result))
     return "\n".join(lines) + "\n"
 
 
 def build_clone_verification_summary(result: CloneVerificationResult) -> str:
-    status = "Clone verification passed." if result.differences == 0 else "Clone verification found differences."
     lines = [
-        status,
+        f"Verdict: {result.verdict}",
         f"1st Drive folder: {result.drive_a.source_name}",
         f"2nd Drive folder: {result.drive_b.source_name}",
-        f"1st Drive content list: {result.drive_a.output_path.name}",
-        f"2nd Drive content list: {result.drive_b.output_path.name}",
         f"Differences CSV: {result.diff_path.name}",
         f"Clone report: {result.report_path.name}",
         f"Verification hash: {hash_algorithm_label(result.hash_algorithm)}",
-        f"Missing from 2nd Drive: {result.missing_from_drive_b}",
-        f"Extra on 2nd Drive: {result.extra_on_drive_b}",
-        f"Size mismatches: {result.size_mismatches}",
+        f"Exact matches: {result.compared}",
+        f"Moved/renamed: {result.moved_files}",
         f"Hash mismatches: {result.hash_mismatches}",
-        f"Total differences: {result.differences}",
+        f"Missing (no match): {result.missing_no_match}",
+        f"Extra (no match): {result.extra_no_match}",
         f"Finished in: {result.elapsed:.2f}s",
     ]
     return "\n".join(lines)

@@ -13,6 +13,14 @@ import (
 	"time"
 )
 
+type cloneVerdict string
+
+const (
+	verdictExactClone   cloneVerdict = "Exact Clone"
+	verdictContentClone cloneVerdict = "Content Clone"
+	verdictNotAClone    cloneVerdict = "Not a Clone"
+)
+
 type cloneCompareProgress struct {
 	compared    uint64
 	total       uint64
@@ -29,10 +37,15 @@ type cloneVerificationDone struct {
 	elapsed             time.Duration
 	compared            uint64
 	differences         uint64
-	missingFromDriveB   uint64
-	extraOnDriveB       uint64
+	movedFiles          uint64
+	duplicatesOnB       uint64
+	duplicatesOnA       uint64
+	missingNoMatch      uint64
+	extraNoMatch        uint64
 	sizeMismatches      uint64
 	hashMismatches      uint64
+	excludedSystem      uint64
+	verdict             cloneVerdict
 	csvDeferredDeletion bool
 }
 
@@ -174,6 +187,16 @@ func (it *scanCSVIterator) Next() (*scanCSVRow, error) {
 	}
 }
 
+func computeVerdict(r cloneVerificationDone) cloneVerdict {
+	if r.missingNoMatch > 0 || r.extraNoMatch > 0 || r.hashMismatches > 0 || r.sizeMismatches > 0 {
+		return verdictNotAClone
+	}
+	if r.movedFiles > 0 || r.duplicatesOnA > 0 || r.duplicatesOnB > 0 {
+		return verdictContentClone
+	}
+	return verdictExactClone
+}
+
 func compareScanOutputs(
 	ctx context.Context,
 	driveA scanDoneMsg,
@@ -185,11 +208,12 @@ func compareScanOutputs(
 ) (cloneVerificationDone, error) {
 	startedAt := time.Now()
 	result := cloneVerificationDone{
-		driveA:        driveA,
-		driveB:        driveB,
-		diffPath:      diffPath,
-		reportPath:    reportPath,
-		hashAlgorithm: driveA.hashAlgorithm,
+		driveA:         driveA,
+		driveB:         driveB,
+		diffPath:       diffPath,
+		reportPath:     reportPath,
+		hashAlgorithm:  driveA.hashAlgorithm,
+		excludedSystem: driveA.filteredOSNoise + driveB.filteredOSNoise,
 	}
 
 	driveAIter, err := newScanCSVIterator(driveA.outputPaths)
@@ -221,8 +245,9 @@ func compareScanOutputs(
 
 	if err := writer.Write([]string{
 		"Difference Type",
-		"Path From Root Folder",
+		"1st Drive Path From Root Folder",
 		"1st Drive File Name",
+		"2nd Drive Path From Root Folder",
 		"2nd Drive File Name",
 		"1st Drive Size in Bytes",
 		"2nd Drive Size in Bytes",
@@ -250,20 +275,35 @@ func compareScanOutputs(
 		})
 	}
 
-	nextA, err := driveAIter.Next()
-	if err != nil && !errors.Is(err, io.EOF) {
+	readA := func() (*scanCSVRow, error) {
+		r, err := driveAIter.Next()
+		if errors.Is(err, io.EOF) {
+			return nil, nil
+		}
+		return r, err
+	}
+	readB := func() (*scanCSVRow, error) {
+		r, err := driveBIter.Next()
+		if errors.Is(err, io.EOF) {
+			return nil, nil
+		}
+		return r, err
+	}
+
+	nextA, err := readA()
+	if err != nil {
 		return writeErr(err)
 	}
-	if errors.Is(err, io.EOF) {
-		nextA = nil
-	}
-	nextB, err := driveBIter.Next()
-	if err != nil && !errors.Is(err, io.EOF) {
+	nextB, err := readB()
+	if err != nil {
 		return writeErr(err)
 	}
-	if errors.Is(err, io.EOF) {
-		nextB = nil
-	}
+
+	// ── Pass 1: streaming sorted merge ───────────────────────────────────────
+	// Path matches are resolved immediately (exact or hash mismatch).
+	// Path-only rows are held in memory for Pass 2 hash cross-reference.
+	unmatchedA := make(map[string][]scanCSVRow) // hash → A rows with no path match in B
+	unmatchedB := make(map[string][]scanCSVRow) // hash → B rows with no path match in A
 
 	for nextA != nil || nextB != nil {
 		select {
@@ -275,9 +315,9 @@ func compareScanOutputs(
 		switch {
 		case nextA != nil && nextB != nil && nextA.relativePath == nextB.relativePath:
 			result.compared++
-			diffType := ""
 			sizeMismatch := nextA.size != nextB.size
 			hashMismatch := nextA.hashValue != nextB.hashValue || nextA.hashAlgorithm != nextB.hashAlgorithm
+			var diffType string
 			switch {
 			case sizeMismatch && hashMismatch:
 				diffType = "size and hash mismatch"
@@ -296,6 +336,7 @@ func compareScanOutputs(
 					diffType,
 					nextA.relativePath,
 					nextA.fileName,
+					nextB.relativePath,
 					nextB.fileName,
 					strconv.FormatUint(nextA.size, 10),
 					strconv.FormatUint(nextB.size, 10),
@@ -309,7 +350,8 @@ func compareScanOutputs(
 				if diffRow != nil {
 					diffRow(DiffRowPayload{
 						DiffType: diffType,
-						Path:     nextA.relativePath,
+						PathA:    nextA.relativePath,
+						PathB:    nextB.relativePath,
 						SizeA:    strconv.FormatUint(nextA.size, 10),
 						SizeB:    strconv.FormatUint(nextB.size, 10),
 						HashA:    nextA.hashValue,
@@ -318,85 +360,159 @@ func compareScanOutputs(
 				}
 			}
 			nextProgress(nextA.relativePath)
-			nextA, err = driveAIter.Next()
-			if err != nil && !errors.Is(err, io.EOF) {
+			if nextA, err = readA(); err != nil {
 				return writeErr(err)
 			}
-			if errors.Is(err, io.EOF) {
-				nextA = nil
-			}
-			nextB, err = driveBIter.Next()
-			if err != nil && !errors.Is(err, io.EOF) {
+			if nextB, err = readB(); err != nil {
 				return writeErr(err)
 			}
-			if errors.Is(err, io.EOF) {
-				nextB = nil
-			}
-		case nextB == nil || nextA != nil && nextA.relativePath < nextB.relativePath:
-			result.differences++
-			result.missingFromDriveB++
-			if err := writer.Write([]string{
-				"missing from 2nd Drive",
-				nextA.relativePath,
-				nextA.fileName,
-				"",
-				strconv.FormatUint(nextA.size, 10),
-				"",
-				nextA.hashAlgorithm,
-				"",
-				nextA.hashValue,
-				"",
-			}); err != nil {
-				return writeErr(err)
-			}
-			if diffRow != nil {
-				diffRow(DiffRowPayload{
-					DiffType: "missing from 2nd Drive",
-					Path:     nextA.relativePath,
-					SizeA:    strconv.FormatUint(nextA.size, 10),
-					HashA:    nextA.hashValue,
-				})
-			}
+
+		case nextB == nil || (nextA != nil && nextA.relativePath < nextB.relativePath):
+			// A path has no match in B — hold for hash cross-reference
+			unmatchedA[nextA.hashValue] = append(unmatchedA[nextA.hashValue], *nextA)
 			nextProgress(nextA.relativePath)
-			nextA, err = driveAIter.Next()
-			if err != nil && !errors.Is(err, io.EOF) {
+			if nextA, err = readA(); err != nil {
 				return writeErr(err)
 			}
-			if errors.Is(err, io.EOF) {
-				nextA = nil
-			}
+
 		default:
-			result.differences++
-			result.extraOnDriveB++
-			if err := writer.Write([]string{
-				"extra on 2nd Drive",
-				nextB.relativePath,
-				"",
-				nextB.fileName,
-				"",
-				strconv.FormatUint(nextB.size, 10),
-				"",
-				nextB.hashAlgorithm,
-				"",
-				nextB.hashValue,
+			// B path has no match in A — hold for hash cross-reference
+			unmatchedB[nextB.hashValue] = append(unmatchedB[nextB.hashValue], *nextB)
+			nextProgress(nextB.relativePath)
+			if nextB, err = readB(); err != nil {
+				return writeErr(err)
+			}
+		}
+	}
+
+	// ── Pass 2: in-memory hash cross-reference ────────────────────────────────
+	writeDiffRow := func(cols [11]string) error {
+		return writer.Write(cols[:])
+	}
+	emitDiff := func(payload DiffRowPayload) {
+		result.differences++
+		if diffRow != nil {
+			diffRow(payload)
+		}
+	}
+
+	for hash, aRows := range unmatchedA {
+		bRows := unmatchedB[hash]
+		if len(bRows) == 0 {
+			// Hash exists only on A — genuinely missing from B (alarming)
+			for _, r := range aRows {
+				emitDiff(DiffRowPayload{
+					DiffType: "missing from 2nd Drive (no match)",
+					PathA:    r.relativePath,
+					SizeA:    strconv.FormatUint(r.size, 10),
+					HashA:    r.hashValue,
+				})
+				result.missingNoMatch++
+				if err := writeDiffRow([11]string{
+					"missing from 2nd Drive (no match)",
+					r.relativePath, r.fileName,
+					"", "",
+					strconv.FormatUint(r.size, 10), "",
+					r.hashAlgorithm, "",
+					r.hashValue, "",
+				}); err != nil {
+					return writeErr(err)
+				}
+			}
+			continue
+		}
+		// Hash present on both sides — cross-match as moved/renamed + duplicates
+		matchCount := len(aRows)
+		if len(bRows) < matchCount {
+			matchCount = len(bRows)
+		}
+		for i := 0; i < matchCount; i++ {
+			a, b := aRows[i], bRows[i]
+			emitDiff(DiffRowPayload{
+				DiffType: "moved/renamed",
+				PathA:    a.relativePath,
+				PathB:    b.relativePath,
+				SizeA:    strconv.FormatUint(a.size, 10),
+				SizeB:    strconv.FormatUint(b.size, 10),
+				HashA:    a.hashValue,
+				HashB:    b.hashValue,
+			})
+			result.movedFiles++
+			if err := writeDiffRow([11]string{
+				"moved/renamed",
+				a.relativePath, a.fileName,
+				b.relativePath, b.fileName,
+				strconv.FormatUint(a.size, 10), strconv.FormatUint(b.size, 10),
+				a.hashAlgorithm, b.hashAlgorithm,
+				a.hashValue, b.hashValue,
 			}); err != nil {
 				return writeErr(err)
 			}
-			if diffRow != nil {
-				diffRow(DiffRowPayload{
-					DiffType: "extra on 2nd Drive",
-					Path:     nextB.relativePath,
-					SizeB:    strconv.FormatUint(nextB.size, 10),
-					HashB:    nextB.hashValue,
-				})
-			}
-			nextProgress(nextB.relativePath)
-			nextB, err = driveBIter.Next()
-			if err != nil && !errors.Is(err, io.EOF) {
+		}
+		// Extra B copies beyond what A had
+		for i := matchCount; i < len(bRows); i++ {
+			b := bRows[i]
+			emitDiff(DiffRowPayload{
+				DiffType: "duplicate on 2nd Drive",
+				PathB:    b.relativePath,
+				SizeB:    strconv.FormatUint(b.size, 10),
+				HashB:    b.hashValue,
+			})
+			result.duplicatesOnB++
+			if err := writeDiffRow([11]string{
+				"duplicate on 2nd Drive",
+				"", "",
+				b.relativePath, b.fileName,
+				"", strconv.FormatUint(b.size, 10),
+				"", b.hashAlgorithm,
+				"", b.hashValue,
+			}); err != nil {
 				return writeErr(err)
 			}
-			if errors.Is(err, io.EOF) {
-				nextB = nil
+		}
+		// Extra A copies beyond what B had
+		for i := matchCount; i < len(aRows); i++ {
+			a := aRows[i]
+			emitDiff(DiffRowPayload{
+				DiffType: "duplicate on 1st Drive",
+				PathA:    a.relativePath,
+				SizeA:    strconv.FormatUint(a.size, 10),
+				HashA:    a.hashValue,
+			})
+			result.duplicatesOnA++
+			if err := writeDiffRow([11]string{
+				"duplicate on 1st Drive",
+				a.relativePath, a.fileName,
+				"", "",
+				strconv.FormatUint(a.size, 10), "",
+				a.hashAlgorithm, "",
+				a.hashValue, "",
+			}); err != nil {
+				return writeErr(err)
+			}
+		}
+		delete(unmatchedB, hash)
+	}
+
+	// Remaining unmatchedB entries have no hash anywhere on A (alarming)
+	for _, bRows := range unmatchedB {
+		for _, b := range bRows {
+			emitDiff(DiffRowPayload{
+				DiffType: "extra on 2nd Drive (no match)",
+				PathB:    b.relativePath,
+				SizeB:    strconv.FormatUint(b.size, 10),
+				HashB:    b.hashValue,
+			})
+			result.extraNoMatch++
+			if err := writeDiffRow([11]string{
+				"extra on 2nd Drive (no match)",
+				"", "",
+				b.relativePath, b.fileName,
+				"", strconv.FormatUint(b.size, 10),
+				"", b.hashAlgorithm,
+				"", b.hashValue,
+			}); err != nil {
+				return writeErr(err)
 			}
 		}
 	}
@@ -409,6 +525,7 @@ func compareScanOutputs(
 		return writeErr(err)
 	}
 
+	result.verdict = computeVerdict(result)
 	result.elapsed = time.Since(startedAt)
 	if err := writeCloneVerificationReport(result.reportPath, result); err != nil {
 		cleanupScanArtifacts(diffPath, result.reportPath)
@@ -422,13 +539,10 @@ func writeCloneVerificationReport(reportPath string, result cloneVerificationDon
 }
 
 func buildCloneVerificationReport(result cloneVerificationDone) string {
-	status := "match"
-	if result.differences > 0 {
-		status = "differences found"
-	}
 	lines := []string{
 		"Clone Verification Report",
-		fmt.Sprintf("Verification result: %s", status),
+		fmt.Sprintf("Verdict: %s", result.verdict),
+		strings.Repeat("━", 38),
 		fmt.Sprintf("1st Drive folder: %s", valueOrDefault(result.driveA.sourceName, "unknown")),
 		fmt.Sprintf("2nd Drive folder: %s", valueOrDefault(result.driveB.sourceName, "unknown")),
 		fmt.Sprintf("1st Drive content list: %s", filepath.Base(result.driveA.outputPath)),
@@ -437,36 +551,72 @@ func buildCloneVerificationReport(result cloneVerificationDone) string {
 		fmt.Sprintf("2nd Drive summary report: %s", filepath.Base(result.driveB.reportPath)),
 		fmt.Sprintf("Differences CSV: %s", filepath.Base(result.diffPath)),
 		fmt.Sprintf("Verification hash: %s", result.hashAlgorithm.OptionLabel()),
-		fmt.Sprintf("Matched paths checked: %d", result.compared),
-		fmt.Sprintf("Missing from 2nd Drive: %d", result.missingFromDriveB),
-		fmt.Sprintf("Extra on 2nd Drive: %d", result.extraOnDriveB),
-		fmt.Sprintf("Size mismatches: %d", result.sizeMismatches),
+		"",
+		fmt.Sprintf("Exact path + content matches: %d", result.compared),
+		fmt.Sprintf("Content matches (moved/renamed): %d", result.movedFiles),
 		fmt.Sprintf("Hash mismatches: %d", result.hashMismatches),
-		fmt.Sprintf("Total differences: %d", result.differences),
+		"",
+		fmt.Sprintf("⚠ Missing from 2nd Drive (no hash match): %d", result.missingNoMatch),
+		fmt.Sprintf("⚠ Extra on 2nd Drive (no hash match): %d", result.extraNoMatch),
+		"",
+		fmt.Sprintf("Duplicates on 2nd Drive: %d", result.duplicatesOnB),
+		fmt.Sprintf("Duplicates on 1st Drive: %d", result.duplicatesOnA),
+		fmt.Sprintf("System paths excluded: %d", result.excludedSystem),
 		fmt.Sprintf("Finished in: %s", result.elapsed.Round(time.Millisecond)),
+		"",
 	}
+	lines = append(lines, verdictSummaryLines(result)...)
 	return strings.Join(lines, "\n") + "\n"
 }
 
-func buildCloneVerificationSummary(result cloneVerificationDone) string {
-	status := "Clone verification passed."
-	if result.differences > 0 {
-		status = "Clone verification found differences."
+func verdictSummaryLines(result cloneVerificationDone) []string {
+	switch result.verdict {
+	case verdictExactClone:
+		return []string{
+			"EXACT CLONE — All files verified present on both drives at identical paths.",
+			"No files are missing, moved, or corrupted.",
+		}
+	case verdictContentClone:
+		lines := []string{
+			fmt.Sprintf("CONTENT CLONE — All files verified present on both drives."),
+			fmt.Sprintf("%d file(s) detected at different paths (folder renamed or moved).", result.movedFiles),
+			"No files are missing or corrupted.",
+		}
+		if result.duplicatesOnB > 0 {
+			lines = append(lines, fmt.Sprintf("%d extra duplicate(s) found on 2nd Drive.", result.duplicatesOnB))
+		}
+		if result.duplicatesOnA > 0 {
+			lines = append(lines, fmt.Sprintf("%d extra duplicate(s) found on 1st Drive.", result.duplicatesOnA))
+		}
+		return lines
+	default:
+		lines := []string{"NOT A CLONE — Verification failed."}
+		if result.missingNoMatch > 0 {
+			lines = append(lines, fmt.Sprintf("%d file(s) missing from 2nd Drive with no hash match anywhere.", result.missingNoMatch))
+		}
+		if result.extraNoMatch > 0 {
+			lines = append(lines, fmt.Sprintf("%d extra file(s) on 2nd Drive with no hash match anywhere.", result.extraNoMatch))
+		}
+		if result.hashMismatches > 0 {
+			lines = append(lines, fmt.Sprintf("%d file(s) at matching paths have different hash values (possible corruption).", result.hashMismatches))
+		}
+		return lines
 	}
+}
+
+func buildCloneVerificationSummary(result cloneVerificationDone) string {
 	lines := []string{
-		status,
+		fmt.Sprintf("Verdict: %s", result.verdict),
 		fmt.Sprintf("1st Drive folder: %s", valueOrDefault(result.driveA.sourceName, "unknown")),
 		fmt.Sprintf("2nd Drive folder: %s", valueOrDefault(result.driveB.sourceName, "unknown")),
-		fmt.Sprintf("1st Drive content list: %s", filepath.Base(result.driveA.outputPath)),
-		fmt.Sprintf("2nd Drive content list: %s", filepath.Base(result.driveB.outputPath)),
 		fmt.Sprintf("Differences CSV: %s", filepath.Base(result.diffPath)),
 		fmt.Sprintf("Clone report: %s", filepath.Base(result.reportPath)),
 		fmt.Sprintf("Verification hash: %s", result.hashAlgorithm.OptionLabel()),
-		fmt.Sprintf("Missing from 2nd Drive: %d", result.missingFromDriveB),
-		fmt.Sprintf("Extra on 2nd Drive: %d", result.extraOnDriveB),
-		fmt.Sprintf("Size mismatches: %d", result.sizeMismatches),
+		fmt.Sprintf("Exact matches: %d", result.compared),
+		fmt.Sprintf("Moved/renamed: %d", result.movedFiles),
 		fmt.Sprintf("Hash mismatches: %d", result.hashMismatches),
-		fmt.Sprintf("Total differences: %d", result.differences),
+		fmt.Sprintf("Missing (no match): %d", result.missingNoMatch),
+		fmt.Sprintf("Extra (no match): %d", result.extraNoMatch),
 		fmt.Sprintf("Finished in: %s", result.elapsed.Round(time.Millisecond)),
 	}
 	return strings.Join(lines, "\n")

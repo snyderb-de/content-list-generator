@@ -18,10 +18,11 @@ import (
 const appVersion = "1.0.0"
 
 type App struct {
-	ctx         context.Context
-	startDir    string
-	cloneCancel func()
-	emailCancel func()
+	ctx          context.Context
+	startDir     string
+	cloneCancel  func()
+	emailCancel  func()
+	cloneDriveBCh chan string // non-nil only while awaiting drive B in single-drive mode
 }
 
 func newApp(startDir string) *App {
@@ -225,6 +226,7 @@ func (a *App) StartScan(opts ScanOptions) error {
 			FilteredHidden:  done.filteredHidden,
 			FilteredSystem:  done.filteredSystem,
 			FilteredExts:    done.filteredExts,
+			FilteredOSNoise: done.filteredOSNoise,
 			SourceName:      done.sourceName,
 			OutputPath:      done.outputPath,
 			OutputPaths:     done.outputPaths,
@@ -335,8 +337,53 @@ func (a *App) CancelEmailCopy() {
 	}
 }
 
+// startCloneScanProgressTicker emits clone:progress events every 250 ms during a scan phase.
+// Returns a stop func that blocks until the goroutine exits.
+func (a *App) startCloneScanProgressTicker(drivePhase string) func() {
+	tickCtx, stop := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(250 * time.Millisecond)
+		defer ticker.Stop()
+		var prevBytes uint64
+		var prevTick time.Time
+		for {
+			select {
+			case <-tickCtx.Done():
+				return
+			case t := <-ticker.C:
+				stats := currentProgress()
+				var bps float64
+				if !prevTick.IsZero() {
+					dt := t.Sub(prevTick).Seconds()
+					if dt > 0 && stats.bytes >= prevBytes {
+						bps = float64(stats.bytes-prevBytes) / dt
+					}
+				}
+				prevBytes = stats.bytes
+				prevTick = t
+				wailsRuntime.EventsEmit(a.ctx, "clone:progress", CloneProgressPayload{
+					Phase:       drivePhase,
+					SubPhase:    progressPhaseLabel(stats.phase),
+					Percent:     progressFraction(stats),
+					CurrentItem: stats.currentItem,
+					Files:       stats.files,
+					TotalFiles:  stats.totalFiles,
+					Bytes:       stats.bytes,
+					TotalBytes:  stats.totalBytes,
+					BytesPerSec: bps,
+					ETASecs:     progressETA(stats, t).Seconds(),
+					ElapsedSecs: time.Since(stats.startedAt).Seconds(),
+				})
+			}
+		}
+	}()
+	return func() { stop(); <-done }
+}
+
 func (a *App) StartCloneCompare(opts CloneCompareOptions) error {
-	if filepath.Clean(opts.DriveA) == filepath.Clean(opts.DriveB) {
+	if opts.DriveB != "" && filepath.Clean(opts.DriveA) == filepath.Clean(opts.DriveB) {
 		return fmt.Errorf("1st Drive and 2nd Drive must be different folders")
 	}
 	go func() {
@@ -360,7 +407,9 @@ func (a *App) StartCloneCompare(opts CloneCompareOptions) error {
 		a.cloneCancel = cancel
 
 		wailsRuntime.EventsEmit(a.ctx, "clone:progress", CloneProgressPayload{Phase: "scan-a"})
+		stopTickerA := a.startCloneScanProgressTicker("scan-a")
 		driveAResult, err := runScanWithContext(ctx, opts.DriveA, outputPath, scanOpts)
+		stopTickerA()
 		if err != nil {
 			clearActiveScanCancel(token)
 			cancel()
@@ -373,9 +422,37 @@ func (a *App) StartCloneCompare(opts CloneCompareOptions) error {
 			return
 		}
 
+		driveB := opts.DriveB
+		if driveB == "" {
+			// Single-drive mode: pause and wait for user to swap drives and provide Drive B path.
+			ch := make(chan string, 1)
+			a.cloneDriveBCh = ch
+			wailsRuntime.EventsEmit(a.ctx, "clone:awaiting-drive-b", nil)
+			select {
+			case path, ok := <-ch:
+				a.cloneDriveBCh = nil
+				if !ok {
+					clearActiveScanCancel(token)
+					cancel()
+					a.cloneCancel = nil
+					wailsRuntime.EventsEmit(a.ctx, "clone:canceled")
+					return
+				}
+				driveB = path
+			case <-ctx.Done():
+				a.cloneDriveBCh = nil
+				clearActiveScanCancel(token)
+				a.cloneCancel = nil
+				wailsRuntime.EventsEmit(a.ctx, "clone:canceled")
+				return
+			}
+		}
+
 		wailsRuntime.EventsEmit(a.ctx, "clone:progress", CloneProgressPayload{Phase: "scan-b"})
+		stopTickerB := a.startCloneScanProgressTicker("scan-b")
 		driveBOutputPath := cloneOutputPathForDriveB(outputPath)
-		driveBResult, err := runScanWithContext(ctx, opts.DriveB, driveBOutputPath, scanOpts)
+		driveBResult, err := runScanWithContext(ctx, driveB, driveBOutputPath, scanOpts)
+		stopTickerB()
 		clearActiveScanCancel(token)
 		if err != nil {
 			cancel()
@@ -432,22 +509,40 @@ func (a *App) StartCloneCompare(opts CloneCompareOptions) error {
 		}
 
 		wailsRuntime.EventsEmit(a.ctx, "clone:done", CloneDonePayload{
-			DiffPath:          result.diffPath,
-			ReportPath:        result.reportPath,
-			HashAlgorithm:     string(result.hashAlgorithm),
-			ElapsedSecs:       result.elapsed.Seconds(),
-			Compared:          result.compared,
-			Differences:       result.differences,
-			MissingFromDriveB: result.missingFromDriveB,
-			ExtraOnDriveB:     result.extraOnDriveB,
-			SizeMismatches:    result.sizeMismatches,
-			HashMismatches:    result.hashMismatches,
+			DiffPath:       result.diffPath,
+			ReportPath:     result.reportPath,
+			HashAlgorithm:  string(result.hashAlgorithm),
+			ElapsedSecs:    result.elapsed.Seconds(),
+			Verdict:        string(result.verdict),
+			Compared:       result.compared,
+			Differences:    result.differences,
+			MovedFiles:     result.movedFiles,
+			DuplicatesOnB:  result.duplicatesOnB,
+			DuplicatesOnA:  result.duplicatesOnA,
+			MissingNoMatch: result.missingNoMatch,
+			ExtraNoMatch:   result.extraNoMatch,
+			SizeMismatches: result.sizeMismatches,
+			HashMismatches: result.hashMismatches,
+			ExcludedSystem: result.excludedSystem,
 		})
 	}()
 	return nil
 }
 
+func (a *App) ResumeCloneWithDriveB(path string) error {
+	ch := a.cloneDriveBCh
+	if ch == nil {
+		return fmt.Errorf("no clone compare awaiting drive B")
+	}
+	ch <- path
+	return nil
+}
+
 func (a *App) CancelCloneCompare() {
+	if ch := a.cloneDriveBCh; ch != nil {
+		a.cloneDriveBCh = nil
+		close(ch)
+	}
 	if a.cloneCancel != nil {
 		a.cloneCancel()
 	}

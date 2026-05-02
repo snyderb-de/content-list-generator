@@ -106,6 +106,56 @@ App struct bound to Wails runtime. All scan logic delegates to existing `core.go
 - ⬜ Test email copy, clone compare end-to-end in release binary
 - ⬜ App icon (build/darwin/icon.icns)
 
+### Phase 6 — Clone Compare Engine (two-pass + verdict) ✅
+- ✅ Hardcoded OS noise exclusions (Windows + macOS) — `isAlwaysExcludedDir/File` in `main.go`, `OS_NOISE_*` in Python
+- ✅ Two-pass compare engine — Pass 1 sorted merge, Pass 2 hash cross-reference for moved/renamed/duplicate detection
+- ✅ Verdict system — `Exact Clone` / `Content Clone` / `Not a Clone`
+- ✅ Updated diff CSV — 11 columns, split path columns, new diff types
+- ✅ Frontend — verdict badge (green/amber/red), alarming rows in own section, moved/renamed shows both paths
+- ✅ Documentation — `docs/clone-verdict-explained.md`, updated investigation guide
+- ✅ Python parity — full two-pass engine + verdict in `content_list_core.py` + deploy copy
+
+### Phase 7 — Soft Compare (PDF Document ID tolerance)
+
+**Problem:** PDFs independently exported from the same source produce identical
+visible content but different binary hashes due to unique document IDs embedded
+in the PDF cross-reference trailer. The binary diff is confined to ~800 bytes at
+the end of each file. Hash-based verification correctly flags these as `Not a Clone`
+but the records themselves are present and uncorrupted.
+
+**Real-world case:** City of Newark drives CON-P74THY / CON-M4EM1V — 1,831 PDFs
+with matching names + sizes, different document IDs, otherwise byte-identical.
+See `docs/clone-verdict-explained.md`.
+
+**Approach:** Optional secondary pass triggered by a checkbox on the Clone Compare
+form. For each hash mismatch on a `.pdf` file where sizes match:
+1. Read the last 2 KB of both files
+2. Strip `/ID [<...><...>]` from the trailer of each
+3. Byte-compare remaining content
+4. If identical → reclassify as `"metadata-only (PDF document IDs)"`
+
+**New verdict:** `Metadata Clone` — sits between Content Clone and Not a Clone:
+```
+Exact Clone    — zero differences
+Content Clone  — moved/renamed only, no missing/extra/corrupt
+Metadata Clone — same as Content Clone + PDF ID-only diffs, no missing/extra
+Not a Clone    — genuinely missing, extra, or hash-corrupted files
+```
+
+**New fields on `cloneVerificationDone`:**
+- `metadataOnlyDiffs uint64`
+- `softCompare bool` (option flag)
+
+**New diff type:** `"metadata-only (PDF document IDs)"`
+
+**UI changes:**
+- Checkbox on Clone Compare form: "Soft compare (ignore PDF document IDs)"
+- On done screen: `Metadata-only diffs` stat block when `metadataOnlyDiffs > 0`
+- Verdict badge: `≈ METADATA CLONE` in a distinct amber/teal color
+
+**Files:** `clone_compare.go`, `app_types.go`, `app.go`, `frontend/src/screens/CloneCompare.tsx`,
+`python/content_list_core.py`, `deploy/` copy
+
 ## File Map
 
 | New file | Purpose |

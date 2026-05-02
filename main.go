@@ -1283,6 +1283,9 @@ func parseExcludedExtensions(input string) (map[string]struct{}, error) {
 }
 
 func shouldSkipFile(path, name string, options scanOptions) (string, bool) {
+	if isAlwaysExcludedFile(name) {
+		return "os noise", true
+	}
 	if options.ExcludeHidden && hasHiddenComponent(path) {
 		return "hidden path", true
 	}
@@ -1293,6 +1296,44 @@ func shouldSkipFile(path, name string, options scanOptions) (string, bool) {
 		return "excluded extension", true
 	}
 	return "", false
+}
+
+// isAlwaysExcludedDir reports whether a directory should always be skipped
+// regardless of user settings. These are OS infrastructure directories that
+// are never archival content.
+func isAlwaysExcludedDir(name string) bool {
+	switch strings.ToLower(name) {
+	case "$recycle.bin",
+		"system volume information",
+		".spotlight-v100",
+		".trashes",
+		".fseventsd",
+		".temporaryitems",
+		".documentrevisions-v100":
+		return true
+	}
+	return false
+}
+
+// isAlwaysExcludedFile reports whether a file should always be skipped
+// regardless of user settings. Covers OS noise: temp files, thumbnails,
+// Windows swap files, macOS resource forks, Office/LibreOffice lock files.
+func isAlwaysExcludedFile(name string) bool {
+	lower := strings.ToLower(name)
+	switch lower {
+	case "pagefile.sys", "hiberfil.sys", "swapfile.sys",
+		"thumbs.db", "ehthumbs.db", "desktop.ini", ".ds_store":
+		return true
+	}
+	if strings.HasPrefix(lower, "~$") ||
+		strings.HasPrefix(lower, ".~lock.") ||
+		strings.HasPrefix(name, "._") {
+		return true
+	}
+	if strings.HasSuffix(lower, ".tmp") {
+		return true
+	}
+	return false
 }
 
 func hasHiddenComponent(path string) bool {
