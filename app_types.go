@@ -98,6 +98,7 @@ type CloneCompareOptions struct {
 	DriveB        string `json:"driveB"`
 	OutputDir     string `json:"outputDir"`
 	HashAlgorithm string `json:"hashAlgorithm"`
+	SoftCompare   bool   `json:"softCompare"`
 }
 
 type CloneProgressPayload struct {
@@ -142,5 +143,7 @@ type CloneDonePayload struct {
 	ExtraNoMatch   uint64  `json:"extraNoMatch"`
 	SizeMismatches uint64  `json:"sizeMismatches"`
 	HashMismatches uint64  `json:"hashMismatches"`
-	ExcludedSystem uint64  `json:"excludedSystem"`
+	ExcludedSystem    uint64  `json:"excludedSystem"`
+	MetadataOnlyDiffs uint64  `json:"metadataOnlyDiffs"`
+	SoftCompare       bool    `json:"softCompare"`
 }

@@ -478,6 +478,7 @@ func (a *App) StartCloneCompare(opts CloneCompareOptions) error {
 			driveBResult,
 			diffPath,
 			reportPath,
+			opts.SoftCompare,
 			func(p cloneCompareProgress) {
 				total := driveAResult.files
 				if driveBResult.files > total {
@@ -523,7 +524,9 @@ func (a *App) StartCloneCompare(opts CloneCompareOptions) error {
 			ExtraNoMatch:   result.extraNoMatch,
 			SizeMismatches: result.sizeMismatches,
 			HashMismatches: result.hashMismatches,
-			ExcludedSystem: result.excludedSystem,
+			ExcludedSystem:    result.excludedSystem,
+			MetadataOnlyDiffs: result.metadataOnlyDiffs,
+			SoftCompare:       result.softCompare,
 		})
 	}()
 	return nil

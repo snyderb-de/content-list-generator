@@ -96,6 +96,7 @@ export interface CloneCompareOptions {
   driveB: string
   outputDir: string
   hashAlgorithm: string
+  softCompare: boolean
 }
 
 export interface CloneProgressPayload {
@@ -141,6 +142,8 @@ export interface CloneDonePayload {
   sizeMismatches: number
   hashMismatches: number
   excludedSystem: number
+  metadataOnlyDiffs: number
+  softCompare: boolean
 }
 
 export const HASH_ALGORITHMS = [

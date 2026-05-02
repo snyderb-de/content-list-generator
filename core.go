@@ -33,6 +33,7 @@ type scanDoneMsg struct {
 	errors          uint64
 	filtered        uint64
 	sourceName      string
+	sourceDir       string
 	outputPath      string
 	outputPaths     []string
 	xlsxPath        string
@@ -707,6 +708,7 @@ func runScanWithContext(parent context.Context, sourceDir, outputPath string, op
 		errors:          stats.errors.Load(),
 		filtered:        stats.filtered.Load(),
 		sourceName:      folderDisplayName(sourceDir),
+		sourceDir:       sourceDir,
 		outputPath:      csvPaths[0],
 		outputPaths:     csvPaths,
 		xlsxPath:        xlsxPath,

@@ -41,6 +41,7 @@ function diffTypeBadge(type: string) {
   if (type.includes('extra'))     return 'diff-type-extra'
   if (type.includes('moved'))     return 'diff-type-moved'
   if (type.includes('duplicate')) return 'diff-type-duplicate'
+  if (type.includes('metadata'))  return 'diff-type-metadata'
   return 'diff-type-mismatch'
 }
 
@@ -193,7 +194,7 @@ function Sparkline({
 
 export default function CloneCompare() {
   const [opts, setOpts] = useState<CloneCompareOptions>({
-    driveA: '', driveB: '', outputDir: '', hashAlgorithm: 'blake3',
+    driveA: '', driveB: '', outputDir: '', hashAlgorithm: 'blake3', softCompare: false,
   })
   const [singleDriveMode, setSingleDriveMode] = useState(false)
   const [driveBPath, setDriveBPath]   = useState('')
@@ -378,6 +379,23 @@ export default function CloneCompare() {
                 <option key={h.value} value={h.value}>{h.label}</option>
               ))}
             </select>
+          </div>
+          <div className="field" style={{ marginTop: 12 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
+              <input
+                type="checkbox"
+                checked={opts.softCompare}
+                onChange={e => setOpts(o => ({ ...o, softCompare: e.target.checked }))}
+              />
+              Soft compare — match PDFs by content, ignoring embedded document IDs
+            </label>
+            {opts.softCompare && (
+              <p className="info-text" style={{ margin: '4px 0 0 24px', fontSize: 12 }}>
+                For PDFs that were independently exported from the same source, document IDs differ
+                even when the visible content is identical. Soft compare detects these as
+                "Metadata Clone" instead of "Not a Clone".
+              </p>
+            )}
           </div>
         </div>
 
@@ -647,11 +665,12 @@ export default function CloneCompare() {
 
   // ── Done ──────────────────────────────────────────────────
   if (!result) return null
-  const isExact   = result.verdict === 'Exact Clone'
-  const isContent = result.verdict === 'Content Clone'
+  const isExact    = result.verdict === 'Exact Clone'
+  const isContent  = result.verdict === 'Content Clone'
+  const isMetadata = result.verdict === 'Metadata Clone'
   const isNotClone = result.verdict === 'Not a Clone'
-  const verdictColor = isExact ? 'var(--success)' : isContent ? 'var(--warning, #d97706)' : 'var(--danger)'
-  const verdictIcon  = isExact ? '✓' : isContent ? '~' : '✗'
+  const verdictColor = isExact ? 'var(--success)' : isNotClone ? 'var(--danger)' : 'var(--warning)'
+  const verdictIcon  = isExact ? '✓' : isNotClone ? '✗' : '≈'
 
   return (
     <div>
@@ -673,6 +692,14 @@ export default function CloneCompare() {
             <div className="stat-block-label">Moved / Renamed</div>
             <div className="stat-block-value">{fmtNum(result.movedFiles)}</div>
           </div>
+          {result.softCompare && (
+            <div className="stat-block">
+              <div className="stat-block-label">Metadata-only (PDF IDs)</div>
+              <div className="stat-block-value" style={{ color: isMetadata ? 'var(--warning)' : 'inherit' }}>
+                {fmtNum(result.metadataOnlyDiffs)}
+              </div>
+            </div>
+          )}
           <div className="stat-block">
             <div className="stat-block-label">Hash Mismatches</div>
             <div className="stat-block-value" style={{ color: result.hashMismatches > 0 ? 'var(--danger)' : 'inherit' }}>

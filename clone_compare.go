@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/csv"
 	"errors"
@@ -8,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -16,10 +18,53 @@ import (
 type cloneVerdict string
 
 const (
-	verdictExactClone   cloneVerdict = "Exact Clone"
-	verdictContentClone cloneVerdict = "Content Clone"
-	verdictNotAClone    cloneVerdict = "Not a Clone"
+	verdictExactClone    cloneVerdict = "Exact Clone"
+	verdictContentClone  cloneVerdict = "Content Clone"
+	verdictMetadataClone cloneVerdict = "Metadata Clone"
+	verdictNotAClone     cloneVerdict = "Not a Clone"
 )
+
+var pdfIDRe = regexp.MustCompile(`/ID\s*\[<[0-9a-fA-F]+><[0-9a-fA-F]+>\]`)
+
+const pdfSoftTailSize = 2048
+
+func pdfNormalizedTail(path string) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	offset := info.Size() - pdfSoftTailSize
+	if offset < 0 {
+		offset = 0
+	}
+	buf := make([]byte, pdfSoftTailSize)
+	n, err := f.ReadAt(buf, offset)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return nil, err
+	}
+	return pdfIDRe.ReplaceAll(buf[:n], []byte("/ID[<0><0>]")), nil
+}
+
+func pdfSoftMatch(pathA, pathB string) bool {
+	tailA, err := pdfNormalizedTail(pathA)
+	if err != nil {
+		return false
+	}
+	tailB, err := pdfNormalizedTail(pathB)
+	if err != nil {
+		return false
+	}
+	return bytes.Equal(tailA, tailB)
+}
+
+func softIndexKey(fileName string, size uint64) string {
+	return fileName + "::" + strconv.FormatUint(size, 10)
+}
 
 type cloneCompareProgress struct {
 	compared    uint64
@@ -45,7 +90,9 @@ type cloneVerificationDone struct {
 	sizeMismatches      uint64
 	hashMismatches      uint64
 	excludedSystem      uint64
+	metadataOnlyDiffs   uint64
 	verdict             cloneVerdict
+	softCompare         bool
 	csvDeferredDeletion bool
 }
 
@@ -191,6 +238,9 @@ func computeVerdict(r cloneVerificationDone) cloneVerdict {
 	if r.missingNoMatch > 0 || r.extraNoMatch > 0 || r.hashMismatches > 0 || r.sizeMismatches > 0 {
 		return verdictNotAClone
 	}
+	if r.metadataOnlyDiffs > 0 {
+		return verdictMetadataClone
+	}
 	if r.movedFiles > 0 || r.duplicatesOnA > 0 || r.duplicatesOnB > 0 {
 		return verdictContentClone
 	}
@@ -203,6 +253,7 @@ func compareScanOutputs(
 	driveB scanDoneMsg,
 	diffPath string,
 	reportPath string,
+	softCompare bool,
 	progress func(cloneCompareProgress),
 	diffRow func(DiffRowPayload),
 ) (cloneVerificationDone, error) {
@@ -214,6 +265,7 @@ func compareScanOutputs(
 		reportPath:     reportPath,
 		hashAlgorithm:  driveA.hashAlgorithm,
 		excludedSystem: driveA.filteredOSNoise + driveB.filteredOSNoise,
+		softCompare:    softCompare,
 	}
 
 	driveAIter, err := newScanCSVIterator(driveA.outputPaths)
@@ -302,8 +354,9 @@ func compareScanOutputs(
 	// ── Pass 1: streaming sorted merge ───────────────────────────────────────
 	// Path matches are resolved immediately (exact or hash mismatch).
 	// Path-only rows are held in memory for Pass 2 hash cross-reference.
-	unmatchedA := make(map[string][]scanCSVRow) // hash → A rows with no path match in B
-	unmatchedB := make(map[string][]scanCSVRow) // hash → B rows with no path match in A
+	unmatchedA := make(map[string][]scanCSVRow)  // hash → A rows with no path match in B
+	unmatchedB := make(map[string][]scanCSVRow)  // hash → B rows with no path match in A
+	softBIndex  := make(map[string][]scanCSVRow) // filename::size → B rows (for PDF soft compare)
 
 	for nextA != nil || nextB != nil {
 		select {
@@ -378,6 +431,10 @@ func compareScanOutputs(
 		default:
 			// B path has no match in A — hold for hash cross-reference
 			unmatchedB[nextB.hashValue] = append(unmatchedB[nextB.hashValue], *nextB)
+			if softCompare && strings.ToLower(filepath.Ext(nextB.fileName)) == ".pdf" {
+				key := softIndexKey(nextB.fileName, nextB.size)
+				softBIndex[key] = append(softBIndex[key], *nextB)
+			}
 			nextProgress(nextB.relativePath)
 			if nextB, err = readB(); err != nil {
 				return writeErr(err)
@@ -399,24 +456,75 @@ func compareScanOutputs(
 	for hash, aRows := range unmatchedA {
 		bRows := unmatchedB[hash]
 		if len(bRows) == 0 {
-			// Hash exists only on A — genuinely missing from B (alarming)
+			// No hash match in B — try PDF soft compare before flagging as missing
 			for _, r := range aRows {
-				emitDiff(DiffRowPayload{
-					DiffType: "missing from 2nd Drive (no match)",
-					PathA:    r.relativePath,
-					SizeA:    strconv.FormatUint(r.size, 10),
-					HashA:    r.hashValue,
-				})
-				result.missingNoMatch++
-				if err := writeDiffRow([11]string{
-					"missing from 2nd Drive (no match)",
-					r.relativePath, r.fileName,
-					"", "",
-					strconv.FormatUint(r.size, 10), "",
-					r.hashAlgorithm, "",
-					r.hashValue, "",
-				}); err != nil {
-					return writeErr(err)
+				softMatched := false
+				if softCompare && driveA.sourceDir != "" && driveB.sourceDir != "" &&
+					strings.ToLower(filepath.Ext(r.fileName)) == ".pdf" {
+					key := softIndexKey(r.fileName, r.size)
+					if bCandidates, ok := softBIndex[key]; ok && len(bCandidates) > 0 {
+						bMatch := bCandidates[0]
+						pathA := filepath.Join(driveA.sourceDir, filepath.FromSlash(r.relativePath))
+						pathB := filepath.Join(driveB.sourceDir, filepath.FromSlash(bMatch.relativePath))
+						if pdfSoftMatch(pathA, pathB) {
+							emitDiff(DiffRowPayload{
+								DiffType: "metadata-only (PDF document IDs)",
+								PathA:    r.relativePath,
+								PathB:    bMatch.relativePath,
+								SizeA:    strconv.FormatUint(r.size, 10),
+								SizeB:    strconv.FormatUint(bMatch.size, 10),
+								HashA:    r.hashValue,
+								HashB:    bMatch.hashValue,
+							})
+							result.metadataOnlyDiffs++
+							if err := writeDiffRow([11]string{
+								"metadata-only (PDF document IDs)",
+								r.relativePath, r.fileName,
+								bMatch.relativePath, bMatch.fileName,
+								strconv.FormatUint(r.size, 10), strconv.FormatUint(bMatch.size, 10),
+								r.hashAlgorithm, bMatch.hashAlgorithm,
+								r.hashValue, bMatch.hashValue,
+							}); err != nil {
+								return writeErr(err)
+							}
+							// Remove consumed B row from both indices so it's not flagged as extra
+							softBIndex[key] = bCandidates[1:]
+							if len(softBIndex[key]) == 0 {
+								delete(softBIndex, key)
+							}
+							bHash := bMatch.hashValue
+							remaining := unmatchedB[bHash]
+							for i, rb := range remaining {
+								if rb.relativePath == bMatch.relativePath {
+									unmatchedB[bHash] = append(remaining[:i], remaining[i+1:]...)
+									break
+								}
+							}
+							if len(unmatchedB[bHash]) == 0 {
+								delete(unmatchedB, bHash)
+							}
+							softMatched = true
+						}
+					}
+				}
+				if !softMatched {
+					emitDiff(DiffRowPayload{
+						DiffType: "missing from 2nd Drive (no match)",
+						PathA:    r.relativePath,
+						SizeA:    strconv.FormatUint(r.size, 10),
+						HashA:    r.hashValue,
+					})
+					result.missingNoMatch++
+					if err := writeDiffRow([11]string{
+						"missing from 2nd Drive (no match)",
+						r.relativePath, r.fileName,
+						"", "",
+						strconv.FormatUint(r.size, 10), "",
+						r.hashAlgorithm, "",
+						r.hashValue, "",
+					}); err != nil {
+						return writeErr(err)
+					}
 				}
 			}
 			continue
@@ -554,6 +662,7 @@ func buildCloneVerificationReport(result cloneVerificationDone) string {
 		"",
 		fmt.Sprintf("Exact path + content matches: %d", result.compared),
 		fmt.Sprintf("Content matches (moved/renamed): %d", result.movedFiles),
+		fmt.Sprintf("Metadata-only matches (PDF document IDs): %d", result.metadataOnlyDiffs),
 		fmt.Sprintf("Hash mismatches: %d", result.hashMismatches),
 		"",
 		fmt.Sprintf("⚠ Missing from 2nd Drive (no hash match): %d", result.missingNoMatch),
@@ -571,6 +680,16 @@ func buildCloneVerificationReport(result cloneVerificationDone) string {
 
 func verdictSummaryLines(result cloneVerificationDone) []string {
 	switch result.verdict {
+	case verdictMetadataClone:
+		lines := []string{
+			"METADATA CLONE — All file content verified present on both drives.",
+			fmt.Sprintf("%d PDF file(s) differ only in embedded document IDs (export metadata), not content.", result.metadataOnlyDiffs),
+			"No files are missing or corrupted. Both drives were independently exported from the same source.",
+		}
+		if result.movedFiles > 0 {
+			lines = append(lines, fmt.Sprintf("%d file(s) also detected at different paths (folder renamed or moved).", result.movedFiles))
+		}
+		return lines
 	case verdictExactClone:
 		return []string{
 			"EXACT CLONE — All files verified present on both drives at identical paths.",

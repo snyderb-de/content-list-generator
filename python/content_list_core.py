@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import os
+import re
 import shutil
 import time
 import zipfile
@@ -89,9 +90,35 @@ CLONE_DIFF_HEADERS = [
     "2nd Drive Hash Value",
 ]
 
-CLONE_VERDICT_EXACT   = "Exact Clone"
-CLONE_VERDICT_CONTENT = "Content Clone"
-CLONE_VERDICT_NOT     = "Not a Clone"
+CLONE_VERDICT_EXACT    = "Exact Clone"
+CLONE_VERDICT_CONTENT  = "Content Clone"
+CLONE_VERDICT_METADATA = "Metadata Clone"
+CLONE_VERDICT_NOT      = "Not a Clone"
+
+_PDF_ID_RE = re.compile(rb'/ID\s*\[<[0-9a-fA-F]+><[0-9a-fA-F]+>\]')
+_PDF_SOFT_TAIL = 2048
+
+
+def _pdf_normalized_tail(path: Path) -> bytes | None:
+    try:
+        size = path.stat().st_size
+        offset = max(0, size - _PDF_SOFT_TAIL)
+        with path.open("rb") as f:
+            f.seek(offset)
+            tail = f.read(_PDF_SOFT_TAIL)
+        return _PDF_ID_RE.sub(b"/ID[<0><0>]", tail)
+    except OSError:
+        return None
+
+
+def _pdf_soft_match(path_a: Path, path_b: Path) -> bool:
+    tail_a = _pdf_normalized_tail(path_a)
+    tail_b = _pdf_normalized_tail(path_b)
+    return tail_a is not None and tail_b is not None and tail_a == tail_b
+
+
+def _soft_index_key(file_name: str, size: int) -> str:
+    return f"{file_name}::{size}"
 
 
 @dataclass
@@ -104,6 +131,7 @@ class SummaryEntry:
 @dataclass
 class ScanResult:
     source_name: str
+    source_dir: Path
     output_path: Path
     output_paths: list[Path]
     xlsx_path: Path | None
@@ -160,6 +188,8 @@ class CloneVerificationResult:
     size_mismatches: int
     hash_mismatches: int
     excluded_system: int
+    metadata_only_diffs: int = 0
+    soft_compare: bool = False
 
 
 @dataclass
@@ -929,6 +959,7 @@ def run_scan(
                 csv_deleted = True
         result = ScanResult(
             source_name=folder_display_name(source_dir),
+            source_dir=source_dir,
             output_path=csv_paths[0] if csv_paths else output_path,
             output_paths=csv_paths or [output_path],
             xlsx_path=xlsx_path,
@@ -1030,9 +1061,12 @@ def _compute_verdict(
     moved_files: int,
     duplicates_on_a: int,
     duplicates_on_b: int,
+    metadata_only_diffs: int = 0,
 ) -> str:
     if missing_no_match > 0 or extra_no_match > 0 or hash_mismatches > 0 or size_mismatches > 0:
         return CLONE_VERDICT_NOT
+    if metadata_only_diffs > 0:
+        return CLONE_VERDICT_METADATA
     if moved_files > 0 or duplicates_on_a > 0 or duplicates_on_b > 0:
         return CLONE_VERDICT_CONTENT
     return CLONE_VERDICT_EXACT
@@ -1043,6 +1077,7 @@ def compare_scan_outputs(
     drive_b: ScanResult,
     diff_path: Path,
     report_path: Path,
+    soft_compare: bool = False,
     progress_callback: Callable[[CloneCompareProgress], None] | None = None,
     cancel_event=None,
 ) -> CloneVerificationResult:
@@ -1056,6 +1091,7 @@ def compare_scan_outputs(
     extra_no_match = 0
     size_mismatches = 0
     hash_mismatches = 0
+    metadata_only_diffs = 0
     diff_path.parent.mkdir(parents=True, exist_ok=True)
 
     iterator_a = iter_scan_csv_rows(drive_a.output_paths)
@@ -1083,6 +1119,8 @@ def compare_scan_outputs(
     # unmatched_a / unmatched_b: hash → list[ScanCSVRow] for path-only rows
     unmatched_a: dict[str, list] = {}
     unmatched_b: dict[str, list] = {}
+    # soft_b_index: filename::size → list[ScanCSVRow] for PDF soft compare
+    soft_b_index: dict[str, list] = {}
 
     try:
         with diff_path.open("w", newline="", encoding="utf-8") as handle:
@@ -1135,6 +1173,9 @@ def compare_scan_outputs(
 
                 else:
                     unmatched_b.setdefault(next_b.hash_value, []).append(next_b)
+                    if soft_compare and next_b.file_name.lower().endswith(".pdf"):
+                        key = _soft_index_key(next_b.file_name, next_b.size)
+                        soft_b_index.setdefault(key, []).append(next_b)
                     send_progress(next_b.relative_path)
                     next_b = safe_next(iterator_b)
 
@@ -1143,16 +1184,50 @@ def compare_scan_outputs(
                 b_rows = unmatched_b.pop(hash_val, [])
                 if not b_rows:
                     for r in a_rows:
-                        differences += 1
-                        missing_no_match += 1
-                        writer.writerow([
-                            "missing from 2nd Drive (no match)",
-                            r.relative_path, r.file_name,
-                            "", "",
-                            str(r.size), "",
-                            r.hash_algorithm, "",
-                            r.hash_value, "",
-                        ])
+                        soft_matched = False
+                        if (soft_compare and drive_a.source_dir and drive_b.source_dir
+                                and r.file_name.lower().endswith(".pdf")):
+                            key = _soft_index_key(r.file_name, r.size)
+                            candidates = soft_b_index.get(key)
+                            if candidates:
+                                b_match = candidates[0]
+                                path_a = drive_a.source_dir / Path(r.relative_path)
+                                path_b = drive_b.source_dir / Path(b_match.relative_path)
+                                if _pdf_soft_match(path_a, path_b):
+                                    differences += 1
+                                    metadata_only_diffs += 1
+                                    writer.writerow([
+                                        "metadata-only (PDF document IDs)",
+                                        r.relative_path, r.file_name,
+                                        b_match.relative_path, b_match.file_name,
+                                        str(r.size), str(b_match.size),
+                                        r.hash_algorithm, b_match.hash_algorithm,
+                                        r.hash_value, b_match.hash_value,
+                                    ])
+                                    # remove consumed B row from both indices
+                                    soft_b_index[key] = candidates[1:]
+                                    if not soft_b_index[key]:
+                                        del soft_b_index[key]
+                                    b_hash = b_match.hash_value
+                                    remaining = unmatched_b.get(b_hash, [])
+                                    for i, rb in enumerate(remaining):
+                                        if rb.relative_path == b_match.relative_path:
+                                            unmatched_b[b_hash] = remaining[:i] + remaining[i+1:]
+                                            break
+                                    if not unmatched_b.get(b_hash):
+                                        unmatched_b.pop(b_hash, None)
+                                    soft_matched = True
+                        if not soft_matched:
+                            differences += 1
+                            missing_no_match += 1
+                            writer.writerow([
+                                "missing from 2nd Drive (no match)",
+                                r.relative_path, r.file_name,
+                                "", "",
+                                str(r.size), "",
+                                r.hash_algorithm, "",
+                                r.hash_value, "",
+                            ])
                     continue
 
                 match_count = min(len(a_rows), len(b_rows))
@@ -1211,7 +1286,7 @@ def compare_scan_outputs(
 
     verdict = _compute_verdict(
         missing_no_match, extra_no_match, hash_mismatches, size_mismatches,
-        moved_files, duplicates_on_a, duplicates_on_b,
+        moved_files, duplicates_on_a, duplicates_on_b, metadata_only_diffs,
     )
     result = CloneVerificationResult(
         drive_a=drive_a,
@@ -1231,6 +1306,8 @@ def compare_scan_outputs(
         size_mismatches=size_mismatches,
         hash_mismatches=hash_mismatches,
         excluded_system=drive_a.filtered_os_noise + drive_b.filtered_os_noise,
+        metadata_only_diffs=metadata_only_diffs,
+        soft_compare=soft_compare,
     )
     write_clone_verification_report(result)
     return result
@@ -1246,6 +1323,15 @@ def _verdict_summary_lines(result: CloneVerificationResult) -> list[str]:
             "EXACT CLONE — All files verified present on both drives at identical paths.",
             "No files are missing, moved, or corrupted.",
         ]
+    if result.verdict == CLONE_VERDICT_METADATA:
+        lines = [
+            "METADATA CLONE — All file content verified present on both drives.",
+            f"{result.metadata_only_diffs} PDF file(s) differ only in embedded document IDs (export metadata), not content.",
+            "No files are missing or corrupted. Both drives were independently exported from the same source.",
+        ]
+        if result.moved_files:
+            lines.append(f"{result.moved_files} file(s) also detected at different paths (folder renamed or moved).")
+        return lines
     if result.verdict == CLONE_VERDICT_CONTENT:
         lines = [
             "CONTENT CLONE — All files verified present on both drives.",
@@ -1283,6 +1369,7 @@ def build_clone_verification_report(result: CloneVerificationResult) -> str:
         "",
         f"Exact path + content matches: {result.compared}",
         f"Content matches (moved/renamed): {result.moved_files}",
+        f"Metadata-only matches (PDF document IDs): {result.metadata_only_diffs}",
         f"Hash mismatches: {result.hash_mismatches}",
         "",
         f"⚠ Missing from 2nd Drive (no hash match): {result.missing_no_match}",

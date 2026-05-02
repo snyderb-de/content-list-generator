@@ -613,6 +613,11 @@ html, body {
   color: var(--warning);
 }
 
+.diff-type-metadata {
+  background: rgba(20, 184, 166, 0.1);
+  color: #14b8a6;
+}
+
 .diff-row-alarming td {
   background: var(--danger-bg);
 }

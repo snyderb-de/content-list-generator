@@ -1,21 +1,23 @@
 export namespace main {
-	
+
 	export class CloneCompareOptions {
 	    driveA: string;
 	    driveB: string;
 	    outputDir: string;
 	    hashAlgorithm: string;
-	
+	    softCompare: boolean;
+
 	    static createFrom(source: any = {}) {
 	        return new CloneCompareOptions(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.driveA = source["driveA"];
 	        this.driveB = source["driveB"];
 	        this.outputDir = source["outputDir"];
 	        this.hashAlgorithm = source["hashAlgorithm"];
+	        this.softCompare = source["softCompare"];
 	    }
 	}
 	export class ScanOptions {
@@ -29,11 +31,11 @@ export namespace main {
 	    preserveZeros: boolean;
 	    deleteCSV: boolean;
 	    excludedExts: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new ScanOptions(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.sourceDir = source["sourceDir"];
