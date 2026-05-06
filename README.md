@@ -123,6 +123,17 @@ Release and local package helpers:
 ./scripts/package_local.sh
 ```
 
+Publish all generated release artifacts to one GitHub Release:
+
+```bash
+git push origin main
+scripts/publish_github_release.sh v0.1.0 --target main --draft
+```
+
+The publish helper uploads every file under `releases/`, excluding `.gitkeep`.
+Build platform-specific artifacts first; for example, run the portable Windows
+packager on Windows before publishing if that ZIP should be included.
+
 These scripts generate fresh artifacts in `build/` and `releases/`. The repo no longer treats generated binaries, zips, or tarballs as source files.
 
 ## Docs
