@@ -76,6 +76,13 @@ Windows portable Python path:
 - copy the deploy bundle from `deploy/windows/` or generate a fresh bundle with `./scripts/package_windows_python_bundle.sh`
 - supported launcher lookup paths remain `%USERPROFILE%\\scripts\\` and `%USERPROFILE%\\scripts\\content-list-gen\\`
 
+Windows portable no-install ZIP:
+
+- build on a Windows host with `powershell -ExecutionPolicy Bypass -File .\scripts\package_windows_portable.ps1`
+- the script creates `releases/windows-portable/content-list-generator-windows-portable.zip`
+- unzip the package to a USB drive or local folder, then run `Start Content List Generator.cmd`
+- portable settings are stored beside the app in `data/content-list-generator-settings.json`
+
 Windows Go executable path:
 
 - build fresh `.exe` outputs with `./scripts/build_releases.sh`
@@ -111,6 +118,7 @@ Release and local package helpers:
 ./scripts/package_macos_local.sh
 ./scripts/package_linux_local.sh
 ./scripts/package_windows_python_bundle.sh
+./scripts/package_windows_portable.ps1
 ./scripts/package_smoke_assets.sh
 ./scripts/package_local.sh
 ```
