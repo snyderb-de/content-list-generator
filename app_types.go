@@ -11,6 +11,7 @@ type ScanOptions struct {
 	PreserveZeros bool   `json:"preserveZeros"`
 	DeleteCSV     bool   `json:"deleteCSV"`
 	ExcludedExts  string `json:"excludedExts"`
+	FoldersOnly   bool   `json:"foldersOnly"`
 }
 
 type AppSettings struct {
@@ -21,6 +22,7 @@ type AppSettings struct {
 	PreserveZeros bool   `json:"preserveZeros"`
 	DeleteCSV     bool   `json:"deleteCSV"`
 	ExcludedExts  string `json:"excludedExts"`
+	FoldersOnly   bool   `json:"foldersOnly"`
 }
 
 type SummaryEntry struct {
@@ -75,6 +77,7 @@ type ScanDonePayload struct {
 	FilteredSamples []string       `json:"filteredSamples"`
 	FirstCSVItem    string         `json:"firstCSVItem"`
 	LastCSVItem     string         `json:"lastCSVItem"`
+	FoldersOnly     bool           `json:"foldersOnly"`
 }
 
 type EmailProgressPayload struct {

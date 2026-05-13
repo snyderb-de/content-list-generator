@@ -38,6 +38,7 @@ const (
 const (
 	focusFileName = iota
 	focusExcludeExts
+	focusFoldersOnly
 	focusHashAlgorithm
 	focusHidden
 	focusSystem
@@ -127,6 +128,7 @@ type model struct {
 	createXLSX     bool
 	preserveZeros  bool
 	deleteCSV      bool
+	foldersOnly    bool
 	spinner        spinner.Model
 	activeFlow     flowMode
 	sourceDir      string
@@ -652,6 +654,15 @@ func (m model) updateOutputStage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, textinput.Blink
 	case " ":
 		switch m.settingsFocus {
+		case focusFoldersOnly:
+			m.foldersOnly = !m.foldersOnly
+			if m.foldersOnly {
+				m.outputInput.SetValue(defaultFolderListFilename(m.sourceDir))
+			} else {
+				m.outputInput.SetValue(defaultOutputFilename(m.sourceDir))
+			}
+			m.syncSettingsFocus()
+			return m, nil
 		case focusHashAlgorithm:
 			m.hashAlgorithm = m.hashAlgorithm.Next()
 			return m, nil
@@ -685,6 +696,15 @@ func (m model) updateOutputStage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "enter":
 		switch m.settingsFocus {
+		case focusFoldersOnly:
+			m.foldersOnly = !m.foldersOnly
+			if m.foldersOnly {
+				m.outputInput.SetValue(defaultFolderListFilename(m.sourceDir))
+			} else {
+				m.outputInput.SetValue(defaultOutputFilename(m.sourceDir))
+			}
+			m.syncSettingsFocus()
+			return m, nil
 		case focusHashAlgorithm:
 			m.hashAlgorithm = m.hashAlgorithm.Next()
 			return m, nil
@@ -753,11 +773,12 @@ func (m model) updateOutputStage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				HashAlgorithm:    m.hashAlgorithm,
 				ExcludeHidden:    m.excludeHidden,
 				ExcludeSystem:    m.excludeSystem,
-				CreateXLSX:       m.createXLSX,
+				CreateXLSX:       m.createXLSX && !m.foldersOnly,
 				PreserveZeros:    m.preserveZeros,
 				DeleteCSV:        m.deleteCSV,
 				ExcludedExts:     excludedMap,
 				ExcludedExtsText: strings.TrimSpace(m.excludeInput.Value()),
+				FoldersOnly:      m.foldersOnly,
 			})
 		}
 	}
@@ -785,11 +806,12 @@ func (m model) updateConfirmOverwriteStage(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 			HashAlgorithm:    m.hashAlgorithm,
 			ExcludeHidden:    m.excludeHidden,
 			ExcludeSystem:    m.excludeSystem,
-			CreateXLSX:       m.createXLSX,
+			CreateXLSX:       m.createXLSX && !m.foldersOnly,
 			PreserveZeros:    m.preserveZeros,
 			DeleteCSV:        m.deleteCSV,
 			ExcludedExts:     excludedMap,
 			ExcludedExtsText: strings.TrimSpace(m.excludeInput.Value()),
+			FoldersOnly:      m.foldersOnly,
 		})
 	case "n", "N", "esc":
 		m.stage = stageSetOutput
@@ -845,6 +867,12 @@ func (m *model) syncSettingsFocus() {
 }
 
 func (m *model) isSettingsFocusVisible(focus int) bool {
+	if m.foldersOnly {
+		switch focus {
+		case focusHashAlgorithm, focusSystem, focusXLSX, focusPreserveZeros, focusDeleteCSV:
+			return false
+		}
+	}
 	if focus == focusDeleteCSV && !m.createXLSX {
 		return false
 	}
@@ -950,14 +978,23 @@ func (m model) viewOutputForm() string {
 		focusedInfo(false, "Format", "Scan writes CSV first. XLSX can be created afterward as a spreadsheet copy."),
 		focusedInfo(false, "Large scans", fmt.Sprintf("CSV splits every %d rows and names parts as [name]-001.csv, [name]-002.csv, and so on.", defaultMaxRowsPerCSV)),
 		focusedLine(m.settingsFocus == focusExcludeExts, "Exclude extensions", m.excludeInput.View()),
-		focusedChoice(m.settingsFocus == focusHashAlgorithm, "Verification hash", m.hashAlgorithm.OptionLabel()),
-		focusedToggle(m.settingsFocus == focusHidden, "Exclude hidden files", m.excludeHidden),
-		focusedToggle(m.settingsFocus == focusSystem, "Exclude common system files", m.excludeSystem),
-		focusedToggle(m.settingsFocus == focusXLSX, "Create XLSX after scan", m.createXLSX),
-		focusedToggle(m.settingsFocus == focusPreserveZeros, "Preserve leading zeros in XLSX", m.preserveZeros && m.createXLSX),
+		focusedToggle(m.settingsFocus == focusFoldersOnly, "Folders only (no files)", m.foldersOnly),
 	}
-	if m.createXLSX {
-		lines = append(lines, focusedToggle(m.settingsFocus == focusDeleteCSV, "Delete CSV after XLSX is created", m.deleteCSV))
+	if !m.foldersOnly {
+		lines = append(lines,
+			focusedChoice(m.settingsFocus == focusHashAlgorithm, "Verification hash", m.hashAlgorithm.OptionLabel()),
+			focusedToggle(m.settingsFocus == focusHidden, "Exclude hidden files", m.excludeHidden),
+			focusedToggle(m.settingsFocus == focusSystem, "Exclude common system files", m.excludeSystem),
+			focusedToggle(m.settingsFocus == focusXLSX, "Create XLSX after scan", m.createXLSX),
+			focusedToggle(m.settingsFocus == focusPreserveZeros, "Preserve leading zeros in XLSX", m.preserveZeros && m.createXLSX),
+		)
+		if m.createXLSX {
+			lines = append(lines, focusedToggle(m.settingsFocus == focusDeleteCSV, "Delete CSV after XLSX is created", m.deleteCSV))
+		}
+	} else {
+		lines = append(lines,
+			focusedToggle(m.settingsFocus == focusHidden, "Exclude hidden folders", m.excludeHidden),
+		)
 	}
 	lines = append(
 		lines,
@@ -1090,6 +1127,25 @@ func (m model) viewConfirmOverwrite() string {
 }
 
 func (m model) viewDone() string {
+	if m.done.foldersOnly {
+		body := lipgloss.JoinVertical(
+			lipgloss.Left,
+			styleTitle("Folder List Complete"),
+			"",
+			styleStat("Output", m.done.outputPath),
+			styleStat("Report", valueOrDefault(m.done.reportPath, "not created")),
+			styleStat("Folders in CSV", formatUint(m.done.directories)),
+			styleStat("Folders skipped", formatUint(m.done.filtered)),
+			styleStat("Elapsed", m.done.elapsed.Round(time.Millisecond).String()),
+			styleStat("Selected folder", valueOrDefault(m.done.sourceName, "unknown")),
+			styleStat("First folder in CSV", valueOrDefault(m.done.firstCSVItem, "none")),
+			styleStat("Last folder in CSV", valueOrDefault(m.done.lastCSVItem, "none")),
+			"",
+			styleHint("Press enter to exit."),
+		)
+		return styleFrame(body, m.width)
+	}
+
 	countSummary := renderSummaryList("Top extensions by file count", m.done.topByCount, func(entry summaryEntry) string {
 		return fmt.Sprintf("%s files, %s", formatUint(entry.Count), humanBytes(entry.Bytes))
 	})

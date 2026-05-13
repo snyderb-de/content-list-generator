@@ -84,6 +84,7 @@ func (a *App) GetScanDefaults() ScanOptions {
 	defaults.PreserveZeros = saved.PreserveZeros
 	defaults.DeleteCSV = saved.DeleteCSV
 	defaults.ExcludedExts = saved.ExcludedExts
+	defaults.FoldersOnly = saved.FoldersOnly
 	return defaults
 }
 
@@ -96,6 +97,7 @@ func (a *App) SaveSettings(opts ScanOptions) {
 		PreserveZeros: opts.PreserveZeros,
 		DeleteCSV:     opts.DeleteCSV,
 		ExcludedExts:  opts.ExcludedExts,
+		FoldersOnly:   opts.FoldersOnly,
 	}
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
@@ -141,7 +143,11 @@ func (a *App) StartScan(opts ScanOptions) error {
 
 	outputFile := strings.TrimSpace(opts.OutputFile)
 	if outputFile == "" {
-		outputFile = defaultOutputFilename(opts.SourceDir)
+		if opts.FoldersOnly {
+			outputFile = defaultFolderListFilename(opts.SourceDir)
+		} else {
+			outputFile = defaultOutputFilename(opts.SourceDir)
+		}
 	}
 	if strings.ToLower(filepath.Ext(outputFile)) != ".csv" {
 		outputFile += ".csv"
@@ -157,6 +163,7 @@ func (a *App) StartScan(opts ScanOptions) error {
 		DeleteCSV:        opts.DeleteCSV,
 		ExcludedExts:     excludedMap,
 		ExcludedExtsText: opts.ExcludedExts,
+		FoldersOnly:      opts.FoldersOnly,
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -248,6 +255,7 @@ func (a *App) StartScan(opts ScanOptions) error {
 			FilteredSamples: done.filteredSamples,
 			FirstCSVItem:    done.firstCSVItem,
 			LastCSVItem:     done.lastCSVItem,
+			FoldersOnly:     done.foldersOnly,
 		})
 	}()
 
@@ -261,7 +269,11 @@ func (a *App) CancelScan() {
 func (a *App) CheckOutputExists(opts ScanOptions) bool {
 	outputFile := strings.TrimSpace(opts.OutputFile)
 	if outputFile == "" {
-		outputFile = defaultOutputFilename(opts.SourceDir)
+		if opts.FoldersOnly {
+			outputFile = defaultFolderListFilename(opts.SourceDir)
+		} else {
+			outputFile = defaultOutputFilename(opts.SourceDir)
+		}
 	}
 	if strings.ToLower(filepath.Ext(outputFile)) != ".csv" {
 		outputFile += ".csv"

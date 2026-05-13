@@ -54,6 +54,7 @@ EMAIL_EXTENSIONS = {
     ".tbb",
     ".wdseml",
 }
+FOLDER_LIST_HEADERS = ["Path From Root Folder"]
 HASH_ALGORITHM_OFF = "off"
 HASH_ALGORITHM_BLAKE3 = "blake3"
 HASH_ALGORITHM_SHA1 = "sha1"
@@ -159,6 +160,7 @@ class ScanResult:
     top_by_size: list[SummaryEntry]
     first_csv_item: str
     last_csv_item: str
+    folders_only: bool = False
 
 
 @dataclass
@@ -252,6 +254,12 @@ def default_output_name(source_dir: Path) -> str:
     stamp = time.strftime("%Y-%m-%dT%H-%M-%S")
     base = source_dir.name or "content-list"
     return f"{base}-content-list-{stamp}.csv"
+
+
+def default_folder_list_output_name(source_dir: Path) -> str:
+    stamp = time.strftime("%Y-%m-%dT%H-%M-%S")
+    base = source_dir.name or "folder-list"
+    return f"{base}-folder-list-{stamp}.csv"
 
 
 def default_manifest_name() -> str:
@@ -540,6 +548,116 @@ def iter_scan_files(
             if not candidate.is_file():
                 continue
             yield candidate, stat.st_size, candidate.relative_to(source_dir).as_posix()
+
+
+def count_scan_dirs(
+    source_dir: Path,
+    include_hidden: bool,
+    progress_callback: Callable[[ScanProgress], None] | None = None,
+    cancel_event=None,
+) -> int:
+    directories = 0
+    for root, dirs, _names in os.walk(source_dir):
+        if cancel_event is not None and cancel_event.is_set():
+            raise ScanCanceled()
+        root_path = Path(root)
+        if root_path == source_dir:
+            kept = []
+            for d in dirs:
+                if is_always_excluded_dir(d):
+                    continue
+                if not include_hidden or not is_hidden_path(root_path / d, source_dir):
+                    kept.append(d)
+            dirs[:] = sorted(kept)
+            continue
+        kept = []
+        for d in dirs:
+            if is_always_excluded_dir(d):
+                continue
+            candidate = root_path / d
+            if not include_hidden and is_hidden_path(candidate, source_dir):
+                continue
+            kept.append(d)
+        dirs[:] = sorted(kept)
+        directories += 1
+        if progress_callback is not None and directories % 100 == 0:
+            progress_callback(
+                ScanProgress(
+                    phase="counting",
+                    files=0,
+                    total_files=0,
+                    directories=directories,
+                    total_directories=0,
+                    bytes=0,
+                    total_bytes=0,
+                    filtered=0,
+                    current_name=root_path.name,
+                )
+            )
+    return directories
+
+
+def iter_scan_dirs(
+    source_dir: Path,
+    include_hidden: bool,
+    cancel_event=None,
+):
+    for root, dirs, _names in os.walk(source_dir):
+        if cancel_event is not None and cancel_event.is_set():
+            raise ScanCanceled()
+        root_path = Path(root)
+        kept = []
+        for d in dirs:
+            if is_always_excluded_dir(d):
+                continue
+            candidate = root_path / d
+            if not include_hidden and is_hidden_path(candidate, source_dir):
+                continue
+            kept.append(d)
+        dirs[:] = sorted(kept)
+        if root_path == source_dir:
+            continue
+        yield root_path.relative_to(source_dir).as_posix()
+
+
+def write_folder_list_csv(
+    source_dir: Path,
+    output_path: Path,
+    *,
+    include_hidden: bool,
+    total_dirs: int,
+    progress_callback: Callable[[ScanProgress], None] | None = None,
+    cancel_event=None,
+) -> tuple[int, str, str, list[Path]]:
+    part_path = csv_output_path_for_part(output_path, 1)
+    part_path.parent.mkdir(parents=True, exist_ok=True)
+    dirs_written = 0
+    first_item = ""
+    last_item = ""
+    with part_path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(FOLDER_LIST_HEADERS)
+        for rel in iter_scan_dirs(source_dir, include_hidden, cancel_event=cancel_event):
+            writer.writerow([rel])
+            dirs_written += 1
+            if not first_item:
+                first_item = rel
+            last_item = rel
+            if progress_callback is not None:
+                progress_callback(
+                    ScanProgress(
+                        phase="scanning",
+                        files=dirs_written,
+                        total_files=total_dirs,
+                        directories=dirs_written,
+                        total_directories=total_dirs,
+                        bytes=0,
+                        total_bytes=0,
+                        filtered=0,
+                        current_name=rel.split("/")[-1],
+                    )
+                )
+    return dirs_written, first_item, last_item, [part_path]
 
 
 def summarize_entries(summaries: dict[str, dict[str, int]], key: str) -> list[SummaryEntry]:
@@ -898,6 +1016,77 @@ def render_top(title: str, entries: list[SummaryEntry], by_size: bool = False) -
     return lines
 
 
+def _run_folder_list_scan(
+    source_dir: Path,
+    output_path: Path,
+    *,
+    include_hidden: bool,
+    max_rows_per_csv: int = DEFAULT_MAX_ROWS_PER_CSV,
+    progress_callback: Callable[[ScanProgress], None] | None = None,
+    cancel_event=None,
+) -> ScanResult:
+    started = time.time()
+    max_rows_per_csv = max(1, int(max_rows_per_csv or DEFAULT_MAX_ROWS_PER_CSV))
+    report_path = output_path.with_name(f"{output_path.stem}-report.txt")
+    csv_paths: list[Path] = []
+    try:
+        total_dirs = count_scan_dirs(
+            source_dir,
+            include_hidden,
+            progress_callback=progress_callback,
+            cancel_event=cancel_event,
+        )
+        dirs_written, first_item, last_item, csv_paths = write_folder_list_csv(
+            source_dir,
+            output_path,
+            include_hidden=include_hidden,
+            total_dirs=total_dirs,
+            progress_callback=progress_callback,
+            cancel_event=cancel_event,
+        )
+        result = ScanResult(
+            source_name=folder_display_name(source_dir),
+            source_dir=source_dir,
+            output_path=csv_paths[0] if csv_paths else output_path,
+            output_paths=csv_paths or [output_path],
+            xlsx_path=None,
+            xlsx_paths=[],
+            report_path=report_path,
+            files=0,
+            directories=dirs_written,
+            total_bytes=0,
+            filtered=0,
+            filtered_hidden=0,
+            filtered_system=0,
+            filtered_exts=0,
+            filtered_os_noise=0,
+            elapsed=time.time() - started,
+            hash_algorithm=HASH_ALGORITHM_OFF,
+            create_xlsx=False,
+            preserve_zeros=False,
+            delete_csv=False,
+            csv_deleted=False,
+            max_rows_per_csv=max_rows_per_csv,
+            csv_parts=len(csv_paths or [output_path]),
+            xlsx_parts=0,
+            hash_workers=0,
+            top_by_count=[],
+            top_by_size=[],
+            first_csv_item=first_item,
+            last_csv_item=last_item,
+            folders_only=True,
+        )
+        write_scan_report(result)
+        return result
+    except ScanCanceled:
+        for path in csv_paths:
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
+        raise
+
+
 def run_scan(
     source_dir: Path,
     output_path: Path,
@@ -910,9 +1099,19 @@ def run_scan(
     preserve_zeros: bool,
     delete_csv: bool,
     max_rows_per_csv: int = DEFAULT_MAX_ROWS_PER_CSV,
+    folders_only: bool = False,
     progress_callback: Callable[[ScanProgress], None] | None = None,
     cancel_event=None,
 ) -> ScanResult:
+    if folders_only:
+        return _run_folder_list_scan(
+            source_dir,
+            output_path,
+            include_hidden=include_hidden,
+            max_rows_per_csv=max_rows_per_csv,
+            progress_callback=progress_callback,
+            cancel_event=cancel_event,
+        )
     started = time.time()
     max_rows_per_csv = max(1, int(max_rows_per_csv or DEFAULT_MAX_ROWS_PER_CSV))
     csv_paths: list[Path] = []
@@ -1023,6 +1222,18 @@ def summarize_output_parts(paths: list[Path]) -> str:
 
 
 def build_scan_report(result: ScanResult) -> str:
+    if result.folders_only:
+        lines = [
+            "Folder List Report",
+            f"Selected folder: {result.source_name}",
+            f"Saved folder list: {result.output_path.name}",
+            f"Summary report: {result.report_path.name}",
+            f"Folders in CSV: {result.directories}",
+            f"First folder in CSV: {result.first_csv_item or 'none'}",
+            f"Last folder in CSV: {result.last_csv_item or 'none'}",
+            f"Finished in: {result.elapsed:.2f}s",
+        ]
+        return "\n".join(lines) + "\n"
     lines = [
         "Content List Report",
         f"Selected folder: {result.source_name}",
@@ -1529,6 +1740,17 @@ def copy_email_files(
 
 
 def build_scan_summary(result: ScanResult) -> str:
+    if result.folders_only:
+        lines = [
+            "Your folder list is ready.",
+            f"Selected folder: {result.source_name}",
+            f"Saved folder list: {result.output_path.name}",
+            f"Folders in CSV: {result.directories}",
+            f"First folder in CSV: {result.first_csv_item or 'none'}",
+            f"Last folder in CSV: {result.last_csv_item or 'none'}",
+            f"Finished in: {result.elapsed:.2f}s",
+        ]
+        return "\n".join(lines)
     lines = [
         "Your file list is ready.",
         f"Selected folder: {result.source_name}",

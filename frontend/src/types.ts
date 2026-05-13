@@ -9,6 +9,7 @@ export interface ScanOptions {
   preserveZeros: boolean
   deleteCSV: boolean
   excludedExts: string
+  foldersOnly: boolean
 }
 
 export interface AppSettings {
@@ -73,6 +74,7 @@ export interface ScanDonePayload {
   filteredSamples: string[]
   firstCSVItem: string
   lastCSVItem: string
+  foldersOnly: boolean
 }
 
 export interface EmailProgressPayload {

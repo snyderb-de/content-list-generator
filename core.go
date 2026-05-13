@@ -60,6 +60,7 @@ type scanDoneMsg struct {
 	filteredSamples []string
 	firstCSVItem    string
 	lastCSVItem     string
+	foldersOnly     bool
 }
 
 type scanOptions struct {
@@ -72,6 +73,7 @@ type scanOptions struct {
 	MaxRowsPerCSV    uint64
 	ExcludedExts     map[string]struct{}
 	ExcludedExtsText string
+	FoldersOnly      bool
 }
 
 type scanWork struct {
@@ -343,6 +345,9 @@ func runScan(sourceDir, outputPath string, options scanOptions) (scanDoneMsg, er
 }
 
 func runScanWithContext(parent context.Context, sourceDir, outputPath string, options scanOptions) (scanDoneMsg, error) {
+	if options.FoldersOnly {
+		return runFolderOnlyScanWithContext(parent, sourceDir, outputPath, options)
+	}
 	startedAt := time.Now()
 	ctx, cancel := context.WithCancel(parent)
 	token := setActiveScanCancel(cancel)
@@ -750,6 +755,209 @@ func runScanWithContext(parent context.Context, sourceDir, outputPath string, op
 	return report, nil
 }
 
+func defaultFolderListFilename(sourceDir string) string {
+	stamp := time.Now().Format("2006-01-02T15-04-05")
+	name := filepath.Base(sourceDir)
+	if name == "" || name == "." || name == string(filepath.Separator) {
+		name = "folder-list"
+	}
+	return fmt.Sprintf("%s-folder-list-%s.csv", name, stamp)
+}
+
+func runFolderOnlyScanWithContext(parent context.Context, sourceDir, outputPath string, options scanOptions) (scanDoneMsg, error) {
+	startedAt := time.Now()
+	ctx, cancel := context.WithCancel(parent)
+	token := setActiveScanCancel(cancel)
+	defer clearActiveScanCancel(token)
+	defer cancel()
+
+	setProgress(globalProgress{
+		phase:          progressPhaseCounting,
+		startedAt:      startedAt,
+		phaseStartedAt: startedAt,
+	})
+
+	var totalDirs uint64
+	countErr := filepath.WalkDir(sourceDir, func(path string, d fs.DirEntry, walkErr error) error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+		if walkErr != nil || !d.IsDir() || path == sourceDir {
+			return nil
+		}
+		if isAlwaysExcludedDir(d.Name()) {
+			return filepath.SkipDir
+		}
+		if options.ExcludeHidden && isHiddenName(d.Name()) {
+			return filepath.SkipDir
+		}
+		totalDirs++
+		setProgress(globalProgress{
+			phase:          progressPhaseCounting,
+			directories:    totalDirs,
+			currentItem:    filepath.ToSlash(path),
+			startedAt:      startedAt,
+			phaseStartedAt: startedAt,
+		})
+		return nil
+	})
+	if countErr != nil {
+		if errors.Is(countErr, context.Canceled) {
+			return scanDoneMsg{}, countErr
+		}
+		return scanDoneMsg{}, countErr
+	}
+
+	csvPath := csvOutputPathForPart(outputPath, 1)
+	if err := os.MkdirAll(filepath.Dir(csvPath), 0o755); err != nil {
+		return scanDoneMsg{}, err
+	}
+	f, err := os.Create(csvPath)
+	if err != nil {
+		return scanDoneMsg{}, err
+	}
+	buf := bufio.NewWriterSize(f, 1<<20)
+	csvWriter := csv.NewWriter(buf)
+
+	fileClosed := false
+	closeFile := func() {
+		if !fileClosed {
+			csvWriter.Flush()
+			buf.Flush() //nolint:errcheck
+			f.Close()   //nolint:errcheck
+			fileClosed = true
+		}
+	}
+	defer closeFile()
+
+	if err := csvWriter.Write([]string{"Path From Root Folder"}); err != nil {
+		return scanDoneMsg{}, err
+	}
+
+	scanStartedAt := time.Now()
+	var dirCount uint64
+	var filteredCount uint64
+	var filteredHidden uint64
+	var filteredOSNoise uint64
+	filteredSamples := make([]string, 0, 8)
+	firstCSVItem := ""
+	lastCSVItem := ""
+
+	setProgress(globalProgress{
+		phase:          progressPhaseScanning,
+		totalFiles:     totalDirs,
+		currentItem:    "waiting for first folder",
+		startedAt:      startedAt,
+		phaseStartedAt: scanStartedAt,
+	})
+
+	walkErr := filepath.WalkDir(sourceDir, func(path string, d fs.DirEntry, walkErr error) error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+		if walkErr != nil || !d.IsDir() || path == sourceDir {
+			return nil
+		}
+		if isAlwaysExcludedDir(d.Name()) {
+			filteredCount++
+			filteredOSNoise++
+			filteredSamples = appendFilteredSample(filteredSamples, fmt.Sprintf("%s -> os noise directory", filepath.ToSlash(path)))
+			return filepath.SkipDir
+		}
+		if options.ExcludeHidden && isHiddenName(d.Name()) {
+			filteredCount++
+			filteredHidden++
+			filteredSamples = appendFilteredSample(filteredSamples, fmt.Sprintf("%s -> hidden directory", filepath.ToSlash(path)))
+			return filepath.SkipDir
+		}
+		relative, relErr := filepath.Rel(sourceDir, path)
+		if relErr != nil {
+			return nil
+		}
+		relSlash := filepath.ToSlash(relative)
+		if err := csvWriter.Write([]string{relSlash}); err != nil {
+			cancel()
+			return err
+		}
+		dirCount++
+		if firstCSVItem == "" {
+			firstCSVItem = relSlash
+		}
+		lastCSVItem = relSlash
+		setProgress(globalProgress{
+			phase:            progressPhaseScanning,
+			files:            dirCount,
+			totalFiles:       totalDirs,
+			directories:      dirCount,
+			totalDirectories: totalDirs,
+			filtered:         filteredCount,
+			currentItem:      relSlash,
+			startedAt:        startedAt,
+			phaseStartedAt:   scanStartedAt,
+		})
+		return nil
+	})
+
+	csvWriter.Flush()
+	if flushErr := csvWriter.Error(); flushErr != nil {
+		return scanDoneMsg{}, flushErr
+	}
+	closeFile()
+
+	if walkErr != nil && !errors.Is(walkErr, context.Canceled) {
+		return scanDoneMsg{}, walkErr
+	}
+	if errors.Is(ctx.Err(), context.Canceled) {
+		cleanupScanArtifacts(csvPath)
+		return scanDoneMsg{}, ctx.Err()
+	}
+
+	maxRowsPerCSV := options.MaxRowsPerCSV
+	if maxRowsPerCSV == 0 {
+		maxRowsPerCSV = defaultMaxRowsPerCSV
+	}
+
+	reportPath := strings.TrimSuffix(outputPath, filepath.Ext(outputPath)) + "-report.txt"
+	report := scanDoneMsg{
+		files:           0,
+		directories:     dirCount,
+		bytes:           0,
+		errors:          0,
+		filtered:        filteredCount,
+		sourceName:      folderDisplayName(sourceDir),
+		sourceDir:       sourceDir,
+		outputPath:      csvPath,
+		outputPaths:     []string{csvPath},
+		xlsxPath:        "",
+		xlsxPaths:       []string{},
+		reportPath:      reportPath,
+		elapsed:         time.Since(startedAt),
+		hashAlgorithm:   hashAlgorithmOff,
+		foldersOnly:     true,
+		excludeHidden:   options.ExcludeHidden,
+		maxRowsPerCSV:   maxRowsPerCSV,
+		csvPartCount:    1,
+		xlsxPartCount:   0,
+		filteredHidden:  filteredHidden,
+		filteredOSNoise: filteredOSNoise,
+		filteredSamples: filteredSamples,
+		firstCSVItem:    firstCSVItem,
+		lastCSVItem:     lastCSVItem,
+	}
+	if err := writeScanReport(reportPath, report); err != nil {
+		return scanDoneMsg{}, err
+	}
+	if errors.Is(ctx.Err(), context.Canceled) {
+		cleanupScanArtifacts(csvPath, reportPath)
+		return scanDoneMsg{}, ctx.Err()
+	}
+	return report, nil
+}
+
 func cleanupScanArtifacts(paths ...string) {
 	for _, pathValue := range paths {
 		if strings.TrimSpace(pathValue) == "" {
@@ -764,6 +972,21 @@ func writeScanReport(reportPath string, done scanDoneMsg) error {
 }
 
 func buildScanReport(done scanDoneMsg) string {
+	if done.foldersOnly {
+		lines := []string{
+			"Folder List Report",
+			fmt.Sprintf("Selected folder: %s", valueOrDefault(done.sourceName, "unknown")),
+			fmt.Sprintf("Saved folder list: %s", filepath.Base(done.outputPath)),
+			fmt.Sprintf("Summary report: %s", filepath.Base(done.reportPath)),
+			fmt.Sprintf("Folders in CSV: %d", done.directories),
+			fmt.Sprintf("Folders skipped: %d", done.filtered),
+			fmt.Sprintf("OS noise excluded: %d", done.filteredOSNoise),
+			fmt.Sprintf("First folder in CSV: %s", valueOrDefault(done.firstCSVItem, "none")),
+			fmt.Sprintf("Last folder in CSV: %s", valueOrDefault(done.lastCSVItem, "none")),
+			fmt.Sprintf("Finished in: %s", done.elapsed.Round(time.Millisecond)),
+		}
+		return strings.Join(lines, "\n") + "\n"
+	}
 	lines := []string{
 		"Content List Report",
 		fmt.Sprintf("Selected folder: %s", valueOrDefault(done.sourceName, "unknown")),

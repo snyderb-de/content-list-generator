@@ -23,6 +23,16 @@ const DEFAULT_OPTS: ScanOptions = {
   excludeHidden: true, excludeSystem: true,
   createXLSX: true, preserveZeros: true, deleteCSV: true,
   excludedExts: '',
+  foldersOnly: false,
+}
+
+function defaultFolderListFilename(sourceDir: string): string {
+  const parts = sourceDir.replace(/\\/g, '/').split('/').filter(Boolean)
+  const name = parts.pop() || 'folder-list'
+  const now = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`
+  return `${name}-folder-list-${stamp}.csv`
 }
 
 function fmtNum(n: number)  { return n.toLocaleString() }
@@ -54,9 +64,15 @@ export default function ContentList() {
 
   useEffect(() => {
     if (opts.sourceDir) {
-      setOpts(o => ({ ...o, outputFile: defaultOutputFilename(opts.sourceDir) }))
+      setOpts(o => ({ ...o, outputFile: opts.foldersOnly ? defaultFolderListFilename(opts.sourceDir) : defaultOutputFilename(opts.sourceDir) }))
     }
   }, [opts.sourceDir])
+
+  useEffect(() => {
+    if (opts.sourceDir) {
+      setOpts(o => ({ ...o, outputFile: opts.foldersOnly ? defaultFolderListFilename(opts.sourceDir) : defaultOutputFilename(opts.sourceDir) }))
+    }
+  }, [opts.foldersOnly])
 
   useEffect(() => {
     if (!opts.sourceDir && !opts.outputDir) return
@@ -189,6 +205,7 @@ export default function ContentList() {
               className="select"
               value={opts.hashAlgorithm}
               onChange={e => set('hashAlgorithm', e.target.value)}
+              disabled={opts.foldersOnly}
             >
               {HASH_ALGORITHMS.map(h => (
                 <option key={h.value} value={h.value}>{h.label}</option>
@@ -207,17 +224,21 @@ export default function ContentList() {
           </div>
 
           <div style={{ marginTop: 8 }}>
+            <Toggle label="Folders only (no files)" checked={opts.foldersOnly} onChange={v => {
+              set('foldersOnly', v)
+              if (v) { set('createXLSX', false); set('preserveZeros', false); set('deleteCSV', false) }
+            }} />
             <Toggle label="Exclude hidden files"        checked={opts.excludeHidden} onChange={v => set('excludeHidden', v)} />
-            <Toggle label="Exclude common system files" checked={opts.excludeSystem} onChange={v => set('excludeSystem', v)} />
-            <Toggle label="Create XLSX after scan"      checked={opts.createXLSX}   onChange={v => {
+            <Toggle label="Exclude common system files" checked={opts.excludeSystem} onChange={v => set('excludeSystem', v)} disabled={opts.foldersOnly} />
+            <Toggle label="Create XLSX after scan"      checked={opts.createXLSX}   disabled={opts.foldersOnly} onChange={v => {
               set('createXLSX', v)
               if (!v) { set('preserveZeros', false); set('deleteCSV', false) }
               else     { set('preserveZeros', true);  set('deleteCSV', true)  }
             }} />
             <Toggle label="Preserve leading zeros in XLSX" checked={opts.preserveZeros && opts.createXLSX}
-              onChange={v => set('preserveZeros', v)} disabled={!opts.createXLSX} indent />
+              onChange={v => set('preserveZeros', v)} disabled={!opts.createXLSX || opts.foldersOnly} indent />
             <Toggle label="Delete CSV after XLSX created"  checked={opts.deleteCSV && opts.createXLSX}
-              onChange={v => set('deleteCSV', v)} disabled={!opts.createXLSX} indent />
+              onChange={v => set('deleteCSV', v)} disabled={!opts.createXLSX || opts.foldersOnly} indent />
           </div>
         </div>
 

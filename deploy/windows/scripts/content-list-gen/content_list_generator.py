@@ -48,6 +48,7 @@ from content_list_core import (
     copy_email_files,
     csv_output_path_for_part,
     delete_deferred_scan_csvs,
+    default_folder_list_output_name,
     default_output_name,
     default_hash_algorithm,
     hash_algorithm_label,
@@ -1160,6 +1161,7 @@ class ContentListApp:
         self.clone_note_var = tk.StringVar(value="Turn this on to scan the 1st Drive first, then choose the 2nd Drive after the 1st Drive finishes.")
         self.hidden_var = tk.BooleanVar(value=True)
         self.system_var = tk.BooleanVar(value=True)
+        self.folders_only_var = tk.BooleanVar(value=False)
         self.xlsx_var = tk.BooleanVar(value=True)
         self.preserve_zeros_var = tk.BooleanVar(value=True)
         self.delete_csv_var = tk.BooleanVar(value=True)
@@ -1180,6 +1182,7 @@ class ContentListApp:
         self.progress: ctk.CTkProgressBar | None = None
         self.hash_select_tile: ctk.CTkFrame | None = None
         self.scan_cancel_event: threading.Event | None = None
+        self.folders_only_toggle: ctk.CTkCheckBox | None = None
         self.preserve_zeros_toggle: ctk.CTkCheckBox | None = None
         self.delete_csv_toggle: ctk.CTkCheckBox | None = None
         self.delete_csv_tile: ctk.CTkFrame | None = None
@@ -1524,7 +1527,9 @@ class ContentListApp:
         checks_card = ctk.CTkFrame(options_wrap, fg_color=themed_color("card_bg"), corner_radius=18)
         checks_card.grid(row=2, column=1, rowspan=3, sticky="nsew", padx=(10, 0), pady=(0, 10))
         checks_card.grid_columnconfigure(0, weight=1)
-        self.make_option_check(checks_card, "Skip hidden files", self.hidden_var).pack(anchor="w", fill="x", padx=16, pady=(14, 6))
+        self.folders_only_toggle = self.make_option_check(checks_card, "Folders only (no files)", self.folders_only_var, command=self.sync_folders_only_state)
+        self.folders_only_toggle.pack(anchor="w", fill="x", padx=16, pady=(14, 6))
+        self.make_option_check(checks_card, "Skip hidden files", self.hidden_var).pack(anchor="w", fill="x", padx=16, pady=6)
         self.make_option_check(checks_card, "Skip common system files", self.system_var).pack(anchor="w", fill="x", padx=16, pady=6)
         self.make_option_check(checks_card, "Also save an Excel copy", self.xlsx_var, command=self.sync_xlsx_state).pack(anchor="w", fill="x", padx=16, pady=6)
         self.preserve_zeros_toggle = self.make_option_check(checks_card, "Keep leading zeros in Excel", self.preserve_zeros_var)
@@ -1826,6 +1831,35 @@ class ContentListApp:
             self.preserve_zeros_var.set(False)
             self.delete_csv_var.set(False)
 
+    def sync_folders_only_state(self) -> None:
+        folders_only = self.folders_only_var.get()
+        xlsx_state = "disabled" if folders_only else "normal"
+        hash_state = "disabled" if folders_only else "normal"
+        if self.hash_select_tile is not None and hasattr(self.hash_select_tile, "menu"):
+            if not self.clone_verify_var.get():
+                self.hash_select_tile.menu.configure(state=hash_state)
+        if self.preserve_zeros_toggle is not None:
+            self.preserve_zeros_toggle.configure(state=xlsx_state)
+        if self.delete_csv_toggle is not None:
+            self.delete_csv_toggle.configure(state=xlsx_state)
+        if folders_only:
+            self.xlsx_var.set(False)
+            self.preserve_zeros_var.set(False)
+            self.delete_csv_var.set(False)
+            if self.delete_csv_tile is not None:
+                self.delete_csv_tile.pack_forget()
+            source = self.source_var.get().strip()
+            if source:
+                self.output_name_var.set(default_folder_list_output_name(Path(source)))
+        else:
+            self.xlsx_var.set(True)
+            self.preserve_zeros_var.set(True)
+            self.delete_csv_var.set(True)
+            self.sync_xlsx_state()
+            source = self.source_var.get().strip()
+            if source:
+                self.output_name_var.set(default_output_name(Path(source)))
+
     def clone_hash_algorithm(self) -> str:
         if is_blake3_available():
             return HASH_ALGORITHM_BLAKE3
@@ -1900,6 +1934,7 @@ class ContentListApp:
         ctk.set_appearance_mode(theme_mode_label(loaded_mode))
         self.colors = palette_for_mode(effective_theme_mode(loaded_mode))
         self.clone_verify_var.set(False)
+        self.folders_only_var.set(False)
         self.hidden_var.set(True)
         self.system_var.set(True)
         self.xlsx_var.set(True)
@@ -1912,6 +1947,7 @@ class ContentListApp:
         self.scan_skipped_var.set("0")
         self.scan_saved_var.set("Waiting")
         self.append_summary("")
+        self.sync_folders_only_state()
         self.sync_xlsx_state()
         self.sync_clone_state()
         self.root.configure(fg_color=themed_color("app_bg"))
@@ -2107,6 +2143,7 @@ class ContentListApp:
                 preserve_zeros=preserve_zeros,
                 delete_csv=False if mode != "scan" and delete_csv_requested else delete_csv_requested,
                 max_rows_per_csv=DEFAULT_MAX_ROWS_PER_CSV,
+                folders_only=self.folders_only_var.get(),
                 progress_callback=on_progress,
                 cancel_event=self.scan_cancel_event,
             )
@@ -2263,9 +2300,7 @@ class ContentListApp:
                     result: CloneVerificationResult = payload
                     self.pending_clone_result = result
                     self.status_var.set(
-                        "Clone verification finished. No differences were found."
-                        if result.differences == 0
-                        else f"Clone verification finished. {result.differences} differences were found."
+                        f"Clone verification finished. Verdict: {result.verdict}."
                     )
                     self.scan_files_var.set(f"1st: {result.drive_a.files}  2nd: {result.drive_b.files}")
                     self.scan_skipped_var.set(f"1st: {result.drive_a.filtered}  2nd: {result.drive_b.filtered}")
