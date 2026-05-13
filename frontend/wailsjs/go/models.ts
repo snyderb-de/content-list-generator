@@ -32,6 +32,7 @@ export namespace main {
 	    deleteCSV: boolean;
 	    excludedExts: string;
 	    foldersOnly: boolean;
+	    folderDepth: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new ScanOptions(source);
@@ -50,6 +51,7 @@ export namespace main {
 	        this.deleteCSV = source["deleteCSV"];
 	        this.excludedExts = source["excludedExts"];
 	        this.foldersOnly = source["foldersOnly"];
+	        this.folderDepth = source["folderDepth"];
 	    }
 	}
 
