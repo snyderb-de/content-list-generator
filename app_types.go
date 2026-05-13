@@ -12,6 +12,7 @@ type ScanOptions struct {
 	DeleteCSV     bool   `json:"deleteCSV"`
 	ExcludedExts  string `json:"excludedExts"`
 	FoldersOnly   bool   `json:"foldersOnly"`
+	FolderDepth   int    `json:"folderDepth"`
 }
 
 type AppSettings struct {
@@ -23,6 +24,7 @@ type AppSettings struct {
 	DeleteCSV     bool   `json:"deleteCSV"`
 	ExcludedExts  string `json:"excludedExts"`
 	FoldersOnly   bool   `json:"foldersOnly"`
+	FolderDepth   int    `json:"folderDepth"`
 }
 
 type SummaryEntry struct {

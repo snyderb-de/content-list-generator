@@ -46,31 +46,30 @@ func setProgress(progress globalProgress) {
 	scanProgressState.Store(progress)
 }
 
+func clampFraction(v float64) float64 {
+	if v < 0 {
+		return 0
+	}
+	if v > 1 {
+		return 1
+	}
+	return v
+}
+
 func progressFraction(progress globalProgress) float64 {
 	if progress.phase != progressPhaseScanning {
 		return 0
 	}
 	if progress.totalBytes > 0 {
-		value := float64(progress.bytes) / float64(progress.totalBytes)
-		if value < 0 {
-			return 0
-		}
-		if value > 1 {
-			return 1
-		}
-		return value
+		return clampFraction(float64(progress.bytes) / float64(progress.totalBytes))
 	}
-	if progress.totalFiles == 0 {
-		return 0
+	if progress.totalFiles > 0 {
+		return clampFraction(float64(progress.files) / float64(progress.totalFiles))
 	}
-	value := float64(progress.files) / float64(progress.totalFiles)
-	if value < 0 {
-		return 0
+	if progress.totalDirectories > 0 {
+		return clampFraction(float64(progress.directories) / float64(progress.totalDirectories))
 	}
-	if value > 1 {
-		return 1
-	}
-	return value
+	return 0
 }
 
 func progressETA(progress globalProgress, now time.Time) time.Duration {
@@ -88,14 +87,21 @@ func progressETA(progress globalProgress, now time.Time) time.Duration {
 		}
 		return time.Duration(float64(elapsed) * (float64(remaining) / float64(progress.bytes)))
 	}
-	if progress.totalFiles == 0 || progress.files == 0 {
-		return 0
+	if progress.totalFiles > 0 && progress.files > 0 {
+		remaining := progress.totalFiles - progress.files
+		if remaining == 0 {
+			return 0
+		}
+		return time.Duration(float64(elapsed) * (float64(remaining) / float64(progress.files)))
 	}
-	remaining := progress.totalFiles - progress.files
-	if remaining == 0 {
-		return 0
+	if progress.totalDirectories > 0 && progress.directories > 0 {
+		remaining := progress.totalDirectories - progress.directories
+		if remaining == 0 {
+			return 0
+		}
+		return time.Duration(float64(elapsed) * (float64(remaining) / float64(progress.directories)))
 	}
-	return time.Duration(float64(elapsed) * (float64(remaining) / float64(progress.files)))
+	return 0
 }
 
 func progressPhaseLabel(phase progressPhase) string {

@@ -299,7 +299,7 @@ def hash_algorithm_label(value: str) -> str:
         return "Medium (SHA-1)"
     if normalized == HASH_ALGORITHM_SHA256:
         return "Strong (SHA-256)"
-    return "Off"
+    return "No hash"
 
 
 def hash_algorithm_csv_name(value: str) -> str:
@@ -550,9 +550,16 @@ def iter_scan_files(
             yield candidate, stat.st_size, candidate.relative_to(source_dir).as_posix()
 
 
+def _folder_rel_depth(rel: str) -> int:
+    if not rel or rel == ".":
+        return 0
+    return rel.count("/") + 1
+
+
 def count_scan_dirs(
     source_dir: Path,
     include_hidden: bool,
+    max_depth: int = 0,
     progress_callback: Callable[[ScanProgress], None] | None = None,
     cancel_event=None,
 ) -> int:
@@ -561,15 +568,8 @@ def count_scan_dirs(
         if cancel_event is not None and cancel_event.is_set():
             raise ScanCanceled()
         root_path = Path(root)
-        if root_path == source_dir:
-            kept = []
-            for d in dirs:
-                if is_always_excluded_dir(d):
-                    continue
-                if not include_hidden or not is_hidden_path(root_path / d, source_dir):
-                    kept.append(d)
-            dirs[:] = sorted(kept)
-            continue
+        rel = root_path.relative_to(source_dir).as_posix() if root_path != source_dir else ""
+        current_depth = _folder_rel_depth(rel)
         kept = []
         for d in dirs:
             if is_always_excluded_dir(d):
@@ -577,8 +577,13 @@ def count_scan_dirs(
             candidate = root_path / d
             if not include_hidden and is_hidden_path(candidate, source_dir):
                 continue
+            child_depth = current_depth + 1
+            if max_depth > 0 and child_depth > max_depth:
+                continue
             kept.append(d)
         dirs[:] = sorted(kept)
+        if root_path == source_dir:
+            continue
         directories += 1
         if progress_callback is not None and directories % 100 == 0:
             progress_callback(
@@ -600,12 +605,15 @@ def count_scan_dirs(
 def iter_scan_dirs(
     source_dir: Path,
     include_hidden: bool,
+    max_depth: int = 0,
     cancel_event=None,
 ):
     for root, dirs, _names in os.walk(source_dir):
         if cancel_event is not None and cancel_event.is_set():
             raise ScanCanceled()
         root_path = Path(root)
+        rel = root_path.relative_to(source_dir).as_posix() if root_path != source_dir else ""
+        current_depth = _folder_rel_depth(rel)
         kept = []
         for d in dirs:
             if is_always_excluded_dir(d):
@@ -613,11 +621,14 @@ def iter_scan_dirs(
             candidate = root_path / d
             if not include_hidden and is_hidden_path(candidate, source_dir):
                 continue
+            child_depth = current_depth + 1
+            if max_depth > 0 and child_depth > max_depth:
+                continue
             kept.append(d)
         dirs[:] = sorted(kept)
         if root_path == source_dir:
             continue
-        yield root_path.relative_to(source_dir).as_posix()
+        yield rel
 
 
 def write_folder_list_csv(
@@ -625,6 +636,7 @@ def write_folder_list_csv(
     output_path: Path,
     *,
     include_hidden: bool,
+    max_depth: int = 0,
     total_dirs: int,
     progress_callback: Callable[[ScanProgress], None] | None = None,
     cancel_event=None,
@@ -637,7 +649,7 @@ def write_folder_list_csv(
     with part_path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
         writer.writerow(FOLDER_LIST_HEADERS)
-        for rel in iter_scan_dirs(source_dir, include_hidden, cancel_event=cancel_event):
+        for rel in iter_scan_dirs(source_dir, include_hidden, max_depth=max_depth, cancel_event=cancel_event):
             writer.writerow([rel])
             dirs_written += 1
             if not first_item:
@@ -1021,6 +1033,7 @@ def _run_folder_list_scan(
     output_path: Path,
     *,
     include_hidden: bool,
+    folder_depth: int = 0,
     max_rows_per_csv: int = DEFAULT_MAX_ROWS_PER_CSV,
     progress_callback: Callable[[ScanProgress], None] | None = None,
     cancel_event=None,
@@ -1033,6 +1046,7 @@ def _run_folder_list_scan(
         total_dirs = count_scan_dirs(
             source_dir,
             include_hidden,
+            max_depth=folder_depth,
             progress_callback=progress_callback,
             cancel_event=cancel_event,
         )
@@ -1040,6 +1054,7 @@ def _run_folder_list_scan(
             source_dir,
             output_path,
             include_hidden=include_hidden,
+            max_depth=folder_depth,
             total_dirs=total_dirs,
             progress_callback=progress_callback,
             cancel_event=cancel_event,
@@ -1100,6 +1115,7 @@ def run_scan(
     delete_csv: bool,
     max_rows_per_csv: int = DEFAULT_MAX_ROWS_PER_CSV,
     folders_only: bool = False,
+    folder_depth: int = 0,
     progress_callback: Callable[[ScanProgress], None] | None = None,
     cancel_event=None,
 ) -> ScanResult:
@@ -1108,6 +1124,7 @@ def run_scan(
             source_dir,
             output_path,
             include_hidden=include_hidden,
+            folder_depth=folder_depth,
             max_rows_per_csv=max_rows_per_csv,
             progress_callback=progress_callback,
             cancel_event=cancel_event,

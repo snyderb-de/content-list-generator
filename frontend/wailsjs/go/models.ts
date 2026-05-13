@@ -1,16 +1,16 @@
 export namespace main {
-
+	
 	export class CloneCompareOptions {
 	    driveA: string;
 	    driveB: string;
 	    outputDir: string;
 	    hashAlgorithm: string;
 	    softCompare: boolean;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new CloneCompareOptions(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.driveA = source["driveA"];
@@ -31,11 +31,12 @@ export namespace main {
 	    preserveZeros: boolean;
 	    deleteCSV: boolean;
 	    excludedExts: string;
-
+	    foldersOnly: boolean;
+	
 	    static createFrom(source: any = {}) {
 	        return new ScanOptions(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.sourceDir = source["sourceDir"];
@@ -48,6 +49,7 @@ export namespace main {
 	        this.preserveZeros = source["preserveZeros"];
 	        this.deleteCSV = source["deleteCSV"];
 	        this.excludedExts = source["excludedExts"];
+	        this.foldersOnly = source["foldersOnly"];
 	    }
 	}
 

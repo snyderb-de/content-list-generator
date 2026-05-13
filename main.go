@@ -39,6 +39,7 @@ const (
 	focusFileName = iota
 	focusExcludeExts
 	focusFoldersOnly
+	focusFolderDepth
 	focusHashAlgorithm
 	focusHidden
 	focusSystem
@@ -121,6 +122,7 @@ type model struct {
 	list           list.Model
 	outputInput    textinput.Model
 	excludeInput   textinput.Model
+	depthInput     textinput.Model
 	settingsFocus  int
 	hashAlgorithm  hashAlgorithm
 	excludeHidden  bool
@@ -189,6 +191,12 @@ func runTUI(startDir string) {
 	excludeInput.CharLimit = 0
 	excludeInput.Width = 80
 
+	depthInput := textinput.New()
+	depthInput.Placeholder = "0 = all levels"
+	depthInput.Prompt = ""
+	depthInput.CharLimit = 3
+	depthInput.Width = 20
+
 	spin := spinner.New()
 	spin.Spinner = spinner.Dot
 	spin.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
@@ -198,6 +206,7 @@ func runTUI(startDir string) {
 		list:           newActionList(),
 		outputInput:    outputInput,
 		excludeInput:   excludeInput,
+		depthInput:     depthInput,
 		settingsFocus:  focusFileName,
 		hashAlgorithm:  defaultHashAlgorithm(),
 		excludeHidden:  true,
@@ -341,6 +350,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.list.SetSize(msg.Width-8, boundedListHeight(msg.Height))
 		m.outputInput.Width = max(20, msg.Width-28)
 		m.excludeInput.Width = max(20, msg.Width-28)
+		m.depthInput.Width = max(10, min(20, msg.Width-28))
 		return m, nil
 	case tea.KeyMsg:
 		switch m.stage {
@@ -779,6 +789,7 @@ func (m model) updateOutputStage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				ExcludedExts:     excludedMap,
 				ExcludedExtsText: strings.TrimSpace(m.excludeInput.Value()),
 				FoldersOnly:      m.foldersOnly,
+				FolderDepth:      parseFolderDepth(m.depthInput.Value()),
 			})
 		}
 	}
@@ -789,6 +800,8 @@ func (m model) updateOutputStage(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.outputInput, cmd = m.outputInput.Update(msg)
 	case focusExcludeExts:
 		m.excludeInput, cmd = m.excludeInput.Update(msg)
+	case focusFolderDepth:
+		m.depthInput, cmd = m.depthInput.Update(msg)
 	}
 	return m, cmd
 }
@@ -852,7 +865,11 @@ func (m model) beginEmailCopy() (tea.Model, tea.Cmd) {
 
 func (m *model) syncSettingsFocus() {
 	if !m.isSettingsFocusVisible(m.settingsFocus) {
-		m.settingsFocus = focusXLSX
+		if m.foldersOnly {
+			m.settingsFocus = focusFoldersOnly
+		} else {
+			m.settingsFocus = focusXLSX
+		}
 	}
 	if m.settingsFocus == focusFileName {
 		m.outputInput.Focus()
@@ -864,12 +881,21 @@ func (m *model) syncSettingsFocus() {
 	} else {
 		m.excludeInput.Blur()
 	}
+	if m.settingsFocus == focusFolderDepth {
+		m.depthInput.Focus()
+	} else {
+		m.depthInput.Blur()
+	}
 }
 
 func (m *model) isSettingsFocusVisible(focus int) bool {
 	if m.foldersOnly {
 		switch focus {
-		case focusHashAlgorithm, focusSystem, focusXLSX, focusPreserveZeros, focusDeleteCSV:
+		case focusExcludeExts, focusHashAlgorithm, focusSystem, focusXLSX, focusPreserveZeros, focusDeleteCSV:
+			return false
+		}
+	} else {
+		if focus == focusFolderDepth {
 			return false
 		}
 	}
@@ -977,11 +1003,11 @@ func (m model) viewOutputForm() string {
 		focusedLine(m.settingsFocus == focusFileName, "File name", m.outputInput.View()),
 		focusedInfo(false, "Format", "Scan writes CSV first. XLSX can be created afterward as a spreadsheet copy."),
 		focusedInfo(false, "Large scans", fmt.Sprintf("CSV splits every %d rows and names parts as [name]-001.csv, [name]-002.csv, and so on.", defaultMaxRowsPerCSV)),
-		focusedLine(m.settingsFocus == focusExcludeExts, "Exclude extensions", m.excludeInput.View()),
 		focusedToggle(m.settingsFocus == focusFoldersOnly, "Folders only (no files)", m.foldersOnly),
 	}
 	if !m.foldersOnly {
 		lines = append(lines,
+			focusedLine(m.settingsFocus == focusExcludeExts, "Exclude extensions", m.excludeInput.View()),
 			focusedChoice(m.settingsFocus == focusHashAlgorithm, "Verification hash", m.hashAlgorithm.OptionLabel()),
 			focusedToggle(m.settingsFocus == focusHidden, "Exclude hidden files", m.excludeHidden),
 			focusedToggle(m.settingsFocus == focusSystem, "Exclude common system files", m.excludeSystem),
@@ -992,8 +1018,13 @@ func (m model) viewOutputForm() string {
 			lines = append(lines, focusedToggle(m.settingsFocus == focusDeleteCSV, "Delete CSV after XLSX is created", m.deleteCSV))
 		}
 	} else {
+		depthLabel := "all levels"
+		if d := parseFolderDepth(m.depthInput.Value()); d > 0 {
+			depthLabel = fmt.Sprintf("%d level(s)", d)
+		}
 		lines = append(lines,
 			focusedToggle(m.settingsFocus == focusHidden, "Exclude hidden folders", m.excludeHidden),
+			focusedLine(m.settingsFocus == focusFolderDepth, fmt.Sprintf("Max depth (%s)", depthLabel), m.depthInput.View()),
 		)
 	}
 	lines = append(
@@ -1316,6 +1347,21 @@ func ensureOutputPath(outputPath string) (bool, error) {
 
 func isSupportedOutputPath(outputPath string) bool {
 	return strings.ToLower(filepath.Ext(outputPath)) == ".csv"
+}
+
+func parseFolderDepth(input string) int {
+	s := strings.TrimSpace(input)
+	if s == "" {
+		return 0
+	}
+	var n int
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return 0
+		}
+		n = n*10 + int(c-'0')
+	}
+	return n
 }
 
 func parseExcludedExtensions(input string) (map[string]struct{}, error) {

@@ -1162,6 +1162,7 @@ class ContentListApp:
         self.hidden_var = tk.BooleanVar(value=True)
         self.system_var = tk.BooleanVar(value=True)
         self.folders_only_var = tk.BooleanVar(value=False)
+        self.folder_depth_var = tk.StringVar(value="0")
         self.xlsx_var = tk.BooleanVar(value=True)
         self.preserve_zeros_var = tk.BooleanVar(value=True)
         self.delete_csv_var = tk.BooleanVar(value=True)
@@ -1183,6 +1184,8 @@ class ContentListApp:
         self.hash_select_tile: ctk.CTkFrame | None = None
         self.scan_cancel_event: threading.Event | None = None
         self.folders_only_toggle: ctk.CTkCheckBox | None = None
+        self.folder_depth_frame: ctk.CTkFrame | None = None
+        self.folder_depth_entry: ctk.CTkEntry | None = None
         self.preserve_zeros_toggle: ctk.CTkCheckBox | None = None
         self.delete_csv_toggle: ctk.CTkCheckBox | None = None
         self.delete_csv_tile: ctk.CTkFrame | None = None
@@ -1529,6 +1532,12 @@ class ContentListApp:
         checks_card.grid_columnconfigure(0, weight=1)
         self.folders_only_toggle = self.make_option_check(checks_card, "Folders only (no files)", self.folders_only_var, command=self.sync_folders_only_state)
         self.folders_only_toggle.pack(anchor="w", fill="x", padx=16, pady=(14, 6))
+        self.folder_depth_frame = ctk.CTkFrame(checks_card, fg_color="transparent")
+        self.folder_depth_frame.pack(anchor="w", fill="x", padx=32, pady=(0, 6))
+        ctk.CTkLabel(self.folder_depth_frame, text="Max depth (0 = all levels):", font=ctk.CTkFont(size=13), text_color=themed_color("hint_fg")).pack(side="left", padx=(0, 8))
+        self.folder_depth_entry = ctk.CTkEntry(self.folder_depth_frame, textvariable=self.folder_depth_var, width=60, font=ctk.CTkFont(size=13))
+        self.folder_depth_entry.pack(side="left")
+        self.folder_depth_frame.pack_forget()
         self.make_option_check(checks_card, "Skip hidden files", self.hidden_var).pack(anchor="w", fill="x", padx=16, pady=6)
         self.make_option_check(checks_card, "Skip common system files", self.system_var).pack(anchor="w", fill="x", padx=16, pady=6)
         self.make_option_check(checks_card, "Also save an Excel copy", self.xlsx_var, command=self.sync_xlsx_state).pack(anchor="w", fill="x", padx=16, pady=6)
@@ -1848,6 +1857,8 @@ class ContentListApp:
             self.delete_csv_var.set(False)
             if self.delete_csv_tile is not None:
                 self.delete_csv_tile.pack_forget()
+            if hasattr(self, "folder_depth_frame") and self.folder_depth_frame is not None:
+                self.folder_depth_frame.pack(anchor="w", fill="x", padx=32, pady=(0, 6))
             source = self.source_var.get().strip()
             if source:
                 self.output_name_var.set(default_folder_list_output_name(Path(source)))
@@ -1855,6 +1866,8 @@ class ContentListApp:
             self.xlsx_var.set(True)
             self.preserve_zeros_var.set(True)
             self.delete_csv_var.set(True)
+            if hasattr(self, "folder_depth_frame") and self.folder_depth_frame is not None:
+                self.folder_depth_frame.pack_forget()
             self.sync_xlsx_state()
             source = self.source_var.get().strip()
             if source:
@@ -1935,6 +1948,7 @@ class ContentListApp:
         self.colors = palette_for_mode(effective_theme_mode(loaded_mode))
         self.clone_verify_var.set(False)
         self.folders_only_var.set(False)
+        self.folder_depth_var.set("0")
         self.hidden_var.set(True)
         self.system_var.set(True)
         self.xlsx_var.set(True)
@@ -2144,6 +2158,7 @@ class ContentListApp:
                 delete_csv=False if mode != "scan" and delete_csv_requested else delete_csv_requested,
                 max_rows_per_csv=DEFAULT_MAX_ROWS_PER_CSV,
                 folders_only=self.folders_only_var.get(),
+                folder_depth=max(0, int(self.folder_depth_var.get() or "0")),
                 progress_callback=on_progress,
                 cancel_event=self.scan_cancel_event,
             )

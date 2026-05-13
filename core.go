@@ -74,6 +74,7 @@ type scanOptions struct {
 	ExcludedExts     map[string]struct{}
 	ExcludedExtsText string
 	FoldersOnly      bool
+	FolderDepth      int
 }
 
 type scanWork struct {
@@ -764,6 +765,13 @@ func defaultFolderListFilename(sourceDir string) string {
 	return fmt.Sprintf("%s-folder-list-%s.csv", name, stamp)
 }
 
+func folderRelDepth(relSlash string) int {
+	if relSlash == "" || relSlash == "." {
+		return 0
+	}
+	return strings.Count(relSlash, "/") + 1
+}
+
 func runFolderOnlyScanWithContext(parent context.Context, sourceDir, outputPath string, options scanOptions) (scanDoneMsg, error) {
 	startedAt := time.Now()
 	ctx, cancel := context.WithCancel(parent)
@@ -793,20 +801,26 @@ func runFolderOnlyScanWithContext(parent context.Context, sourceDir, outputPath 
 		if options.ExcludeHidden && isHiddenName(d.Name()) {
 			return filepath.SkipDir
 		}
+		relative, _ := filepath.Rel(sourceDir, path)
+		relSlash := filepath.ToSlash(relative)
+		depth := folderRelDepth(relSlash)
+		if options.FolderDepth > 0 && depth > options.FolderDepth {
+			return filepath.SkipDir
+		}
 		totalDirs++
 		setProgress(globalProgress{
-			phase:          progressPhaseCounting,
-			directories:    totalDirs,
-			currentItem:    filepath.ToSlash(path),
-			startedAt:      startedAt,
-			phaseStartedAt: startedAt,
+			phase:            progressPhaseCounting,
+			directories:      totalDirs,
+			currentItem:      filepath.ToSlash(path),
+			startedAt:        startedAt,
+			phaseStartedAt:   startedAt,
 		})
+		if options.FolderDepth > 0 && depth == options.FolderDepth {
+			return filepath.SkipDir
+		}
 		return nil
 	})
 	if countErr != nil {
-		if errors.Is(countErr, context.Canceled) {
-			return scanDoneMsg{}, countErr
-		}
 		return scanDoneMsg{}, countErr
 	}
 
@@ -846,11 +860,11 @@ func runFolderOnlyScanWithContext(parent context.Context, sourceDir, outputPath 
 	lastCSVItem := ""
 
 	setProgress(globalProgress{
-		phase:          progressPhaseScanning,
-		totalFiles:     totalDirs,
-		currentItem:    "waiting for first folder",
-		startedAt:      startedAt,
-		phaseStartedAt: scanStartedAt,
+		phase:            progressPhaseScanning,
+		totalDirectories: totalDirs,
+		currentItem:      "waiting for first folder",
+		startedAt:        startedAt,
+		phaseStartedAt:   scanStartedAt,
 	})
 
 	walkErr := filepath.WalkDir(sourceDir, func(path string, d fs.DirEntry, walkErr error) error {
@@ -879,6 +893,10 @@ func runFolderOnlyScanWithContext(parent context.Context, sourceDir, outputPath 
 			return nil
 		}
 		relSlash := filepath.ToSlash(relative)
+		depth := folderRelDepth(relSlash)
+		if options.FolderDepth > 0 && depth > options.FolderDepth {
+			return filepath.SkipDir
+		}
 		if err := csvWriter.Write([]string{relSlash}); err != nil {
 			cancel()
 			return err
@@ -890,8 +908,6 @@ func runFolderOnlyScanWithContext(parent context.Context, sourceDir, outputPath 
 		lastCSVItem = relSlash
 		setProgress(globalProgress{
 			phase:            progressPhaseScanning,
-			files:            dirCount,
-			totalFiles:       totalDirs,
 			directories:      dirCount,
 			totalDirectories: totalDirs,
 			filtered:         filteredCount,
@@ -899,6 +915,9 @@ func runFolderOnlyScanWithContext(parent context.Context, sourceDir, outputPath 
 			startedAt:        startedAt,
 			phaseStartedAt:   scanStartedAt,
 		})
+		if options.FolderDepth > 0 && depth == options.FolderDepth {
+			return filepath.SkipDir
+		}
 		return nil
 	})
 

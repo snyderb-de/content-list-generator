@@ -61,7 +61,7 @@ func (a hashAlgorithm) OptionLabel() string {
 	case hashAlgorithmSHA256:
 		return "Strong (SHA-256)"
 	default:
-		return "Off"
+		return "No hash"
 	}
 }
 

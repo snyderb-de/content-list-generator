@@ -10,6 +10,7 @@ export interface ScanOptions {
   deleteCSV: boolean
   excludedExts: string
   foldersOnly: boolean
+  folderDepth: number
 }
 
 export interface AppSettings {
@@ -152,7 +153,7 @@ export const HASH_ALGORITHMS = [
   { value: 'blake3', label: 'Fast (BLAKE3)' },
   { value: 'sha1',   label: 'Medium (SHA-1)' },
   { value: 'sha256', label: 'Strong (SHA-256)' },
-  { value: 'off',    label: 'Off' },
+  { value: 'off',    label: 'No hash' },
 ]
 
 export type Screen = 'content-list' | 'email-copy' | 'clone-compare' | 'about'

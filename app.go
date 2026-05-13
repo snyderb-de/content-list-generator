@@ -85,6 +85,7 @@ func (a *App) GetScanDefaults() ScanOptions {
 	defaults.DeleteCSV = saved.DeleteCSV
 	defaults.ExcludedExts = saved.ExcludedExts
 	defaults.FoldersOnly = saved.FoldersOnly
+	defaults.FolderDepth = saved.FolderDepth
 	return defaults
 }
 
@@ -98,6 +99,7 @@ func (a *App) SaveSettings(opts ScanOptions) {
 		DeleteCSV:     opts.DeleteCSV,
 		ExcludedExts:  opts.ExcludedExts,
 		FoldersOnly:   opts.FoldersOnly,
+		FolderDepth:   opts.FolderDepth,
 	}
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
@@ -164,6 +166,7 @@ func (a *App) StartScan(opts ScanOptions) error {
 		ExcludedExts:     excludedMap,
 		ExcludedExtsText: opts.ExcludedExts,
 		FoldersOnly:      opts.FoldersOnly,
+		FolderDepth:      opts.FolderDepth,
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())

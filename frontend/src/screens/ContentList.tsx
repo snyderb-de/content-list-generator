@@ -24,6 +24,7 @@ const DEFAULT_OPTS: ScanOptions = {
   createXLSX: true, preserveZeros: true, deleteCSV: true,
   excludedExts: '',
   foldersOnly: false,
+  folderDepth: 0,
 }
 
 function defaultFolderListFilename(sourceDir: string): string {
@@ -228,6 +229,20 @@ export default function ContentList() {
               set('foldersOnly', v)
               if (v) { set('createXLSX', false); set('preserveZeros', false); set('deleteCSV', false) }
             }} />
+            {opts.foldersOnly && (
+              <div className="field" style={{ marginLeft: 20, marginTop: 4 }}>
+                <label className="field-label">Max depth (0 = all levels)</label>
+                <input
+                  className="text-input"
+                  type="number"
+                  min={0}
+                  max={99}
+                  value={opts.folderDepth}
+                  onChange={e => set('folderDepth', Math.max(0, parseInt(e.target.value) || 0))}
+                  style={{ width: 80 }}
+                />
+              </div>
+            )}
             <Toggle label="Exclude hidden files"        checked={opts.excludeHidden} onChange={v => set('excludeHidden', v)} />
             <Toggle label="Exclude common system files" checked={opts.excludeSystem} onChange={v => set('excludeSystem', v)} disabled={opts.foldersOnly} />
             <Toggle label="Create XLSX after scan"      checked={opts.createXLSX}   disabled={opts.foldersOnly} onChange={v => {
@@ -388,7 +403,11 @@ export default function ContentList() {
         <div className="stat-row"><span className="stat-row-label">Errors skipped</span><span className="stat-row-value">{fmtNum(result.errors)}</span></div>
 
         <div className="result-actions">
-          <button className="btn btn-primary" onClick={() => OpenPath(result.outputPath)}>Open Output Folder</button>
+          <button className="btn btn-primary" onClick={() => {
+            const p = result.outputPath
+            const dir = p.substring(0, Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\')))
+            OpenPath(dir || p)
+          }}>Open Output Folder</button>
           {result.xlsxPath && <button className="btn btn-outline" onClick={() => OpenPath(result.xlsxPath)}>Open XLSX</button>}
           {result.reportPath && <button className="btn btn-outline" onClick={() => OpenPath(result.reportPath)}>Open Report</button>}
           <button className="btn btn-ghost" onClick={reset}>New Scan</button>
