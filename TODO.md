@@ -2,7 +2,6 @@
 
 ## Active
 - **📌 TOP PRIORITY — Windows Wails GUI build** — Wails cannot cross-compile WebView2, so build must run on Windows. Run `wails build -platform windows/amd64 -o content-list-generator-gui.exe` on a Windows host (or GitHub Actions `windows-latest`). Output goes to `releases/windows-go/content-list-generator-gui-windows-amd64.exe`. Without this, Windows users have no native GUI — only the Python bundles.
-- **App icon** — create 1024×1024 PNG, convert to `build/darwin/icon.icns`, rebuild releases
 - **Test large scan** — verify >300k rows triggers CSV chunking visible in GUI progress
 - **Test Phase 7 (soft compare)** — run Newark drives (CON-P74THY / CON-M4EM1V) with soft compare checkbox enabled; verify verdict = Metadata Clone, 1,831 metadata-only diffs
 
