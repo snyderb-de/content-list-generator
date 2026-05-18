@@ -83,10 +83,12 @@ Windows portable no-install ZIP:
 - unzip the package to a USB drive or local folder, then run `Start Content List Generator.cmd`
 - portable settings are stored beside the app in `data/content-list-generator-settings.json`
 
-Windows Go executable path:
+Windows Wails GUI path:
 
-- build fresh `.exe` outputs with `./scripts/build_releases.sh`
-- generated artifacts land in `releases/windows-go/`
+- must be built on a Windows host (Wails cannot cross-compile WebView2)
+- run `wails build -platform windows/amd64 -o content-list-generator-gui.exe`
+- copy the resulting `.exe` into `releases/windows-go/`
+- the Windows TUI binary is intentionally not shipped — Windows users get the Wails GUI or the Python bundles
 
 ## Testing
 

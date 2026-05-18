@@ -1,0 +1,183 @@
+name: build-release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  GO_VERSION_FILE: go.mod
+  WAILS_VERSION: v2.12.0
+  NODE_VERSION: '20'
+  PYTHON_VERSION: '3.12'
+
+jobs:
+  unix-bundle:
+    name: macOS GUI + TUI + Linux TUI
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ env.GO_VERSION_FILE }}
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Wails CLI
+        env:
+          WAILS_VER: ${{ env.WAILS_VERSION }}
+        run: |
+          go install "github.com/wailsapp/wails/v2/cmd/wails@${WAILS_VER}"
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Install Python deps for parity tests
+        run: pip install -r requirements.txt
+
+      - name: Build releases (mac TUI + GUI universal, linux TUI)
+        run: ./scripts/build_releases.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: releases/macos/
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: releases/linux/
+          if-no-files-found: error
+
+  windows-gui:
+    name: Windows Wails GUI (amd64 + arm64)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ env.GO_VERSION_FILE }}
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Wails CLI
+        shell: pwsh
+        env:
+          WAILS_VER: ${{ env.WAILS_VERSION }}
+        run: |
+          go install "github.com/wailsapp/wails/v2/cmd/wails@$env:WAILS_VER"
+          "$(go env GOPATH)\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+
+      - name: Wails doctor
+        shell: pwsh
+        run: wails doctor
+
+      - name: Build Wails GUI (windows/amd64)
+        shell: pwsh
+        run: wails build -platform windows/amd64 -clean -o content-list-generator-gui-windows-amd64.exe
+
+      - name: Build Wails GUI (windows/arm64)
+        shell: pwsh
+        run: wails build -platform windows/arm64 -o content-list-generator-gui-windows-arm64.exe
+
+      - name: Stage Windows GUI outputs
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path releases\windows-go | Out-Null
+          Copy-Item build\bin\content-list-generator-gui-windows-amd64.exe releases\windows-go\
+          Copy-Item build\bin\content-list-generator-gui-windows-arm64.exe releases\windows-go\
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-go
+          path: releases/windows-go/
+          if-no-files-found: error
+
+  windows-portable:
+    name: Windows Portable (PyInstaller)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Build portable bundle
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File .\scripts\package_windows_portable.ps1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-portable
+          path: releases/windows-portable/
+          if-no-files-found: error
+
+  windows-python:
+    name: Windows Python source bundle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ env.GO_VERSION_FILE }}
+          cache: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Python deps
+        run: pip install -r requirements.txt
+
+      - name: Build Windows Python bundle
+        run: ./scripts/package_windows_python_bundle.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-python
+          path: releases/windows-python/
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [unix-bundle, windows-gui, windows-portable, windows-python]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all build artifacts into releases/
+        uses: actions/download-artifact@v4
+        with:
+          path: releases
+
+      - name: Show staged release assets
+        run: find releases -type f -not -name '.gitkeep' | sort
+
+      - name: Publish via gh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: ./scripts/publish_github_release.sh "$TAG_NAME" --target main

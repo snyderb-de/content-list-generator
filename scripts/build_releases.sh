@@ -18,10 +18,11 @@ echo "── Tests ────────────────────�
 go test ./...
 
 echo "── CLI / TUI binaries (go build) ───────────────────────────"
+# Windows TUI .exe intentionally not shipped. Windows users get the Wails GUI
+# (built on a Windows host) or the Python bundle. TUI source still compiles
+# fine on Windows via `go build` for developers who want it locally.
 GOOS=darwin  GOARCH=arm64 go build -o "$MACOS_DIR/content-list-generator-darwin-arm64"                  .
 GOOS=darwin  GOARCH=amd64 go build -o "$MACOS_DIR/content-list-generator-darwin-amd64"                  .
-GOOS=windows GOARCH=amd64 go build -o "$WINDOWS_GO_DIR/content-list-generator-windows-amd64.exe"        .
-GOOS=windows GOARCH=arm64 go build -o "$WINDOWS_GO_DIR/content-list-generator-windows-arm64.exe"        .
 GOOS=linux   GOARCH=amd64 go build -o "$LINUX_DIR/content-list-generator-linux-amd64"                   .
 
 echo "── GUI app — macOS universal (wails build) ──────────────────"
