@@ -14,7 +14,7 @@ updates:
           - minor
           - patch
     ignore:
-      - dependency-name: github.com/wailsapp/wails/v2
+      - dependency-name: "*"
         update-types:
           - version-update:semver-major
     commit-message:
@@ -34,6 +34,10 @@ updates:
         update-types:
           - minor
           - patch
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - version-update:semver-major
     commit-message:
       prefix: npm
       include: scope

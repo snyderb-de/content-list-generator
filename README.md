@@ -57,6 +57,22 @@ Local launchers:
 - cross-platform helper: `./scripts/run_local.sh [go|go-gui|python|python-cli]`
 - Windows desktop launcher: `content-list-generator.bat`
 
+## Release Strategy
+
+Two distinct release tracks with different update policies:
+
+**Native bundles (Wails GUI .exe, mac .app, Linux binary, PyInstaller portable zip)**
+- Deps frozen into the bundle at build time
+- Users redownload the bundle to update
+- Auto-update mechanism planned (see `TODO.md`)
+
+**Python `.bat`-launcher deploy path** (`deploy/windows/*`)
+- Deps pinned to EXACT versions in `requirements.txt`
+- Admin installs Python + deps on user machines via `pip install -r requirements.txt`
+- App shows a non-blocking orange banner at the top of the window if installed deps drift from the pinned versions (see `python/deps_check.py`)
+- Bumping a dep is a deliberate event: update `requirements.txt`, bump matching entry in `deps_check.py`, re-deploy scripts via the deploy bundle, admin re-runs `pip install` on user machines
+- Dependabot ignores major bumps for npm + gomod, but still surfaces security advisories
+
 ## Platform Notes
 
 macOS and Linux:
