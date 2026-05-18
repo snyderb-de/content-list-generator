@@ -14,6 +14,9 @@ cd "$ROOT_DIR"
 
 export PATH="$PATH:$(go env GOPATH)/bin"
 
+echo "── Frontend build (required by go:embed in gui_wails.go) ────"
+(cd frontend && npm ci && npm run build)
+
 echo "── Tests ────────────────────────────────────────────────────"
 go test ./...
 

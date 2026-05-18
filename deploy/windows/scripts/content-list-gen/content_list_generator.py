@@ -59,6 +59,7 @@ from content_list_core import (
     normalize_hash_algorithm,
     run_scan,
 )
+from deps_check import check_deps, format_banner_text
 
 
 PLACEHOLDER_GITHUB_URL = "https://github.com/placeholder/content-list-generator"
@@ -1265,6 +1266,20 @@ class ContentListApp:
         )
 
     def build_ui(self) -> None:
+        mismatches = check_deps()
+        if mismatches:
+            banner = ctk.CTkLabel(
+                self.root,
+                text=format_banner_text(mismatches),
+                fg_color="#b97a00",
+                text_color="#ffffff",
+                anchor="w",
+                justify="left",
+                font=("Segoe UI", 11, "bold"),
+                corner_radius=0,
+            )
+            banner.pack(fill="x", side="top", ipadx=12, ipady=6)
+
         shell = ctk.CTkFrame(self.root, fg_color=themed_color("app_bg"), corner_radius=0)
         shell.pack(fill="both", expand=True)
 

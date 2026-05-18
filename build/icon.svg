@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2563eb"/>
+      <stop offset="1" stop-color="#1e3a8a"/>
+    </linearGradient>
+    <filter id="softshadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="14"/>
+      <feOffset dx="0" dy="10" result="offsetblur"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.35"/></feComponentTransfer>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Rounded tile background -->
+  <rect x="0" y="0" width="1024" height="1024" rx="220" ry="220" fill="url(#bg)"/>
+
+  <!-- Folder (behind) -->
+  <g filter="url(#softshadow)">
+    <!-- Folder tab -->
+    <path d="M 160 280
+             L 160 230
+             Q 160 190 200 190
+             L 420 190
+             Q 444 190 460 210
+             L 500 260
+             L 864 260
+             Q 904 260 904 300
+             L 904 320
+             L 160 320
+             Z"
+          fill="#ffffff" opacity="0.92"/>
+    <!-- Folder body -->
+    <rect x="160" y="295" width="744" height="540" rx="32" ry="32" fill="#ffffff"/>
+  </g>
+
+  <!-- Hard drive (in front, centered on folder body) -->
+  <g transform="translate(260 440)" filter="url(#softshadow)">
+    <!-- Drive chassis -->
+    <rect x="0" y="0" width="544" height="320" rx="34" ry="34" fill="#1e3a8a"/>
+    <!-- Drive inner bezel -->
+    <rect x="20" y="20" width="504" height="280" rx="22" ry="22" fill="#0f1f4d"/>
+
+    <!-- Horizontal ventilation slots -->
+    <rect x="60" y="70"  width="424" height="14" rx="7" fill="#2563eb" opacity="0.55"/>
+    <rect x="60" y="110" width="424" height="14" rx="7" fill="#2563eb" opacity="0.55"/>
+    <rect x="60" y="150" width="424" height="14" rx="7" fill="#2563eb" opacity="0.55"/>
+    <rect x="60" y="190" width="424" height="14" rx="7" fill="#2563eb" opacity="0.55"/>
+
+    <!-- Status LED -->
+    <circle cx="468" cy="248" r="14" fill="#22c55e"/>
+    <circle cx="468" cy="248" r="7"  fill="#86efac"/>
+
+    <!-- Brand notch on left -->
+    <rect x="56" y="232" width="120" height="6" rx="3" fill="#60a5fa" opacity="0.85"/>
+    <rect x="56" y="248" width="80"  height="6" rx="3" fill="#60a5fa" opacity="0.55"/>
+  </g>
+</svg>

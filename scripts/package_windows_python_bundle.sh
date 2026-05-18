@@ -16,7 +16,12 @@ rm -f "$ARCHIVE" "$TMP_ARCHIVE"
 cd "$ROOT_DIR"
 
 ./scripts/parity_check.sh
-python3 -m unittest discover -s ./python/tests -p 'test_*.py'
+# python/tests/ is gitignored; skip discovery on clean checkouts (CI).
+if [ -d "./python/tests" ] && ls ./python/tests/test_*.py >/dev/null 2>&1; then
+  python3 -m unittest discover -s ./python/tests -p 'test_*.py'
+else
+  echo "Skipping python/tests discovery — directory absent in this checkout."
+fi
 python3 -m py_compile ./python/content_list_core.py ./python/content_list_generator.py
 
 cp python/content_list_core.py "$OUT_DIR/"
