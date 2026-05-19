@@ -92,11 +92,11 @@ jobs:
 
       - name: Build Wails GUI (windows/amd64)
         shell: pwsh
-        run: wails build -platform windows/amd64 -clean -o content-list-generator-gui-windows-amd64.exe
+        run: wails build -platform windows/amd64 -clean -webview2 download -o content-list-generator-gui-windows-amd64.exe
 
       - name: Build Wails GUI (windows/arm64)
         shell: pwsh
-        run: wails build -platform windows/arm64 -o content-list-generator-gui-windows-arm64.exe
+        run: wails build -platform windows/arm64 -webview2 download -o content-list-generator-gui-windows-arm64.exe
 
       - name: Stage Windows GUI outputs
         shell: pwsh
