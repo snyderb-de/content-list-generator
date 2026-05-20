@@ -1,6 +1,6 @@
 # Windows GUI .exe — Silent Launch Failure
 
-**Status:** OPEN
+**Status:** FIXED (pending v0.2.2 release)
 **Affected versions:** v0.2.0, v0.2.1
 **Reporter:** Bryan (Win11, AMD Ryzen 9 5950X — x64)
 
@@ -129,7 +129,8 @@ https://learn.microsoft.com/en-us/sysinternals/downloads/procmon
 |---|---|---|
 | 2026-05-19 | v0.2.0 released | Initial bug discovered — silent fail |
 | 2026-05-19 | PR #18 added `-webview2 download` flag → v0.2.1 | No change (flag is default) |
-| | | |
+| 2026-05-19 | D2 exit code: 1. Error: `open CONIN$: The handle is invalid.` | Root cause found: `isGUIContext()` had no Windows production detection → fell through to TUI → Bubble Tea tried to open console input with no console attached |
+| 2026-05-19 | Fix: read PE Subsystem field from running binary (`debug/pe`). Wails links with `-H windowsgui` → Subsystem=2; `go build` defaults to Subsystem=3 (CUI). Now routes correctly regardless of how binary is launched. | Fix compiles clean; awaiting release |
 
 ## Related TODO entries
 

@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"debug/pe"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"time"
@@ -251,6 +253,32 @@ func isGUIContext() bool {
 		if strings.HasPrefix(arg, "--wails-devserverurl") || strings.HasPrefix(arg, "--wails-devserver-url") {
 			return true
 		}
+	}
+	// Windows: Wails links with -H windowsgui (PE Subsystem 2); go build defaults to CUI (Subsystem 3).
+	// Read our own PE header so the GUI binary routes correctly regardless of how it is launched.
+	if runtime.GOOS == "windows" && isWindowsPEGUISubsystem(exe) {
+		return true
+	}
+	return false
+}
+
+func isWindowsPEGUISubsystem(exePath string) bool {
+	f, err := os.Open(exePath)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	pef, err := pe.NewFile(f)
+	if err != nil {
+		return false
+	}
+	defer pef.Close()
+	const imageSubsystemWindowsGUI = 2
+	switch oh := pef.OptionalHeader.(type) {
+	case *pe.OptionalHeader32:
+		return oh.Subsystem == imageSubsystemWindowsGUI
+	case *pe.OptionalHeader64:
+		return oh.Subsystem == imageSubsystemWindowsGUI
 	}
 	return false
 }
@@ -1060,9 +1088,11 @@ func (m model) viewScanning() string {
 	if m.progress.totalBytes > 0 {
 		byteStat = fmt.Sprintf("%s / %s", humanBytes(m.progress.bytes), humanBytes(m.progress.totalBytes))
 	}
-	progressStat := "Counting"
+	var progressStat string
 	if m.progress.phase == progressPhaseLabel(progressPhaseScanning) {
 		progressStat = formatPercent(m.progress.percent)
+	} else {
+		progressStat = fmt.Sprintf("%s files, %s dirs", formatUint(m.progress.files), formatUint(m.progress.directories))
 	}
 	etaStat := "calculating"
 	if m.progress.phase != progressPhaseLabel(progressPhaseScanning) {
