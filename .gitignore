@@ -39,7 +39,6 @@ __pycache__/
 *_test.go
 /python/tests/
 /testing/
-/project-dashboard/
 /design/
 CLAUDE.md
 .claude/settings.local.json
