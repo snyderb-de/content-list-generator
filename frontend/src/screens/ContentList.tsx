@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { CheckOutputExists, GetScanDefaults, OpenPath, SaveSettings, StartScan, CancelScan, ValidateScanPaths } from '../../wailsjs/go/main/App'
 import { EventsOff, EventsOn } from '../../wailsjs/runtime/runtime'
 import FolderPicker from '../components/FolderPicker'
@@ -270,12 +271,13 @@ export default function ContentList() {
   if (phase === 'scanning') {
     const pct = progress?.percent ?? 0
     const counting = progress?.phase !== 'Scanning'
-    return (
-      <div>
-        <div className="screen-header">
-          <h2 className="screen-title">{counting ? 'Counting…' : 'Scanning…'}</h2>
-        </div>
-        <div className="card">
+    return createPortal(
+      <div className="scan-overlay">
+        <div className="scan-overlay-panel">
+          <div className="screen-header" style={{ marginBottom: 16 }}>
+            <h2 className="screen-title">{counting ? 'Counting…' : 'Scanning…'}</h2>
+          </div>
+
           <div className="phase-badge">
             <span className="phase-dot" />
             {progress?.phase ?? 'Starting…'}
@@ -332,7 +334,8 @@ export default function ContentList() {
             <button className="btn btn-danger" onClick={cancel}>Stop Scan</button>
           </div>
         </div>
-      </div>
+      </div>,
+      document.body
     )
   }
 
