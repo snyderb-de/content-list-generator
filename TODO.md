@@ -11,12 +11,37 @@
 
 ## Active (priority order)
 
-### 📌 P0 — verify v0.2.0 builds actually work on target machines
-- Download `content-list-generator-gui-windows-amd64.exe` from release → run on Windows → verify GUI launches, scan works
-- Download `content-list-generator-windows-portable.zip` → unzip → run from USB or local → verify
-- Open mac `.app` from `content-list-generator-gui-darwin-universal.zip` → verify
+### 📌 P0 — Windows GUI silent launch failure (BLOCKING)
+- v0.2.1 .exe builds in CI but exits silently on a real Win11 host (AMD Ryzen 5950X, WebView2 confirmed installed)
+- Diagnostic checklist + hypotheses in `docs/debug/windows-launch-failure.md`
+- Handoff to Claude Code running on Windows host to collect Event Viewer + procmon traces
+- Workaround for users: ship the portable .zip; mark .exe as "experimental" on dashboard
+- Until diagnosed: do not promote v0.2.x as stable for Windows GUI
+
+### P0 — verify remaining v0.2.x builds on target machines
+- macOS .app from `content-list-generator-gui-darwin-universal.zip` → verify launch (Gatekeeper bypass instructions in user manual)
 - Linux binary smoke test
-- Until verified, treat the release as "built" not "shipped"
+- Windows portable .zip — already confirmed working
+
+### P0 — write user manual
+- Stub exists at `project-dashboard/user-manual.html` linked from dashboard hero
+- Fill: scan modes, hash algorithms, CSV chunking, email-copy flow, clone-compare verdicts, troubleshooting, FAQ
+- Add platform-specific install instructions
+- Cross-link from README
+
+### P0 — capture GUI screenshots
+- Mac `.app` (Wails)
+- Wails Windows GUI (once silent-exit fixed)
+- Python customtkinter GUI (already used for managed Windows deploys)
+- Bubble Tea TUI (Linux/Mac terminal)
+- Add to README hero + user manual + dashboard hero
+- Recommended resolution: 1600×1000 PNG, light-mode default
+
+### P0 — enable GitHub Pages for the dashboard
+- Repo Settings → Pages → Source: Deploy from a branch → main → /project-dashboard
+- Or move dashboard to /docs and use Jekyll-free mode
+- Dashboard URL becomes `https://snyderb-de.github.io/content-list-generator/`
+- Add the URL to README hero + repo About sidebar
 
 ### P1 — finish dependabot sweep
 - 4 GH Actions bumps still open (#1, #3, #5, #7) — `@dependabot rebase` already requested

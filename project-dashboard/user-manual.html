@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Content List Generator — User Manual</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:ital,wght@0,400;0,600;0,700;1,400;1,600&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #2b2417;
+      --paper: #faf6ee;
+      --line: #d9cdb4;
+      --accent: #235194;
+      --accent-warm: #b8620c;
+      --muted: #6c5d44;
+      --code-bg: #efe7d6;
+      --code-ink: #2b2417;
+      --warn-bg: #fff3dc;
+      --warn-ink: #7a4500;
+    }
+    [data-theme="dark"] {
+      color-scheme: dark;
+      --ink: #ece3cf;
+      --paper: #1a1610;
+      --line: #2f2920;
+      --accent: #7cb4ff;
+      --accent-warm: #f5b87a;
+      --muted: #9b8d73;
+      --code-bg: #2a241b;
+      --code-ink: #ece3cf;
+      --warn-bg: #32220a;
+      --warn-ink: #f5b87a;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: "IBM Plex Serif", Georgia, serif;
+      font-size: 16px; line-height: 1.65; color: var(--ink); background: var(--paper);
+      min-height: 100vh;
+    }
+    a { color: var(--accent); text-underline-offset: 2px; }
+
+    .top-nav {
+      max-width: 760px; margin: 0 auto;
+      padding: 18px 28px 0; display: flex; justify-content: space-between; align-items: center; gap: 12px;
+      font-family: "IBM Plex Sans", sans-serif; font-size: 0.85rem;
+    }
+    .top-nav a { color: var(--accent); text-decoration: none; font-weight: 600; }
+    .top-nav a:hover { text-decoration: underline; }
+    .theme-btn {
+      font-family: inherit; font-size: 0.78rem; font-weight: 600; cursor: pointer;
+      padding: 6px 12px; border-radius: 6px;
+      background: var(--code-bg); color: var(--ink); border: 1px solid var(--line);
+    }
+    .theme-btn:hover { opacity: 0.85; }
+
+    article { max-width: 760px; margin: 0 auto; padding: 30px 28px 80px; }
+    h1 {
+      font-size: 2.4rem; font-weight: 700; line-height: 1.15; margin-bottom: 4px;
+      letter-spacing: -0.01em;
+    }
+    .subtitle {
+      font-family: "IBM Plex Sans", sans-serif; font-size: 0.92rem;
+      color: var(--muted); margin-bottom: 28px; font-style: italic;
+    }
+    h2 {
+      font-family: "IBM Plex Sans", sans-serif; font-size: 1.35rem; font-weight: 700;
+      margin-top: 38px; margin-bottom: 14px; color: var(--accent);
+      padding-bottom: 8px; border-bottom: 2px solid var(--line);
+    }
+    h3 { font-size: 1.1rem; font-weight: 600; margin-top: 24px; margin-bottom: 10px; }
+    p { margin-bottom: 14px; }
+    ul, ol { margin: 0 0 16px 24px; }
+    li { margin-bottom: 6px; }
+    code {
+      font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+      font-size: 0.88em; background: var(--code-bg); color: var(--code-ink);
+      padding: 2px 6px; border-radius: 4px;
+    }
+    pre {
+      background: var(--code-bg); color: var(--code-ink);
+      padding: 12px 16px; border-radius: 8px; overflow-x: auto;
+      font-family: "IBM Plex Mono", monospace; font-size: 0.85rem; line-height: 1.5;
+      margin-bottom: 16px;
+    }
+    pre code { background: none; padding: 0; }
+    blockquote {
+      border-left: 4px solid var(--accent-warm); padding: 10px 16px;
+      margin: 16px 0; background: var(--warn-bg); color: var(--warn-ink);
+      font-style: italic; border-radius: 0 6px 6px 0;
+    }
+    .draft-banner {
+      background: var(--warn-bg); color: var(--warn-ink);
+      border: 1px solid var(--warn-ink);
+      padding: 14px 20px; border-radius: 8px; margin-bottom: 28px;
+      font-family: "IBM Plex Sans", sans-serif; font-size: 0.9rem;
+    }
+    .draft-banner strong { display: block; margin-bottom: 4px; font-size: 1rem; }
+    footer {
+      max-width: 760px; margin: 0 auto;
+      padding: 20px 28px; border-top: 1px solid var(--line);
+      font-family: "IBM Plex Sans", sans-serif; font-size: 0.8rem; color: var(--muted);
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+<nav class="top-nav">
+  <a href="index.html">← Project Dashboard</a>
+  <button id="theme-toggle" class="theme-btn">Theme: Light</button>
+</nav>
+
+<article>
+  <h1>User Manual</h1>
+  <p class="subtitle">Content List Generator — Cross-platform archival scanning, CSV export, and hash verification.</p>
+
+  <div class="draft-banner">
+    <strong>📝 Draft — work in progress</strong>
+    This manual is a stub. Full content is tracked in <a href="https://github.com/snyderb-de/content-list-generator/blob/main/TODO.md" target="_blank" rel="noopener">TODO.md</a> as <code>P0-03</code>. Screenshots tracked as <code>P0-04</code>. Until complete, the <a href="https://github.com/snyderb-de/content-list-generator/blob/main/README.md" target="_blank" rel="noopener">README</a> is the most current source of truth.
+  </div>
+
+  <h2>Getting Started</h2>
+
+  <h3>Download the right build</h3>
+  <p>Pick based on your platform:</p>
+  <ul>
+    <li><strong>macOS</strong> — download <code>content-list-generator-gui-darwin-universal.zip</code>. Unzip, drag the <code>.app</code> to <code>Applications</code>. First launch may trigger Gatekeeper — right-click → Open.</li>
+    <li><strong>Windows (recommended)</strong> — download <code>content-list-generator-windows-portable.zip</code>. Unzip anywhere. Run <code>Start Content List Generator.cmd</code>. No installer or admin rights required.</li>
+    <li><strong>Windows (native GUI)</strong> — <code>content-list-generator-gui-windows-amd64.exe</code>. <em>Currently under investigation — silent exit on some Win11 hosts. Use portable until fixed.</em></li>
+    <li><strong>Linux</strong> — download <code>content-list-generator-linux-amd64</code>. Terminal UI. <code>chmod +x</code> then run.</li>
+  </ul>
+  <p>All releases live at <a href="https://github.com/snyderb-de/content-list-generator/releases/latest" target="_blank" rel="noopener">github.com/snyderb-de/content-list-generator/releases/latest</a>.</p>
+
+  <h2>Core Workflows</h2>
+
+  <h3>1. Generate a content list</h3>
+  <p>Scan a folder recursively and write a CSV inventory of every file found.</p>
+  <ol>
+    <li>Pick a source folder.</li>
+    <li>Pick an output folder (defaults to source).</li>
+    <li>Adjust settings (hash algorithm, exclusions, XLSX option).</li>
+    <li>Click <strong>Start scan</strong>.</li>
+  </ol>
+  <p>Output: <code>&lt;folder-name&gt;-content-list-&lt;timestamp&gt;.csv</code>. Scans over 300,000 rows split into chunks: <code>-001.csv</code>, <code>-002.csv</code>, …</p>
+
+  <h3>2. Copy email files</h3>
+  <p>Find every email file under a source folder and copy them into a destination, preserving the folder structure. Generates a manifest report.</p>
+  <p>Supported extensions: <code>.eml</code>, <code>.msg</code>, <code>.pst</code>, <code>.ost</code>, <code>.mbox</code>.</p>
+
+  <h3>3. Clone compare (Phase 7)</h3>
+  <p>Compare two drive scans to verify a successful clone. Produces a verdict (<code>Exact Match</code>, <code>Metadata Clone</code>, <code>Mismatch</code>) and a diff report.</p>
+
+  <h2>Settings Reference</h2>
+
+  <h3>Hash algorithms</h3>
+  <ul>
+    <li><strong>Off</strong> — fastest, no hashing</li>
+    <li><strong>SHA-1</strong> — fast, widely used legacy default</li>
+    <li><strong>SHA-256</strong> — slower, cryptographically stronger</li>
+    <li><strong>BLAKE3</strong> — fastest secure hash; requires the <code>blake3</code> Python package for the Python runtime</li>
+  </ul>
+
+  <h3>Exclusions</h3>
+  <ul>
+    <li><strong>Hidden files</strong> — files starting with a dot or with the hidden attribute set</li>
+    <li><strong>System files</strong> — <code>.DS_Store</code>, <code>Thumbs.db</code>, <code>desktop.ini</code>, etc.</li>
+    <li><strong>Extension filter</strong> — comma-separated list, e.g. <code>tmp,log,bak</code></li>
+  </ul>
+
+  <h3>Output options</h3>
+  <ul>
+    <li><strong>Create XLSX</strong> — generate an Excel copy alongside the CSV</li>
+    <li><strong>Preserve leading zeros</strong> — keep zero-padded filenames intact in the XLSX</li>
+    <li><strong>Delete CSV after XLSX</strong> — clean up the intermediate CSV once the XLSX exists</li>
+  </ul>
+
+  <h2>Troubleshooting</h2>
+
+  <h3>macOS — "could not verify free of malware"</h3>
+  <p>The binary is unsigned. Gatekeeper blocks it by default. Three ways to bypass:</p>
+  <ul>
+    <li>Right-click the <code>.app</code> → Open → "Open" button</li>
+    <li>System Settings → Privacy &amp; Security → scroll to "was blocked" → "Open Anyway"</li>
+    <li>Terminal: <code>xattr -d com.apple.quarantine /path/to/Content\ List\ Generator.app</code></li>
+  </ul>
+
+  <h3>Windows — SmartScreen warning</h3>
+  <p>The .exe is not yet code-signed. Click "More info" → "Run anyway". Once signed (planned), this will go away.</p>
+
+  <h3>Windows — .exe doesn't launch (silent exit)</h3>
+  <p>Known issue on some Win11 hosts. Use the portable .zip in the meantime. Investigation tracked in <a href="https://github.com/snyderb-de/content-list-generator/blob/main/docs/debug/windows-launch-failure.md" target="_blank" rel="noopener">docs/debug/windows-launch-failure.md</a>.</p>
+
+  <h2>FAQ</h2>
+
+  <h3>What's the difference between the .exe and the portable .zip on Windows?</h3>
+  <p>The <code>.exe</code> is a native Wails app using the Edge WebView2 runtime. The portable <code>.zip</code> is a Python tkinter app bundled with its own Python runtime via PyInstaller. Different code paths, same scanning behavior.</p>
+
+  <h3>Why is there a TUI (terminal) version?</h3>
+  <p>The Linux <code>content-list-generator-linux-amd64</code> is the Bubble Tea TUI — full-screen terminal UI. Useful for headless servers or SSH sessions where running a GUI isn't practical.</p>
+
+  <h3>Do my scan settings persist between sessions?</h3>
+  <p>Yes. Settings are stored in:</p>
+  <ul>
+    <li>macOS: <code>~/Library/Application Support/content-list-generator/</code></li>
+    <li>Windows: <code>%APPDATA%\content-list-generator\</code></li>
+    <li>Linux: <code>~/.config/content-list-generator/</code></li>
+    <li>Windows portable: in the <code>data\</code> folder next to the launcher</li>
+  </ul>
+
+  <h2>Resources</h2>
+  <ul>
+    <li><a href="index.html">Project Dashboard</a></li>
+    <li><a href="https://github.com/snyderb-de/content-list-generator" target="_blank" rel="noopener">GitHub Repository</a></li>
+    <li><a href="https://github.com/snyderb-de/content-list-generator/releases/latest" target="_blank" rel="noopener">Latest Release Downloads</a></li>
+    <li><a href="https://github.com/snyderb-de/content-list-generator/blob/main/README.md" target="_blank" rel="noopener">README</a></li>
+    <li><a href="https://github.com/snyderb-de/content-list-generator/issues" target="_blank" rel="noopener">Report an Issue</a></li>
+  </ul>
+
+</article>
+
+<footer>
+  Content List Generator — User Manual &middot;
+  <a href="index.html">Dashboard</a> &middot;
+  <a href="https://github.com/snyderb-de/content-list-generator" target="_blank" rel="noopener">snyderb-de/content-list-generator</a>
+</footer>
+
+<script>
+(function () {
+  var KEY = 'clg-manual-theme';
+  var btn = document.getElementById('theme-toggle');
+  var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  var theme = localStorage.getItem(KEY) || (prefersDark ? 'dark' : 'light');
+  function applyTheme(t) {
+    document.body.setAttribute('data-theme', t);
+    btn.textContent = 'Theme: ' + (t === 'dark' ? 'Dark' : 'Light');
+    localStorage.setItem(KEY, t);
+    theme = t;
+  }
+  applyTheme(theme);
+  btn.addEventListener('click', function () { applyTheme(theme === 'dark' ? 'light' : 'dark'); });
+})();
+</script>
+</body>
+</html>
