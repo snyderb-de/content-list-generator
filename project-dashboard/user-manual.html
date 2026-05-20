@@ -1,248 +1,856 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Content List Generator — User Manual</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:ital,wght@0,400;0,600;0,700;1,400;1,600&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
   <style>
+    /* ── Design tokens ────────────────────────────────────────── */
     :root {
-      color-scheme: light;
-      --ink: #2b2417;
-      --paper: #faf6ee;
-      --line: #d9cdb4;
-      --accent: #235194;
-      --accent-warm: #b8620c;
-      --muted: #6c5d44;
-      --code-bg: #efe7d6;
-      --code-ink: #2b2417;
-      --warn-bg: #fff3dc;
-      --warn-ink: #7a4500;
+      --bg: #f4f1e8;
+      --panel: rgba(255, 253, 248, 0.88);
+      --panel-border: rgba(64, 55, 44, 0.12);
+      --text: #2f261d;
+      --muted: #6b6054;
+      --accent: #205b52;
+      --accent-soft: rgba(32, 91, 82, 0.12);
+      --shadow: 0 18px 38px rgba(60, 46, 27, 0.1);
+      --nav-bg: rgba(255, 253, 248, 0.94);
+      --nav-width: 240px;
+      --radius-lg: 24px;
+      --radius-md: 18px;
+      --radius-sm: 12px;
+      --flag: #7a4500;
+      --flag-bg: rgba(122, 69, 0, 0.1);
+      --alert: #8f4200;
+      --alert-soft: rgba(180, 80, 0, 0.08);
+      --alert-border: rgba(180, 80, 0, 0.18);
     }
+
     [data-theme="dark"] {
-      color-scheme: dark;
-      --ink: #ece3cf;
-      --paper: #1a1610;
-      --line: #2f2920;
-      --accent: #7cb4ff;
-      --accent-warm: #f5b87a;
-      --muted: #9b8d73;
-      --code-bg: #2a241b;
-      --code-ink: #ece3cf;
-      --warn-bg: #32220a;
-      --warn-ink: #f5b87a;
+      --bg: #1a1612;
+      --panel: rgba(30, 26, 20, 0.92);
+      --panel-border: rgba(255, 240, 210, 0.1);
+      --text: #f0e8d8;
+      --muted: #a89880;
+      --accent: #5aaa96;
+      --accent-soft: rgba(90, 170, 150, 0.14);
+      --shadow: 0 18px 38px rgba(0, 0, 0, 0.4);
+      --nav-bg: rgba(26, 22, 18, 0.96);
+      --flag: #f0a060;
+      --flag-bg: rgba(240, 160, 96, 0.14);
+      --alert: #f0a060;
+      --alert-soft: rgba(240, 140, 60, 0.13);
+      --alert-border: rgba(240, 140, 60, 0.24);
     }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    * { box-sizing: border-box; }
     html { scroll-behavior: smooth; }
+
     body {
-      font-family: "IBM Plex Serif", Georgia, serif;
-      font-size: 16px; line-height: 1.65; color: var(--ink); background: var(--paper);
+      margin: 0;
       min-height: 100vh;
+      font-family: "Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      transition: background 0.25s, color 0.25s;
     }
-    a { color: var(--accent); text-underline-offset: 2px; }
 
-    .top-nav {
-      max-width: 760px; margin: 0 auto;
-      padding: 18px 28px 0; display: flex; justify-content: space-between; align-items: center; gap: 12px;
-      font-family: "IBM Plex Sans", sans-serif; font-size: 0.85rem;
+    [data-theme="light"] body, :root body {
+      background: radial-gradient(circle at top left, rgba(255, 255, 255, 0.6), transparent 32%),
+                  linear-gradient(180deg, #f8f5ee 0%, #efe8db 100%);
     }
-    .top-nav a { color: var(--accent); text-decoration: none; font-weight: 600; }
-    .top-nav a:hover { text-decoration: underline; }
+    [data-theme="dark"] body {
+      background: radial-gradient(circle at top left, rgba(60, 50, 35, 0.4), transparent 32%),
+                  linear-gradient(180deg, #1e1a14 0%, #141008 100%);
+    }
+
+    .layout { display: flex; min-height: 100vh; }
+
+    /* ── Left nav ────────────────────────────────────────────── */
+    .nav {
+      position: sticky; top: 0; height: 100vh; width: var(--nav-width);
+      flex-shrink: 0; background: var(--nav-bg);
+      border-right: 1px solid var(--panel-border);
+      display: flex; flex-direction: column;
+      overflow-y: auto; backdrop-filter: blur(10px);
+      transition: background 0.25s, border-color 0.25s;
+      z-index: 10;
+    }
+    .nav-brand { padding: 22px 18px 14px; border-bottom: 1px solid var(--panel-border); }
+    .nav-brand p {
+      margin: 0 0 4px; font-size: 0.72rem; font-weight: 700;
+      letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent);
+    }
+    .nav-brand strong { font-family: Georgia, "Times New Roman", serif; font-size: 1rem; color: var(--text); }
+    .nav-brand a { color: inherit; text-decoration: none; }
+    .nav-brand a:hover { color: var(--accent); }
+    .nav-links { flex: 1; padding: 12px 0; }
+    .nav-group-label {
+      padding: 10px 18px 4px; font-size: 0.7rem; font-weight: 700;
+      letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted);
+    }
+    .nav-link {
+      display: block; padding: 7px 18px; font-size: 0.88rem;
+      color: var(--muted); text-decoration: none;
+      border-left: 3px solid transparent;
+      transition: color 0.15s, border-color 0.15s, background 0.15s;
+    }
+    .nav-link:hover, .nav-link.active {
+      color: var(--accent); border-left-color: var(--accent); background: var(--accent-soft);
+    }
+
+    .nav-footer { padding: 14px 18px; border-top: 1px solid var(--panel-border); }
+    .nav-footer label {
+      font-size: 0.78rem; font-weight: 600; letter-spacing: 0.08em;
+      text-transform: uppercase; color: var(--muted); display: block; margin-bottom: 8px;
+    }
+    .theme-toggle { display: flex; gap: 6px; }
     .theme-btn {
-      font-family: inherit; font-size: 0.78rem; font-weight: 600; cursor: pointer;
-      padding: 6px 12px; border-radius: 6px;
-      background: var(--code-bg); color: var(--ink); border: 1px solid var(--line);
+      flex: 1; padding: 6px 0; border: 1px solid var(--panel-border);
+      border-radius: 8px; background: transparent; color: var(--muted);
+      font-size: 0.8rem; font-weight: 600; cursor: pointer;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+      font-family: inherit;
     }
-    .theme-btn:hover { opacity: 0.85; }
+    .theme-btn:hover { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+    .theme-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 
-    article { max-width: 760px; margin: 0 auto; padding: 30px 28px 80px; }
-    h1 {
-      font-size: 2.4rem; font-weight: 700; line-height: 1.15; margin-bottom: 4px;
-      letter-spacing: -0.01em;
+    /* ── Main content ────────────────────────────────────────── */
+    .main { flex: 1; min-width: 0; padding: 40px 44px 64px 44px; max-width: 900px; }
+
+    .search-tip {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 16px; margin-bottom: 24px;
+      border: 1px solid var(--panel-border); border-radius: var(--radius-sm);
+      background: var(--accent-soft); font-size: 0.86rem; color: var(--muted);
     }
-    .subtitle {
-      font-family: "IBM Plex Sans", sans-serif; font-size: 0.92rem;
-      color: var(--muted); margin-bottom: 28px; font-style: italic;
+    .search-tip kbd {
+      display: inline-block; padding: 2px 7px;
+      border: 1px solid var(--panel-border); border-radius: 5px;
+      background: var(--panel); font-family: "SF Mono", Consolas, Menlo, monospace;
+      font-size: 0.82em; color: var(--accent); font-style: normal;
     }
-    h2 {
-      font-family: "IBM Plex Sans", sans-serif; font-size: 1.35rem; font-weight: 700;
-      margin-top: 38px; margin-bottom: 14px; color: var(--accent);
-      padding-bottom: 8px; border-bottom: 2px solid var(--line);
+
+    .hero {
+      padding: 36px 40px; border: 1px solid var(--panel-border);
+      border-radius: calc(var(--radius-lg) + 6px);
+      background: linear-gradient(135deg, rgba(32, 91, 82, 0.16), rgba(255, 253, 248, 0.88) 42%), var(--panel);
+      box-shadow: var(--shadow); margin-bottom: 4px;
     }
-    h3 { font-size: 1.1rem; font-weight: 600; margin-top: 24px; margin-bottom: 10px; }
-    p { margin-bottom: 14px; }
-    ul, ol { margin: 0 0 16px 24px; }
-    li { margin-bottom: 6px; }
+    [data-theme="dark"] .hero {
+      background: linear-gradient(135deg, rgba(90, 170, 150, 0.12), rgba(30, 26, 20, 0.9) 42%), var(--panel);
+    }
+    .eyebrow {
+      margin: 0 0 10px; font-size: 0.78rem; font-weight: 700;
+      letter-spacing: 0.18em; text-transform: uppercase; color: var(--accent);
+    }
+    h1, h2, h3 { margin: 0; font-family: Georgia, "Times New Roman", serif; font-weight: 700; }
+    h1 { font-size: clamp(2rem, 4vw, 3.4rem); line-height: 1; }
+    h2 { font-size: 1.25rem; }
+    h3 { font-size: 0.97rem; }
+    .hero-tagline {
+      max-width: 660px; margin: 14px 0 0;
+      font-size: 1.02rem; line-height: 1.65; color: var(--muted);
+    }
+
+    .section {
+      margin-top: 24px; padding: 26px 30px;
+      border: 1px solid var(--panel-border); border-radius: var(--radius-lg);
+      background: var(--panel); box-shadow: var(--shadow);
+      scroll-margin-top: 28px;
+    }
+    .section-header { margin-bottom: 18px; }
+    .section-header .eyebrow { margin-bottom: 6px; }
+
+    .cards { display: grid; gap: 12px; }
+    .card {
+      padding: 16px 18px; border: 1px solid var(--panel-border);
+      border-radius: var(--radius-md); background: rgba(255, 255, 255, 0.72);
+      box-shadow: 0 8px 20px rgba(84, 70, 50, 0.07);
+    }
+    [data-theme="dark"] .card { background: rgba(255, 255, 255, 0.04); }
+    .card h3 { margin-bottom: 8px; }
+    .card p { margin: 0; line-height: 1.6; color: var(--muted); font-size: 0.94rem; }
+    .card p + p { margin-top: 8px; }
+    .card-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+    @media (max-width: 720px) { .card-row { grid-template-columns: 1fr; } }
+
+    .pill {
+      display: inline-flex; align-items: center; padding: 3px 10px;
+      border-radius: 999px; background: var(--accent-soft); color: var(--accent);
+      font-size: 0.76rem; font-weight: 600; margin-bottom: 8px;
+    }
+    .flag {
+      display: inline-flex; align-items: center; padding: 2px 8px;
+      border-radius: 999px; background: var(--flag-bg); color: var(--flag);
+      font-size: 0.74rem; font-weight: 700; letter-spacing: 0.04em;
+      text-transform: uppercase; border: 1px solid currentColor;
+    }
+
+    ul.guide-list {
+      margin: 0; padding: 0 0 0 18px; color: var(--muted);
+      font-size: 0.94rem; line-height: 1.7;
+    }
+    ul.guide-list li + li { margin-top: 4px; }
+
+    ol.steps-list { margin: 0; padding: 0; list-style: none; counter-reset: steps; }
+    ol.steps-list li {
+      counter-increment: steps; display: flex; gap: 14px; align-items: flex-start;
+      font-size: 0.94rem; line-height: 1.6; color: var(--muted);
+      padding: 9px 0; border-bottom: 1px solid var(--panel-border);
+    }
+    ol.steps-list li:last-child { border-bottom: none; padding-bottom: 0; }
+    ol.steps-list li:first-child { padding-top: 0; }
+    ol.steps-list li::before {
+      content: counter(steps); flex-shrink: 0; width: 22px; height: 22px;
+      border-radius: 50%; background: var(--accent-soft); color: var(--accent);
+      font-weight: 700; font-size: 0.76rem;
+      display: flex; align-items: center; justify-content: center; margin-top: 2px;
+    }
+
     code {
-      font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
-      font-size: 0.88em; background: var(--code-bg); color: var(--code-ink);
-      padding: 2px 6px; border-radius: 4px;
+      font-family: "SF Mono", Consolas, Menlo, monospace;
+      font-size: 0.84em; padding: 2px 6px; border-radius: 5px;
+      background: rgba(32, 91, 82, 0.1); color: var(--accent);
     }
+    [data-theme="dark"] code { background: rgba(90, 170, 150, 0.14); }
     pre {
-      background: var(--code-bg); color: var(--code-ink);
-      padding: 12px 16px; border-radius: 8px; overflow-x: auto;
-      font-family: "IBM Plex Mono", monospace; font-size: 0.85rem; line-height: 1.5;
-      margin-bottom: 16px;
+      background: rgba(32, 91, 82, 0.07); border: 1px solid var(--panel-border);
+      border-radius: var(--radius-sm); padding: 12px 16px;
+      overflow-x: auto; font-size: 0.87rem; line-height: 1.5; margin: 10px 0 0;
     }
-    pre code { background: none; padding: 0; }
-    blockquote {
-      border-left: 4px solid var(--accent-warm); padding: 10px 16px;
-      margin: 16px 0; background: var(--warn-bg); color: var(--warn-ink);
-      font-style: italic; border-radius: 0 6px 6px 0;
+    pre code { background: transparent; padding: 0; font-size: inherit; }
+
+    table {
+      border-collapse: collapse; width: 100%; margin: 12px 0 0;
+      font-size: 0.88rem; background: transparent;
     }
-    .draft-banner {
-      background: var(--warn-bg); color: var(--warn-ink);
-      border: 1px solid var(--warn-ink);
-      padding: 14px 20px; border-radius: 8px; margin-bottom: 28px;
-      font-family: "IBM Plex Sans", sans-serif; font-size: 0.9rem;
+    th, td {
+      text-align: left; padding: 8px 12px;
+      border-bottom: 1px solid var(--panel-border); vertical-align: top;
+      color: var(--muted); line-height: 1.5;
     }
-    .draft-banner strong { display: block; margin-bottom: 4px; font-size: 1rem; }
-    footer {
-      max-width: 760px; margin: 0 auto;
-      padding: 20px 28px; border-top: 1px solid var(--line);
-      font-family: "IBM Plex Sans", sans-serif; font-size: 0.8rem; color: var(--muted);
-      text-align: center;
+    th {
+      color: var(--text); font-weight: 700; font-size: 0.8rem;
+      letter-spacing: 0.04em;
+      border-bottom: 1px solid rgba(64, 55, 44, 0.2);
+    }
+    [data-theme="dark"] th { border-bottom-color: rgba(255, 240, 210, 0.18); }
+    tr:last-child td { border-bottom: none; }
+
+    .timeline { display: grid; gap: 10px; }
+    .timeline-item {
+      padding: 13px 16px; border: 1px solid var(--panel-border);
+      border-left: 5px solid var(--accent); border-radius: var(--radius-sm);
+      background: rgba(255, 255, 255, 0.72);
+      box-shadow: 0 6px 16px rgba(84, 70, 50, 0.06);
+    }
+    [data-theme="dark"] .timeline-item { background: rgba(255, 255, 255, 0.04); }
+    .timeline-item h3 { margin-bottom: 4px; font-size: 0.94rem; }
+    .timeline-item p { margin: 0; font-size: 0.88rem; line-height: 1.55; color: var(--muted); }
+
+    .note {
+      padding: 10px 14px; border: 1px solid var(--alert-border);
+      border-radius: var(--radius-sm); background: var(--alert-soft);
+      font-size: 0.88rem; color: var(--alert);
+      margin-top: 10px; line-height: 1.55;
+    }
+    .note strong { color: var(--alert); }
+
+    .mode-group {
+      border: 1px solid var(--panel-border); border-radius: var(--radius-md);
+      overflow: hidden; background: var(--panel);
+      box-shadow: 0 8px 20px rgba(84, 70, 50, 0.07);
+    }
+    .mode-group > .card-row { margin: 0; padding: 12px; }
+    .mode-ribbon {
+      padding: 11px 16px; background: var(--alert-soft);
+      border-top: 1px solid var(--alert-border);
+      font-size: 0.88rem; color: var(--alert); line-height: 1.5;
+    }
+    .mode-ribbon strong { color: var(--alert); }
+
+    .card.op-card {
+      background: var(--accent-soft) !important;
+      border-color: rgba(32, 91, 82, 0.18) !important;
+    }
+
+    .footer {
+      margin-top: 48px; padding-top: 20px;
+      border-top: 1px solid var(--panel-border);
+      font-size: 0.82rem; color: var(--muted); text-align: center;
+    }
+
+    @media (max-width: 720px) {
+      .nav { display: none; }
+      .main { padding: 20px 16px 48px; }
+    }
+    @media print {
+      .nav { display: none; }
+      .main { max-width: 100%; padding: 0; }
+      pre, table { page-break-inside: avoid; }
     }
   </style>
 </head>
 <body>
+<div class="layout">
 
-<nav class="top-nav">
-  <a href="index.html">← Project Dashboard</a>
-  <button id="theme-toggle" class="theme-btn">Theme: Light</button>
-</nav>
+  <nav class="nav" aria-label="Manual navigation">
+    <div class="nav-brand">
+      <p>User Manual</p>
+      <strong><a href="index.html">Content List Generator</a></strong>
+    </div>
 
-<article>
-  <h1>User Manual</h1>
-  <p class="subtitle">Content List Generator — Cross-platform archival scanning, CSV export, and hash verification.</p>
+    <div class="nav-links">
+      <a class="nav-link" href="#overview">What this app does</a>
 
-  <div class="draft-banner">
-    <strong>📝 Draft — work in progress</strong>
-    This manual is a stub. Full content is tracked in <a href="https://github.com/snyderb-de/content-list-generator/blob/main/TODO.md" target="_blank" rel="noopener">TODO.md</a> as <code>P0-03</code>. Screenshots tracked as <code>P0-04</code>. Until complete, the <a href="https://github.com/snyderb-de/content-list-generator/blob/main/README.md" target="_blank" rel="noopener">README</a> is the most current source of truth.
+      <div class="nav-group-label">Getting Started</div>
+      <a class="nav-link" href="#install">Download &amp; install</a>
+      <a class="nav-link" href="#tour">Window tour</a>
+
+      <div class="nav-group-label">Workflows</div>
+      <a class="nav-link" href="#scan">1. Generate content list</a>
+      <a class="nav-link" href="#email">2. Copy email files</a>
+      <a class="nav-link" href="#clone">3. Clone compare</a>
+
+      <div class="nav-group-label">Reference</div>
+      <a class="nav-link" href="#output">Understanding output</a>
+      <a class="nav-link" href="#hash">Hash algorithms</a>
+      <a class="nav-link" href="#chunking">CSV chunking</a>
+      <a class="nav-link" href="#filters">Filters &amp; exclusions</a>
+      <a class="nav-link" href="#email-types">Email file types</a>
+      <a class="nav-link" href="#verdicts">Clone verdicts</a>
+      <a class="nav-link" href="#troubleshooting">Troubleshooting</a>
+      <a class="nav-link" href="#tips">Tips</a>
+      <a class="nav-link" href="#about">About</a>
+    </div>
+
+    <div class="nav-footer">
+      <label>Appearance</label>
+      <div class="theme-toggle">
+        <button class="theme-btn" id="btn-light" onclick="setTheme('light')">Light</button>
+        <button class="theme-btn" id="btn-dark" onclick="setTheme('dark')">Dark</button>
+      </div>
+    </div>
+  </nav>
+
+  <div class="main">
+
+    <div class="search-tip" role="note">
+      <span>Tip: use</span>
+      <kbd>Ctrl</kbd><span>+</span><kbd>F</kbd>
+      <span>(Windows) or</span>
+      <kbd>⌘</kbd><span>+</span><kbd>F</kbd>
+      <span>(Mac) to search anywhere in this manual.</span>
+    </div>
+
+    <header class="hero" id="top">
+      <p class="eyebrow">User Manual</p>
+      <h1>Content List Generator</h1>
+      <p class="hero-tagline">
+        Scan large folder trees, write CSV inventories with optional hash columns, copy email
+        files into curated destinations, and verify drive clones. macOS, Linux, and Windows.
+      </p>
+    </header>
+
+    <!-- ── Overview ───────────────────────────────────────────── -->
+    <section class="section" id="overview">
+      <div class="section-header">
+        <p class="eyebrow">Overview</p>
+        <h2>What this app does</h2>
+      </div>
+      <div class="cards">
+        <div class="card">
+          <p>
+            Content List Generator is a desktop tool for archival migration workflows. Point it
+            at a folder, and it produces a CSV inventory of every file under that folder —
+            relative path, size, modified date, and an optional hash. Output streams to disk
+            so multi-million-row scans do not run out of memory.
+          </p>
+          <p>
+            Two additional workflows live alongside the scan: copy every email-related file
+            under a tree into a curated destination, and compare two drives' content lists
+            to verify a clone.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Install ────────────────────────────────────────────── -->
+    <section class="section" id="install">
+      <div class="section-header">
+        <p class="eyebrow">Getting Started</p>
+        <h2>Download &amp; install</h2>
+      </div>
+      <div class="cards">
+        <div class="card">
+          <p>Pick the build that matches your platform. All builds are unsigned at this stage and the OS may prompt before running.</p>
+        </div>
+        <div class="card-row">
+          <div class="card">
+            <span class="pill">macOS</span>
+            <h3 style="margin-bottom:6px">Wails GUI universal</h3>
+            <p>Download <code>content-list-generator-gui-darwin-universal.zip</code>. Unzip, drag the <code>.app</code> to Applications.</p>
+            <div class="note">
+              <strong>First launch:</strong> Gatekeeper says "could not verify free of malware." Right-click the app → Open → Open. Or System Settings → Privacy &amp; Security → "Open Anyway."
+            </div>
+          </div>
+          <div class="card">
+            <span class="pill">Windows · portable</span>
+            <h3 style="margin-bottom:6px">No-install zip</h3>
+            <p>Download <code>content-list-generator-windows-portable.zip</code>. Unzip anywhere — USB, Desktop, a network share. Run <code>Start Content List Generator.cmd</code>.</p>
+            <p style="margin-top:8px">Settings stay in <code>data\</code> beside the launcher. Recommended for managed Windows fleets.</p>
+          </div>
+        </div>
+        <div class="card-row">
+          <div class="card">
+            <span class="pill">Windows · native</span>
+            <h3 style="margin-bottom:6px">Wails GUI .exe</h3>
+            <p>Download <code>content-list-generator-gui-windows-amd64.exe</code>. Double-click to run.</p>
+            <div class="note">
+              <strong>SmartScreen prompt:</strong> click "More info" → "Run anyway." Will go away once the binary is code-signed.
+            </div>
+          </div>
+          <div class="card">
+            <span class="pill">Linux · amd64</span>
+            <h3 style="margin-bottom:6px">Terminal UI</h3>
+            <p>Download <code>content-list-generator-linux-amd64</code>. In your terminal:</p>
+            <pre><code>chmod +x content-list-generator-linux-amd64
+./content-list-generator-linux-amd64</code></pre>
+          </div>
+        </div>
+        <div class="card">
+          <p>Latest release: <a href="https://github.com/snyderb-de/content-list-generator/releases/latest" target="_blank" rel="noopener">github.com/snyderb-de/content-list-generator/releases/latest</a></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Window tour ────────────────────────────────────────── -->
+    <section class="section" id="tour">
+      <div class="section-header">
+        <p class="eyebrow">Getting Started</p>
+        <h2>The window at a glance</h2>
+      </div>
+      <div class="cards">
+        <div class="card">
+          <p>The GUI is organized as a vertical sidebar plus a workspace pane that swaps based on which workflow you pick.</p>
+          <ol class="steps-list" style="margin-top:12px">
+            <li><strong>Sidebar.</strong> Three workflow tabs — Content List, Email Copy, Clone Compare — plus theme toggle.</li>
+            <li><strong>Source folder.</strong> Browse button. The folder you point this at is scanned recursively.</li>
+            <li><strong>Output folder + filename.</strong> Where the CSV (or copy destination) lands. Defaults to the source.</li>
+            <li><strong>Settings panel.</strong> Hash algorithm, exclusions, XLSX option, folders-only toggle.</li>
+            <li><strong>Generate.</strong> Starts the work. Progress bar + live stats appear.</li>
+            <li><strong>Done summary.</strong> Top extensions by count and by size, filtered samples, output paths.</li>
+          </ol>
+          <div class="note" style="margin-top:14px">
+            The theme toggle (sun / moon) at the bottom of the sidebar saves your preference between launches.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Workflow 1: Generate ──────────────────────────────── -->
+    <section class="section" id="scan">
+      <div class="section-header">
+        <p class="eyebrow">Workflow 1</p>
+        <h2>Generate a content list</h2>
+      </div>
+      <div class="cards">
+        <div class="card">
+          <p>Produces a recursive CSV inventory of every file under a folder.</p>
+          <ol class="steps-list" style="margin-top:12px">
+            <li><strong>Pick a source folder.</strong> Browse to the drive or folder you want inventoried. Network drives work too, but expect slower throughput.</li>
+            <li><strong>Pick an output folder.</strong> Defaults to the source. Choose somewhere with enough free space — a CSV of 1M rows is roughly 200 MB.</li>
+            <li><strong>Tune settings.</strong> See the Settings reference below — hash algorithm, exclusions, XLSX, etc.</li>
+            <li><strong>Click Generate.</strong> The app first counts everything (so progress + ETA are real), then streams the scan to CSV.</li>
+            <li><strong>Review the done summary.</strong> Top extensions, totals, sample of filtered rows.</li>
+          </ol>
+          <div class="note" style="margin-top:14px">
+            <strong>Memory:</strong> the scan never buffers the full row set in RAM. A 5M-row inventory uses about the same memory as a 50-row one.
+          </div>
+        </div>
+        <div class="card">
+          <span class="pill">Settings reference</span>
+          <h3 style="margin-bottom:8px">What each toggle does</h3>
+          <table>
+            <thead><tr><th>Setting</th><th>What it does</th></tr></thead>
+            <tbody>
+              <tr><td><strong>Verification hash</strong></td><td>Off / SHA-1 / SHA-256 / BLAKE3. Adds a hash column to every row. See <a href="#hash">Hash algorithms</a>.</td></tr>
+              <tr><td><strong>Exclude hidden</strong></td><td>Skips dotfiles on Unix, hidden-attribute files on Windows.</td></tr>
+              <tr><td><strong>Exclude common system files</strong></td><td>Skips <code>.DS_Store</code>, <code>Thumbs.db</code>, <code>desktop.ini</code>, etc.</td></tr>
+              <tr><td><strong>Exclude extensions</strong></td><td>Comma-separated list, e.g. <code>tmp,log,bak</code>. Case-insensitive.</td></tr>
+              <tr><td><strong>Create XLSX after scan</strong></td><td>Generates an Excel copy alongside the CSV.</td></tr>
+              <tr><td><strong>Preserve leading zeros in XLSX</strong></td><td>Keeps zero-padded filenames (<code>001.001</code>) as text, not numbers.</td></tr>
+              <tr><td><strong>Delete CSV after XLSX</strong></td><td>Cleans up the intermediate CSV once the XLSX exists.</td></tr>
+              <tr><td><strong>Folders only</strong></td><td>Switches to folder-list mode. No file rows. Useful for prepping migration plans.</td></tr>
+              <tr><td><strong>Max depth</strong></td><td>Only in folders-only mode. <code>0</code> = unlimited, <code>1</code> = top-level only, etc.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Workflow 2: Email copy ────────────────────────────── -->
+    <section class="section" id="email">
+      <div class="section-header">
+        <p class="eyebrow">Workflow 2</p>
+        <h2>Copy email files</h2>
+      </div>
+      <div class="cards">
+        <div class="card">
+          <p>Finds every email file under a source folder and copies them into a destination, preserving the relative folder structure. Writes a manifest CSV of what got copied.</p>
+          <ol class="steps-list" style="margin-top:12px">
+            <li><strong>Pick the email-copy tab</strong> in the sidebar.</li>
+            <li><strong>Source folder</strong> — the tree to search for email files.</li>
+            <li><strong>Destination folder</strong> — where copies land. Folder structure under the source is mirrored.</li>
+            <li><strong>Click Copy.</strong> The app walks the tree, copies files with matching extensions, and writes a manifest CSV.</li>
+            <li><strong>Review the manifest.</strong> One row per copied file with source path, destination path, size, and hash (if requested).</li>
+          </ol>
+          <div class="note" style="margin-top:14px">
+            <strong>Skips:</strong> files already present at the destination with matching size + mtime. Safe to re-run.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Workflow 3: Clone compare ─────────────────────────── -->
+    <section class="section" id="clone">
+      <div class="section-header">
+        <p class="eyebrow">Workflow 3</p>
+        <h2>Clone compare</h2>
+      </div>
+      <div class="cards">
+        <div class="card">
+          <p>Compares two drive content-list CSVs to verify a clone. Picks one of several verdicts and writes a diff CSV showing every difference.</p>
+          <ol class="steps-list" style="margin-top:12px">
+            <li><strong>Generate a content list</strong> for the original drive (use BLAKE3 or SHA-256 for confidence).</li>
+            <li><strong>Generate a content list</strong> for the cloned drive — same hash algorithm.</li>
+            <li><strong>Open the clone-compare tab</strong>, point it at both CSVs.</li>
+            <li><strong>Optional:</strong> enable soft compare — accepts renamed paths with identical hashes as matches.</li>
+            <li><strong>Click Compare.</strong> Get a verdict + diff CSV.</li>
+          </ol>
+        </div>
+        <div class="card">
+          <h3>Soft compare</h3>
+          <p>Off by default. When enabled, the comparator treats a file as a match if its hash exists on both sides — even if the path changed. Useful when the clone re-flattened folder structure but preserved content.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Output ─────────────────────────────────────────────── -->
+    <section class="section" id="output">
+      <div class="section-header">
+        <p class="eyebrow">Reference</p>
+        <h2>Understanding the output</h2>
+      </div>
+      <div class="cards">
+        <div class="card">
+          <h3>Content list CSV columns</h3>
+          <table>
+            <thead><tr><th>Column</th><th>Contents</th></tr></thead>
+            <tbody>
+              <tr><td><code>Path</code></td><td>Relative path from the source root.</td></tr>
+              <tr><td><code>Name</code></td><td>Filename only.</td></tr>
+              <tr><td><code>Extension</code></td><td>Lowercased extension, no dot.</td></tr>
+              <tr><td><code>Bytes</code></td><td>File size in bytes.</td></tr>
+              <tr><td><code>Modified</code></td><td>Last-modified timestamp (ISO 8601).</td></tr>
+              <tr><td><code>Hash</code></td><td>Hex digest. Only present if hash mode is on.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="card">
+          <h3>Companion files</h3>
+          <p>Every scan also writes a <code>.report.txt</code> alongside the CSV. It contains totals, filtered samples, top extensions, and the settings used.</p>
+          <pre><code>my-folder-content-list-2026-05-20T13-45-02.csv
+my-folder-content-list-2026-05-20T13-45-02.report.txt
+my-folder-content-list-2026-05-20T13-45-02.xlsx   (if XLSX enabled)</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Hash ─────────────────────────────────────────────── -->
+    <section class="section" id="hash">
+      <div class="section-header">
+        <p class="eyebrow">Reference</p>
+        <h2>Hash algorithms</h2>
+      </div>
+      <div class="cards">
+        <div class="card">
+          <p>Hashing reads every byte of every file. Choose based on speed vs. cryptographic strength.</p>
+          <table>
+            <thead><tr><th>Mode</th><th>Throughput</th><th>Use for</th></tr></thead>
+            <tbody>
+              <tr><td><code>Off</code></td><td>~ disk read speed</td><td>Quick inventories where bytewise identity does not matter.</td></tr>
+              <tr><td><code>SHA-1</code></td><td>fast</td><td>Legacy compatibility, casual fingerprinting.</td></tr>
+              <tr><td><code>SHA-256</code></td><td>slower, stronger</td><td>Default for verifications that must hold up to scrutiny.</td></tr>
+              <tr><td><code>BLAKE3</code></td><td>fastest secure hash</td><td>Best speed/strength trade-off. Requires the <code>blake3</code> Python package on the Python runtime.</td></tr>
+            </tbody>
+          </table>
+          <div class="note" style="margin-top:12px">
+            <strong>Clone verification:</strong> use BLAKE3 or SHA-256. SHA-1 is fine for sanity checks but collisions are demonstrable, so avoid it for adversarial scenarios.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Chunking ────────────────────────────────────────── -->
+    <section class="section" id="chunking">
+      <div class="section-header">
+        <p class="eyebrow">Reference</p>
+        <h2>CSV chunking for huge scans</h2>
+      </div>
+      <div class="cards">
+        <div class="card">
+          <p>
+            CSV files over a few hundred thousand rows get unwieldy in Excel and many text editors.
+            Content List Generator splits output every 300,000 rows by default.
+          </p>
+          <table>
+            <thead><tr><th>Row count</th><th>Output files</th></tr></thead>
+            <tbody>
+              <tr><td>1 – 300,000</td><td><code>{name}.csv</code></td></tr>
+              <tr><td>300,001 – 600,000</td><td><code>{name}-001.csv</code>, <code>{name}-002.csv</code></td></tr>
+              <tr><td>900,001+</td><td><code>{name}-001.csv</code>, <code>{name}-002.csv</code>, <code>{name}-003.csv</code>, …</td></tr>
+            </tbody>
+          </table>
+          <p style="margin-top:10px">XLSX files are split using the same rule. Each chunk includes its own header row.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Filters ─────────────────────────────────────────── -->
+    <section class="section" id="filters">
+      <div class="section-header">
+        <p class="eyebrow">Reference</p>
+        <h2>Filters &amp; exclusions</h2>
+      </div>
+      <div class="cards">
+        <div class="card">
+          <h3>Always-excluded files</h3>
+          <p>These never appear in output regardless of settings:</p>
+          <table>
+            <thead><tr><th>Pattern</th><th>Why</th></tr></thead>
+            <tbody>
+              <tr><td><code>pagefile.sys</code>, <code>hiberfil.sys</code>, <code>swapfile.sys</code></td><td>Windows swap files; not user content.</td></tr>
+              <tr><td><code>Thumbs.db</code>, <code>ehthumbs.db</code>, <code>desktop.ini</code></td><td>Windows OS noise.</td></tr>
+              <tr><td><code>.DS_Store</code></td><td>macOS Finder metadata.</td></tr>
+              <tr><td><code>~$*</code>, <code>.~lock.*</code></td><td>Office/LibreOffice lock files.</td></tr>
+              <tr><td><code>._*</code></td><td>macOS resource forks on non-HFS filesystems.</td></tr>
+              <tr><td><code>*.tmp</code></td><td>Temporary files.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="card">
+          <h3>Always-excluded directories</h3>
+          <p>Recycle bins, indexer caches, and other OS infrastructure folders.</p>
+          <ul class="guide-list" style="margin-top:6px">
+            <li><code>$RECYCLE.BIN</code>, <code>System Volume Information</code></li>
+            <li><code>.Spotlight-V100</code>, <code>.Trashes</code>, <code>.fseventsd</code></li>
+            <li><code>.TemporaryItems</code>, <code>.DocumentRevisions-V100</code></li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>User-toggleable filters</h3>
+          <ul class="guide-list" style="margin-top:6px">
+            <li><strong>Hidden files</strong> — names starting with <code>.</code> or with the hidden attribute set.</li>
+            <li><strong>System files</strong> — short list of OS metadata files.</li>
+            <li><strong>Extension list</strong> — comma-separated. Match is on the lowercased extension without the dot.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Email types ─────────────────────────────────────── -->
+    <section class="section" id="email-types">
+      <div class="section-header">
+        <p class="eyebrow">Reference</p>
+        <h2>Email file types recognized</h2>
+      </div>
+      <div class="cards">
+        <div class="card">
+          <p>The Copy Email Files workflow looks for files with these extensions.</p>
+          <table>
+            <thead><tr><th>Extension</th><th>Source</th></tr></thead>
+            <tbody>
+              <tr><td><code>.eml</code></td><td>Standard MIME-encoded email — Apple Mail, Thunderbird, generic mail.</td></tr>
+              <tr><td><code>.msg</code></td><td>Outlook single-message format.</td></tr>
+              <tr><td><code>.pst</code></td><td>Outlook personal storage table — whole-mailbox archive.</td></tr>
+              <tr><td><code>.ost</code></td><td>Outlook offline storage — IMAP/Exchange cached copy.</td></tr>
+              <tr><td><code>.mbox</code></td><td>Unix mailbox format — Apple Mail exports, mutt, pine.</td></tr>
+            </tbody>
+          </table>
+          <div class="note" style="margin-top:10px">
+            <strong>Heads up:</strong> <code>.pst</code> and <code>.ost</code> files can be very large (multi-GB).
+            Copy time is bound by disk throughput; budget accordingly.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Verdicts ────────────────────────────────────────── -->
+    <section class="section" id="verdicts">
+      <div class="section-header">
+        <p class="eyebrow">Reference</p>
+        <h2>Clone-compare verdicts</h2>
+      </div>
+      <div class="cards">
+        <div class="card">
+          <p>Compare results land on one of these verdicts. The diff CSV always lists every actual difference, regardless of verdict.</p>
+          <table>
+            <thead><tr><th>Verdict</th><th>Meaning</th></tr></thead>
+            <tbody>
+              <tr><td><span class="pill" style="margin-bottom:0">Exact Match</span></td><td>Every file's path, size, mtime, and hash agree. Perfect clone.</td></tr>
+              <tr><td><span class="pill" style="margin-bottom:0">Hash Clone</span></td><td>Hashes match for every file, but paths or mtimes differ. Common when a clone tool re-flattened or normalized timestamps.</td></tr>
+              <tr><td><span class="pill" style="margin-bottom:0">Metadata Clone</span></td><td>Soft-compare mode only. Hashes match, paths differ. Treats path differences as cosmetic.</td></tr>
+              <tr><td><span class="pill" style="margin-bottom:0">Partial Clone</span></td><td>Most files match, but at least one is missing or has a hash mismatch.</td></tr>
+              <tr><td><span class="pill" style="margin-bottom:0">Mismatch</span></td><td>Significant divergence. Probably not the same content.</td></tr>
+            </tbody>
+          </table>
+          <div class="note" style="margin-top:12px">
+            <strong>Tip:</strong> if you got a verdict you didn't expect, sort the diff CSV by the <code>Difference</code> column to see what changed.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Troubleshooting ─────────────────────────────────── -->
+    <section class="section" id="troubleshooting">
+      <div class="section-header">
+        <p class="eyebrow">Reference</p>
+        <h2>If something goes wrong</h2>
+      </div>
+      <div class="timeline">
+        <div class="timeline-item">
+          <h3>macOS: "could not verify free of malware"</h3>
+          <p>
+            Gatekeeper blocking an unsigned binary. Right-click the app → Open → Open.
+            Or System Settings → Privacy &amp; Security → "Open Anyway."
+            Or terminal: <code>xattr -d com.apple.quarantine /path/to/app</code>.
+          </p>
+        </div>
+        <div class="timeline-item">
+          <h3>Windows: SmartScreen prompt on launch</h3>
+          <p>Click "More info" → "Run anyway." Will go away once the binary is code-signed.</p>
+        </div>
+        <div class="timeline-item">
+          <h3>Windows: .exe does not launch at all</h3>
+          <p>
+            Fixed in v0.2.2. If you are on an earlier version, upgrade or use the portable
+            <code>.zip</code> instead. Details in <code>docs/debug/windows-launch-failure.md</code> in the repo.
+          </p>
+        </div>
+        <div class="timeline-item">
+          <h3>Output folder is not writable</h3>
+          <p>The app verifies the folder is writable before scanning. If it errors out, pick a different output location.</p>
+        </div>
+        <div class="timeline-item">
+          <h3>The CSV exists already</h3>
+          <p>You will be prompted to overwrite. Pick yes to replace it, or no to go back and rename the output file.</p>
+        </div>
+        <div class="timeline-item">
+          <h3>Scan is slower than expected</h3>
+          <p>
+            Network drives, encrypted volumes, and large hash modes (SHA-256, BLAKE3) all slow throughput.
+            For a quick inventory, turn hashing off and rerun.
+          </p>
+        </div>
+        <div class="timeline-item">
+          <h3>Python deploy: dependency-drift banner appears</h3>
+          <p>
+            The orange banner at the top of the window means an installed Python package's version
+            does not match the expected version. Tell your IT Admin — they need to run
+            <code>pip install -U -r requirements.txt</code> on the affected machine.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Tips ────────────────────────────────────────────── -->
+    <section class="section" id="tips">
+      <div class="section-header">
+        <p class="eyebrow">Reference</p>
+        <h2>Tips</h2>
+      </div>
+      <div class="cards">
+        <div class="card">
+          <ul class="guide-list">
+            <li>Start with hashing <strong>Off</strong> to validate paths and counts, then re-run with BLAKE3 once you trust the inventory plan.</li>
+            <li>Stop a scan with <code>s</code> or <code>esc</code> in the TUI; in the GUI use the Stop button.</li>
+            <li>Filtered samples in the done summary tell you what got skipped. Glance over them to confirm exclusions did what you expected.</li>
+            <li>For migrations, write the original and clone CSVs to the same output folder so the diff is easy to file alongside.</li>
+            <li>The portable Windows .zip is the most reliable Windows install path — no admin rights, no install. Recommend it to less-technical users.</li>
+            <li>Folders-only mode + a depth cap is the fastest way to map a drive before deciding what to scan in full.</li>
+            <li>Settings persist across launches per-user. Reset them by deleting the settings file (path listed in <a href="#about">About</a>).</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── About ───────────────────────────────────────────── -->
+    <section class="section" id="about">
+      <div class="section-header">
+        <p class="eyebrow">Reference</p>
+        <h2>About this app</h2>
+      </div>
+      <div class="cards">
+        <div class="card">
+          <p>Diagnostic info you may need to share with whoever set up your install.</p>
+          <table>
+            <thead><tr><th>Item</th><th>Where to find it</th></tr></thead>
+            <tbody>
+              <tr><td>App version</td><td>Shown in the Wails GUI title bar; in the TUI it appears on the home screen.</td></tr>
+              <tr><td>Settings file (macOS)</td><td><code>~/Library/Application Support/content-list-generator/settings.json</code></td></tr>
+              <tr><td>Settings file (Windows)</td><td><code>%APPDATA%\content-list-generator\settings.json</code></td></tr>
+              <tr><td>Settings file (Linux)</td><td><code>~/.config/content-list-generator/settings.json</code></td></tr>
+              <tr><td>Settings file (Windows portable)</td><td><code>data\content-list-generator-settings.json</code> beside the launcher.</td></tr>
+              <tr><td>Latest release</td><td><a href="https://github.com/snyderb-de/content-list-generator/releases/latest" target="_blank" rel="noopener">github.com/snyderb-de/content-list-generator/releases/latest</a></td></tr>
+              <tr><td>Source code</td><td><a href="https://github.com/snyderb-de/content-list-generator" target="_blank" rel="noopener">github.com/snyderb-de/content-list-generator</a></td></tr>
+              <tr><td>Project dashboard</td><td><a href="index.html">Open the dashboard</a> — live stats, downloads, roadmap.</td></tr>
+              <tr><td>Python deploy deps</td><td><code>customtkinter 5.2.2</code>, <code>blake3 1.0.8</code></td></tr>
+            </tbody>
+          </table>
+          <div class="note" style="margin-top:12px">
+            <strong>Reset to defaults:</strong> close the app, delete the settings file at the path above for your OS, relaunch.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <p>Content List Generator — User Manual &middot;
+      <a href="index.html">Dashboard</a> &middot;
+      <a href="https://github.com/snyderb-de/content-list-generator" target="_blank" rel="noopener">GitHub</a></p>
+    </footer>
   </div>
-
-  <h2>Getting Started</h2>
-
-  <h3>Download the right build</h3>
-  <p>Pick based on your platform:</p>
-  <ul>
-    <li><strong>macOS</strong> — download <code>content-list-generator-gui-darwin-universal.zip</code>. Unzip, drag the <code>.app</code> to <code>Applications</code>. First launch may trigger Gatekeeper — right-click → Open.</li>
-    <li><strong>Windows (recommended)</strong> — download <code>content-list-generator-windows-portable.zip</code>. Unzip anywhere. Run <code>Start Content List Generator.cmd</code>. No installer or admin rights required.</li>
-    <li><strong>Windows (native GUI)</strong> — <code>content-list-generator-gui-windows-amd64.exe</code>. <em>Currently under investigation — silent exit on some Win11 hosts. Use portable until fixed.</em></li>
-    <li><strong>Linux</strong> — download <code>content-list-generator-linux-amd64</code>. Terminal UI. <code>chmod +x</code> then run.</li>
-  </ul>
-  <p>All releases live at <a href="https://github.com/snyderb-de/content-list-generator/releases/latest" target="_blank" rel="noopener">github.com/snyderb-de/content-list-generator/releases/latest</a>.</p>
-
-  <h2>Core Workflows</h2>
-
-  <h3>1. Generate a content list</h3>
-  <p>Scan a folder recursively and write a CSV inventory of every file found.</p>
-  <ol>
-    <li>Pick a source folder.</li>
-    <li>Pick an output folder (defaults to source).</li>
-    <li>Adjust settings (hash algorithm, exclusions, XLSX option).</li>
-    <li>Click <strong>Start scan</strong>.</li>
-  </ol>
-  <p>Output: <code>&lt;folder-name&gt;-content-list-&lt;timestamp&gt;.csv</code>. Scans over 300,000 rows split into chunks: <code>-001.csv</code>, <code>-002.csv</code>, …</p>
-
-  <h3>2. Copy email files</h3>
-  <p>Find every email file under a source folder and copy them into a destination, preserving the folder structure. Generates a manifest report.</p>
-  <p>Supported extensions: <code>.eml</code>, <code>.msg</code>, <code>.pst</code>, <code>.ost</code>, <code>.mbox</code>.</p>
-
-  <h3>3. Clone compare (Phase 7)</h3>
-  <p>Compare two drive scans to verify a successful clone. Produces a verdict (<code>Exact Match</code>, <code>Metadata Clone</code>, <code>Mismatch</code>) and a diff report.</p>
-
-  <h2>Settings Reference</h2>
-
-  <h3>Hash algorithms</h3>
-  <ul>
-    <li><strong>Off</strong> — fastest, no hashing</li>
-    <li><strong>SHA-1</strong> — fast, widely used legacy default</li>
-    <li><strong>SHA-256</strong> — slower, cryptographically stronger</li>
-    <li><strong>BLAKE3</strong> — fastest secure hash; requires the <code>blake3</code> Python package for the Python runtime</li>
-  </ul>
-
-  <h3>Exclusions</h3>
-  <ul>
-    <li><strong>Hidden files</strong> — files starting with a dot or with the hidden attribute set</li>
-    <li><strong>System files</strong> — <code>.DS_Store</code>, <code>Thumbs.db</code>, <code>desktop.ini</code>, etc.</li>
-    <li><strong>Extension filter</strong> — comma-separated list, e.g. <code>tmp,log,bak</code></li>
-  </ul>
-
-  <h3>Output options</h3>
-  <ul>
-    <li><strong>Create XLSX</strong> — generate an Excel copy alongside the CSV</li>
-    <li><strong>Preserve leading zeros</strong> — keep zero-padded filenames intact in the XLSX</li>
-    <li><strong>Delete CSV after XLSX</strong> — clean up the intermediate CSV once the XLSX exists</li>
-  </ul>
-
-  <h2>Troubleshooting</h2>
-
-  <h3>macOS — "could not verify free of malware"</h3>
-  <p>The binary is unsigned. Gatekeeper blocks it by default. Three ways to bypass:</p>
-  <ul>
-    <li>Right-click the <code>.app</code> → Open → "Open" button</li>
-    <li>System Settings → Privacy &amp; Security → scroll to "was blocked" → "Open Anyway"</li>
-    <li>Terminal: <code>xattr -d com.apple.quarantine /path/to/Content\ List\ Generator.app</code></li>
-  </ul>
-
-  <h3>Windows — SmartScreen warning</h3>
-  <p>The .exe is not yet code-signed. Click "More info" → "Run anyway". Once signed (planned), this will go away.</p>
-
-  <h3>Windows — .exe doesn't launch (silent exit)</h3>
-  <p>Known issue on some Win11 hosts. Use the portable .zip in the meantime. Investigation tracked in <a href="https://github.com/snyderb-de/content-list-generator/blob/main/docs/debug/windows-launch-failure.md" target="_blank" rel="noopener">docs/debug/windows-launch-failure.md</a>.</p>
-
-  <h2>FAQ</h2>
-
-  <h3>What's the difference between the .exe and the portable .zip on Windows?</h3>
-  <p>The <code>.exe</code> is a native Wails app using the Edge WebView2 runtime. The portable <code>.zip</code> is a Python tkinter app bundled with its own Python runtime via PyInstaller. Different code paths, same scanning behavior.</p>
-
-  <h3>Why is there a TUI (terminal) version?</h3>
-  <p>The Linux <code>content-list-generator-linux-amd64</code> is the Bubble Tea TUI — full-screen terminal UI. Useful for headless servers or SSH sessions where running a GUI isn't practical.</p>
-
-  <h3>Do my scan settings persist between sessions?</h3>
-  <p>Yes. Settings are stored in:</p>
-  <ul>
-    <li>macOS: <code>~/Library/Application Support/content-list-generator/</code></li>
-    <li>Windows: <code>%APPDATA%\content-list-generator\</code></li>
-    <li>Linux: <code>~/.config/content-list-generator/</code></li>
-    <li>Windows portable: in the <code>data\</code> folder next to the launcher</li>
-  </ul>
-
-  <h2>Resources</h2>
-  <ul>
-    <li><a href="index.html">Project Dashboard</a></li>
-    <li><a href="https://github.com/snyderb-de/content-list-generator" target="_blank" rel="noopener">GitHub Repository</a></li>
-    <li><a href="https://github.com/snyderb-de/content-list-generator/releases/latest" target="_blank" rel="noopener">Latest Release Downloads</a></li>
-    <li><a href="https://github.com/snyderb-de/content-list-generator/blob/main/README.md" target="_blank" rel="noopener">README</a></li>
-    <li><a href="https://github.com/snyderb-de/content-list-generator/issues" target="_blank" rel="noopener">Report an Issue</a></li>
-  </ul>
-
-</article>
-
-<footer>
-  Content List Generator — User Manual &middot;
-  <a href="index.html">Dashboard</a> &middot;
-  <a href="https://github.com/snyderb-de/content-list-generator" target="_blank" rel="noopener">snyderb-de/content-list-generator</a>
-</footer>
+</div>
 
 <script>
-(function () {
-  var KEY = 'clg-manual-theme';
-  var btn = document.getElementById('theme-toggle');
-  var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-  var theme = localStorage.getItem(KEY) || (prefersDark ? 'dark' : 'light');
-  function applyTheme(t) {
-    document.body.setAttribute('data-theme', t);
-    btn.textContent = 'Theme: ' + (t === 'dark' ? 'Dark' : 'Light');
-    localStorage.setItem(KEY, t);
-    theme = t;
+  function applyTheme(mode) {
+    document.documentElement.setAttribute('data-theme', mode);
+    document.getElementById('btn-light').classList.toggle('active', mode === 'light');
+    document.getElementById('btn-dark').classList.toggle('active', mode === 'dark');
+    localStorage.setItem('clg-manual-theme', mode);
   }
-  applyTheme(theme);
-  btn.addEventListener('click', function () { applyTheme(theme === 'dark' ? 'light' : 'dark'); });
-})();
+  function setTheme(mode) { applyTheme(mode); }
+
+  (function initTheme() {
+    var saved = localStorage.getItem('clg-manual-theme');
+    applyTheme(saved === 'dark' ? 'dark' : 'light');
+  })();
+
+  var sections = document.querySelectorAll('section[id], header[id]');
+  var navLinks = document.querySelectorAll('.nav-link');
+  var observer = new IntersectionObserver(function (entries) {
+    entries.forEach(function (entry) {
+      if (entry.isIntersecting) {
+        navLinks.forEach(function (l) { l.classList.remove('active'); });
+        var active = document.querySelector('.nav-link[href="#' + entry.target.id + '"]');
+        if (active) active.classList.add('active');
+      }
+    });
+  }, { rootMargin: '-20% 0px -70% 0px' });
+  sections.forEach(function (s) { observer.observe(s); });
 </script>
 </body>
 </html>
