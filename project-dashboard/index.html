@@ -1,0 +1,772 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Content List Generator — Project Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:ital,wght@0,600;0,700;1,600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      color-scheme: light;
+      --blue: #235194; --orange: #d4720f;
+      --bg: #f0f4fb; --bg2: #e5eaf6; --panel: #ffffff;
+      --ink: #19263e; --muted: #5c6e8a; --line: #d2daea;
+      --shadow: 0 6px 22px rgba(28,45,80,0.09);
+      --shadow-sm: 0 2px 9px rgba(28,45,80,0.07);
+      --ok-bg: #dff3e7; --ok-ink: #175e35;
+      --warn-bg: #fff3dc; --warn-ink: #7a4500;
+      --chip-bg: #edf2ff; --chip-line: #c8d7f8;
+      --code-bg: #f0f4ff; --code-ink: #1e3a6e;
+    }
+    [data-theme="dark"] {
+      color-scheme: dark;
+      --bg: #0c1220; --bg2: #0f1828; --panel: #121d32;
+      --ink: #e2ecff; --muted: #8aa3cc; --line: #1e3154;
+      --shadow: 0 6px 24px rgba(0,0,0,0.36);
+      --shadow-sm: 0 2px 9px rgba(0,0,0,0.22);
+      --ok-bg: #0e3322; --ok-ink: #6fd49e;
+      --warn-bg: #32220a; --warn-ink: #f5b87a;
+      --chip-bg: #152540; --chip-line: #2a4475;
+      --code-bg: #0c1828; --code-ink: #d8e8ff;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body { font-family: "IBM Plex Sans", "Segoe UI", sans-serif; font-size: 14px; line-height: 1.55; color: var(--ink); background: var(--bg); min-height: 100vh; }
+    a { color: var(--blue); text-underline-offset: 2px; }
+    [data-theme="dark"] a { color: #7cb4ff; }
+
+    .hero { background: linear-gradient(135deg, #182f5e 0%, #235194 52%, #b8620c 100%); color: #fff; padding: 30px 24px 26px; }
+    .hero-inner { max-width: 1160px; margin: 0 auto; display: grid; gap: 16px; }
+    .hero-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+    .hero h1 { font-family: "IBM Plex Serif", Georgia, serif; font-size: clamp(1.7rem, 3vw, 2.5rem); font-weight: 700; line-height: 1.1; }
+    .hero-desc { margin-top: 6px; font-size: 0.92rem; opacity: 0.88; max-width: 720px; }
+    .hero-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+    .hbtn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 8px; font-size: 0.82rem; font-weight: 600; font-family: inherit; text-decoration: none; cursor: pointer; border: none; transition: opacity 0.14s; }
+    .hbtn:hover { opacity: 0.84; color: inherit; text-decoration: none; }
+    .hbtn-primary { background: #fff; color: var(--blue); }
+    .hbtn-ghost { background: rgba(255,255,255,0.15); color: #fff; border: 1px solid rgba(255,255,255,0.3); }
+    .hbtn-theme { background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.25); padding: 7px 13px; }
+    .live-row { display: flex; gap: 8px; flex-wrap: wrap; }
+    .lpill { display: flex; align-items: center; gap: 5px; background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.2); border-radius: 999px; padding: 4px 11px; font-size: 0.72rem; font-weight: 600; white-space: nowrap; }
+    .ldot { width: 6px; height: 6px; border-radius: 50%; background: #6ee7b7; flex-shrink: 0; }
+
+    .page { max-width: 1160px; margin: 0 auto; padding: 18px 20px 64px; display: grid; gap: 14px; }
+
+    .stat-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(138px, 1fr)); gap: 10px; }
+    .stat-card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow-sm); padding: 13px 15px; }
+    .sc-label { font-size: 0.67rem; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted); }
+    .sc-val { font-size: 1.6rem; font-weight: 700; color: var(--blue); line-height: 1.1; margin-top: 3px; }
+    [data-theme="dark"] .sc-val { color: #7cb4ff; }
+
+    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); }
+    .ph { padding: 13px 18px 11px; border-bottom: 1px solid var(--line); display: flex; align-items: baseline; gap: 10px; justify-content: space-between; }
+    .ph h2 { font-family: "IBM Plex Serif", Georgia, serif; font-size: 1.05rem; font-weight: 600; }
+    .pbadge { font-size: 0.68rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--chip-bg); border: 1px solid var(--chip-line); color: var(--blue); white-space: nowrap; }
+    [data-theme="dark"] .pbadge { color: #7cb4ff; }
+    .pb { padding: 14px 18px; }
+
+    .col2 { display: grid; grid-template-columns: 1.65fr 1fr; gap: 14px; }
+
+    .todo-list { display: grid; gap: 8px; }
+    .todo { border: 1px solid var(--line); border-radius: 10px; padding: 11px 12px; background: color-mix(in oklab, var(--panel) 78%, var(--bg)); display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: start; }
+    .tid { font-family: "IBM Plex Mono", monospace; font-size: 0.68rem; font-weight: 600; color: var(--blue); background: var(--chip-bg); border: 1px solid var(--chip-line); border-radius: 5px; padding: 2px 6px; white-space: nowrap; margin-top: 2px; }
+    [data-theme="dark"] .tid { color: #7cb4ff; }
+    .t-title { font-size: 0.84rem; font-weight: 600; color: var(--ink); }
+    .t-note { font-size: 0.76rem; color: var(--muted); margin-top: 3px; line-height: 1.45; }
+    .imp { display: flex; gap: 2px; margin-top: 4px; }
+    .imp span { width: 6px; height: 6px; border-radius: 50%; background: var(--orange); opacity: 0.2; }
+    .imp span.on { opacity: 1; }
+
+    .lang-bar-wrap { height: 10px; border-radius: 999px; overflow: hidden; display: flex; margin-bottom: 14px; }
+    .lang-rows { display: grid; gap: 8px; }
+    .lang-row { display: grid; grid-template-columns: 100px 1fr 42px; gap: 8px; align-items: center; font-size: 0.77rem; }
+    .lang-name { display: flex; align-items: center; gap: 6px; font-weight: 500; color: var(--ink); }
+    .ldot2 { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .ltrack { height: 7px; border-radius: 999px; overflow: hidden; background: var(--bg2); border: 1px solid var(--line); }
+    .lfill { height: 100%; border-radius: 999px; }
+    .lpct { font-size: 0.71rem; font-weight: 600; color: var(--muted); text-align: right; }
+
+    .issue-list { display: grid; gap: 6px; }
+    .issue { display: flex; gap: 9px; align-items: flex-start; font-size: 0.81rem; padding: 9px 11px; border-radius: 8px; border: 1px solid var(--line); background: color-mix(in oklab, var(--panel) 80%, var(--bg)); }
+    .inum { font-size: 0.68rem; font-weight: 700; color: var(--ok-ink); background: var(--ok-bg); border-radius: 5px; padding: 2px 6px; white-space: nowrap; flex-shrink: 0; margin-top: 1px; }
+    .ititle { color: var(--ink); line-height: 1.4; flex: 1; }
+    .imeta { font-size: 0.71rem; color: var(--muted); margin-top: 2px; }
+
+    .phases { display: grid; gap: 8px; }
+    .phase { border: 1px solid var(--line); border-radius: 11px; overflow: hidden; }
+    .phase-head { display: grid; grid-template-columns: 30px 1fr auto; align-items: center; gap: 10px; padding: 12px 14px; background: color-mix(in oklab, var(--panel) 78%, var(--bg)); cursor: pointer; user-select: none; }
+    .phase-head:hover { background: color-mix(in oklab, var(--panel) 65%, var(--bg)); }
+    .pnum { width: 26px; height: 26px; border-radius: 50%; background: var(--blue); color: #fff; font-size: 0.78rem; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .pnum.stretch { background: var(--orange); }
+    .pnum.done { background: var(--ok-ink); }
+    .p-title { font-size: 0.88rem; font-weight: 600; color: var(--ink); }
+    .p-sub { font-size: 0.74rem; color: var(--muted); margin-top: 1px; }
+    .pbadge2 { font-size: 0.64rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; padding: 3px 8px; border-radius: 999px; white-space: nowrap; }
+    .badge-neutral { background: var(--chip-bg); color: var(--blue); border: 1px solid var(--chip-line); }
+    .badge-warn { background: var(--warn-bg); color: var(--warn-ink); }
+    .badge-ok { background: var(--ok-bg); color: var(--ok-ink); }
+    [data-theme="dark"] .badge-neutral { color: #7cb4ff; }
+    .phase-body { padding: 10px 14px 13px; border-top: 1px solid var(--line); background: var(--panel); display: none; }
+    .ptasks { display: grid; gap: 2px; }
+    .ptask { display: flex; align-items: baseline; gap: 8px; font-size: 0.78rem; color: var(--muted); padding: 5px 0; border-bottom: 1px solid var(--line); }
+    .ptask:last-child { border-bottom: none; }
+    .wid { font-family: "IBM Plex Mono", monospace; font-size: 0.67rem; color: var(--blue); white-space: nowrap; flex-shrink: 0; }
+    [data-theme="dark"] .wid { color: #7cb4ff; }
+
+    .done-list { display: grid; gap: 6px; }
+    .done-item { display: flex; gap: 8px; align-items: flex-start; font-size: 0.81rem; padding: 8px 10px; border-radius: 8px; background: color-mix(in oklab, var(--ok-bg) 55%, var(--panel)); border: 1px solid color-mix(in oklab, var(--ok-bg) 85%, var(--ok-ink)); }
+    .dcheck { color: var(--ok-ink); flex-shrink: 0; margin-top: 1px; }
+    .did { font-size: 0.67rem; font-weight: 700; color: var(--ok-ink); white-space: nowrap; flex-shrink: 0; margin-top: 2px; }
+    .dtext { color: var(--ink); line-height: 1.4; }
+
+    .decisions { display: grid; gap: 8px; }
+    .decision { border: 1px solid color-mix(in oklab, var(--warn-ink) 25%, transparent); border-radius: 10px; padding: 10px 13px; background: color-mix(in oklab, var(--warn-bg) 55%, var(--panel)); }
+    .dq { font-size: 0.83rem; font-weight: 600; color: var(--ink); }
+    .dd { font-size: 0.76rem; color: var(--muted); margin-top: 3px; line-height: 1.45; }
+    .dd strong { color: var(--warn-ink); }
+
+    .dl-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+    .dl-card { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; background: color-mix(in oklab, var(--panel) 80%, var(--bg)); text-decoration: none; color: var(--ink); display: block; transition: border-color 0.14s, box-shadow 0.14s; }
+    .dl-card:hover { border-color: var(--orange); box-shadow: 0 0 0 2px rgba(212,114,15,0.13); color: var(--ink); text-decoration: none; }
+    .dl-platform { font-size: 0.67rem; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: var(--orange); margin-bottom: 4px; }
+    .dl-title { font-size: 0.88rem; font-weight: 600; color: var(--ink); }
+    .dl-meta { font-size: 0.73rem; color: var(--muted); margin-top: 3px; line-height: 1.4; }
+
+    .res-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+    .res-card { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; background: color-mix(in oklab, var(--panel) 80%, var(--bg)); text-decoration: none; color: var(--ink); display: block; transition: border-color 0.14s, box-shadow 0.14s; }
+    .res-card:hover { border-color: var(--blue); box-shadow: 0 0 0 2px rgba(35,81,148,0.11); color: var(--ink); text-decoration: none; }
+    .rc-label { font-size: 0.67rem; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+    .rc-title { font-size: 0.88rem; font-weight: 600; color: var(--blue); }
+    .rc-desc { font-size: 0.75rem; color: var(--muted); margin-top: 3px; line-height: 1.4; }
+    [data-theme="dark"] .rc-title { color: #7cb4ff; }
+
+    code { font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace; font-size: 0.81em; background: var(--code-bg); color: var(--code-ink); padding: 1px 5px; border-radius: 4px; }
+    .muted { color: var(--muted); font-size: 0.82rem; }
+    footer { text-align: center; font-size: 0.74rem; color: var(--muted); padding: 20px; border-top: 1px solid var(--line); }
+
+    @media (max-width: 860px) {
+      .col2 { grid-template-columns: 1fr; }
+      .page { padding: 14px 14px 48px; }
+    }
+  </style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="hero-inner">
+    <div class="hero-top">
+      <div>
+        <h1>Content List Generator</h1>
+        <p class="hero-desc">Cross-platform desktop tool for recursive content scanning, CSV export, email-file copy, and hash verification. Built for archival migration workflows on macOS, Linux, and Windows. Go + Wails GUI plus a parallel Python deployment for managed Windows fleets.</p>
+        <div class="hero-actions">
+          <a href="user-manual.html" class="hbtn hbtn-primary">📘 User Manual</a>
+          <a href="https://github.com/snyderb-de/content-list-generator/releases/latest" class="hbtn hbtn-ghost" target="_blank" rel="noopener">⬇ Latest Release</a>
+          <a href="https://github.com/snyderb-de/content-list-generator" class="hbtn hbtn-ghost" target="_blank" rel="noopener">GitHub Repo</a>
+          <button id="theme-toggle" class="hbtn hbtn-theme">Theme: Light</button>
+        </div>
+      </div>
+    </div>
+    <div class="live-row" id="live-row">
+      <span class="lpill"><span class="ldot"></span>Loading live stats…</span>
+    </div>
+  </div>
+</header>
+
+<main class="page">
+
+  <section class="stat-strip">
+    <div class="stat-card"><div class="sc-label">Open Issues</div><div class="sc-val" id="s-issues">—</div></div>
+    <div class="stat-card"><div class="sc-label">Open PRs</div><div class="sc-val" id="s-prs">—</div></div>
+    <div class="stat-card"><div class="sc-label">Stars</div><div class="sc-val" id="s-stars">—</div></div>
+    <div class="stat-card"><div class="sc-label">Forks</div><div class="sc-val" id="s-forks">—</div></div>
+    <div class="stat-card"><div class="sc-label">Repo Size</div><div class="sc-val" id="s-size" style="font-size:1.15rem">—</div></div>
+    <div class="stat-card"><div class="sc-label">Last Push</div><div class="sc-val" id="s-push" style="font-size:0.92rem;line-height:1.3;margin-top:5px">—</div></div>
+  </section>
+
+  <article class="panel">
+    <div class="ph">
+      <h2>Downloads</h2>
+      <span class="pbadge" id="release-badge">latest</span>
+    </div>
+    <div class="pb">
+      <div class="dl-grid">
+        <a href="https://github.com/snyderb-de/content-list-generator/releases/latest/download/content-list-generator-gui-windows-amd64.exe" class="dl-card">
+          <div class="dl-platform">Windows GUI · amd64</div>
+          <div class="dl-title">.exe — Wails native</div>
+          <div class="dl-meta">⚠ Silent-exit bug under investigation on some Win11 hosts. Use portable below until fixed.</div>
+        </a>
+        <a href="https://github.com/snyderb-de/content-list-generator/releases/latest/download/content-list-generator-windows-portable.zip" class="dl-card">
+          <div class="dl-platform">Windows · portable</div>
+          <div class="dl-title">.zip — no install</div>
+          <div class="dl-meta">PyInstaller bundle. Run from USB or any folder. Confirmed working.</div>
+        </a>
+        <a href="https://github.com/snyderb-de/content-list-generator/releases/latest/download/content-list-generator-gui-darwin-universal.zip" class="dl-card">
+          <div class="dl-platform">macOS · universal</div>
+          <div class="dl-title">.app — Wails GUI</div>
+          <div class="dl-meta">arm64 + amd64. Gatekeeper prompts on first launch — right-click → Open.</div>
+        </a>
+        <a href="https://github.com/snyderb-de/content-list-generator/releases/latest/download/content-list-generator-linux-amd64" class="dl-card">
+          <div class="dl-platform">Linux · amd64</div>
+          <div class="dl-title">TUI binary</div>
+          <div class="dl-meta">Bubble Tea terminal UI. <code>chmod +x</code> then run.</div>
+        </a>
+        <a href="https://github.com/snyderb-de/content-list-generator/releases/latest/download/content-list-generator-windows-python.zip" class="dl-card">
+          <div class="dl-platform">Windows · Python source</div>
+          <div class="dl-title">.zip — BYO Python</div>
+          <div class="dl-meta">For managed Windows fleets with Python 3.12 + customtkinter pre-installed.</div>
+        </a>
+      </div>
+    </div>
+  </article>
+
+  <div class="col2">
+
+    <article class="panel">
+      <div class="ph">
+        <h2>Active TODOs</h2>
+        <span class="pbadge">priority order</span>
+      </div>
+      <div class="pb">
+        <div class="todo-list">
+
+          <div class="todo">
+            <span class="tid">P0-01</span>
+            <div>
+              <div class="t-title">Diagnose Windows .exe silent launch failure</div>
+              <div class="t-note">v0.2.1 .exe builds in CI but exits silently on Win11. WebView2 confirmed present. See <code>docs/debug/windows-launch-failure.md</code>. Workaround: portable .zip works.</div>
+            </div>
+            <div class="imp"><span class="on"></span><span class="on"></span><span class="on"></span><span class="on"></span><span class="on"></span></div>
+          </div>
+
+          <div class="todo">
+            <span class="tid">P0-02</span>
+            <div>
+              <div class="t-title">Verify v0.2.x on target machines</div>
+              <div class="t-note">Smoke test each artifact (mac .app, Linux binary, Windows portable, Windows .exe once P0-01 lands).</div>
+            </div>
+            <div class="imp"><span class="on"></span><span class="on"></span><span class="on"></span><span class="on"></span><span></span></div>
+          </div>
+
+          <div class="todo">
+            <span class="tid">P0-03</span>
+            <div>
+              <div class="t-title">Write user manual</div>
+              <div class="t-note">Stub at <code>project-dashboard/user-manual.html</code>. Cover: scan modes, hash algorithms, CSV chunking, email-copy flow, clone-compare verdicts, troubleshooting.</div>
+            </div>
+            <div class="imp"><span class="on"></span><span class="on"></span><span class="on"></span><span class="on"></span><span></span></div>
+          </div>
+
+          <div class="todo">
+            <span class="tid">P0-04</span>
+            <div>
+              <div class="t-title">Capture GUI screenshots</div>
+              <div class="t-note">Mac .app, Wails Windows GUI, Python customtkinter GUI, Bubble Tea TUI. Add to README + user manual + dashboard hero.</div>
+            </div>
+            <div class="imp"><span class="on"></span><span class="on"></span><span class="on"></span><span></span><span></span></div>
+          </div>
+
+          <div class="todo">
+            <span class="tid">P1-01</span>
+            <div>
+              <div class="t-title">Sweep dependabot Actions bumps</div>
+              <div class="t-note">PRs #1, #3, #5, #7 — GH Actions major version bumps. Rebase already requested. Merge once CI green.</div>
+            </div>
+            <div class="imp"><span class="on"></span><span class="on"></span><span></span><span></span><span></span></div>
+          </div>
+
+          <div class="todo">
+            <span class="tid">P1-02</span>
+            <div>
+              <div class="t-title">Refresh <code>gh</code> auth with workflow scope</div>
+              <div class="t-note">Unblocks CLI merging of workflow-touching PRs. <code>gh auth refresh -s workflow --hostname github.com</code> in a real terminal.</div>
+            </div>
+            <div class="imp"><span class="on"></span><span class="on"></span><span></span><span></span><span></span></div>
+          </div>
+
+          <div class="todo">
+            <span class="tid">P2-01</span>
+            <div>
+              <div class="t-title">Trim Windows-Python release loose files</div>
+              <div class="t-note">Currently publishes .zip plus 10 loose .py/.bat/.md files. Publish script should upload only the zip.</div>
+            </div>
+            <div class="imp"><span class="on"></span><span class="on"></span><span></span><span></span><span></span></div>
+          </div>
+
+          <div class="todo">
+            <span class="tid">P3-01</span>
+            <div>
+              <div class="t-title">Test large scan (&gt;300k rows)</div>
+              <div class="t-note">Verify CSV chunking visible in GUI progress. Default chunk = 300,000 rows → <code>report-001.csv</code>, <code>report-002.csv</code>.</div>
+            </div>
+            <div class="imp"><span class="on"></span><span></span><span></span><span></span><span></span></div>
+          </div>
+
+          <div class="todo">
+            <span class="tid">P3-02</span>
+            <div>
+              <div class="t-title">Test Phase 7 soft compare</div>
+              <div class="t-note">Newark drives (CON-P74THY / CON-M4EM1V) with soft compare on. Expected verdict <code>Metadata Clone</code>, 1,831 metadata-only diffs.</div>
+            </div>
+            <div class="imp"><span class="on"></span><span></span><span></span><span></span><span></span></div>
+          </div>
+
+        </div>
+      </div>
+    </article>
+
+    <div style="display:grid;gap:14px;align-content:start">
+
+      <article class="panel">
+        <div class="ph">
+          <h2>Language Breakdown</h2>
+          <span class="pbadge" id="lang-badge">Live</span>
+        </div>
+        <div class="pb">
+          <div class="lang-bar-wrap" id="lang-bar"></div>
+          <div class="lang-rows" id="lang-rows">
+            <div class="muted">Loading…</div>
+          </div>
+        </div>
+      </article>
+
+      <article class="panel">
+        <div class="ph">
+          <h2>Open Issues / PRs</h2>
+          <span class="pbadge" id="issues-badge">—</span>
+        </div>
+        <div class="pb">
+          <div class="issue-list" id="issue-list">
+            <div class="muted">Loading…</div>
+          </div>
+        </div>
+      </article>
+
+    </div>
+  </div>
+
+  <article class="panel">
+    <div class="ph">
+      <h2>Roadmap</h2>
+      <span class="pbadge">v0.2 → v1.0</span>
+    </div>
+    <div class="pb">
+      <div class="phases">
+
+        <div class="phase">
+          <div class="phase-head" onclick="togglePhase(this)">
+            <div class="pnum done">✓</div>
+            <div>
+              <div class="p-title">v0.1 – Initial Go + Python parity</div>
+              <div class="p-sub">Recursive scan, CSV export, optional XLSX, hash verification, email-file copy.</div>
+            </div>
+            <span class="pbadge2 badge-ok">Shipped</span>
+          </div>
+          <div class="phase-body">
+            <div class="ptasks">
+              <div class="ptask"><span class="wid">R-101</span>Go runtime (main.go, core.go, scan_*.go) with Bubble Tea TUI</div>
+              <div class="ptask"><span class="wid">R-102</span>Python runtime (content_list_generator.py + content_list_core.py) with customtkinter GUI</div>
+              <div class="ptask"><span class="wid">R-103</span>Cross-language parity tests in <code>testing/content-scan/</code> + <code>testing/email-copy/</code></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="phase">
+          <div class="phase-head" onclick="togglePhase(this)">
+            <div class="pnum done">✓</div>
+            <div>
+              <div class="p-title">v0.2 – Distribution overhaul</div>
+              <div class="p-sub">Wails GUI for all platforms, CI build matrix, app icon, Python deploy pin strategy.</div>
+            </div>
+            <span class="pbadge2 badge-ok">Shipped</span>
+          </div>
+          <div class="phase-body">
+            <div class="ptasks">
+              <div class="ptask"><span class="wid">R-201</span>Wails GUI build for macOS universal + Windows amd64/arm64</div>
+              <div class="ptask"><span class="wid">R-202</span>GitHub Actions matrix (macos-latest + ubuntu-latest + windows-latest)</div>
+              <div class="ptask"><span class="wid">R-203</span>Tag-driven publish (push v* → release auto-attached with all artifacts)</div>
+              <div class="ptask"><span class="wid">R-204</span>App icon set (svg → icns + multi-resolution ico)</div>
+              <div class="ptask"><span class="wid">R-205</span>Python deploy: exact-pin requirements.txt + runtime drift banner</div>
+              <div class="ptask"><span class="wid">R-206</span>Dependabot config: minor+patch grouped, semver-major ignored</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="phase">
+          <div class="phase-head" onclick="togglePhase(this)">
+            <div class="pnum">3</div>
+            <div>
+              <div class="p-title">v0.3 – Production-ready Windows GUI</div>
+              <div class="p-sub">Fix the silent launch failure on Win11. Code-signing certificate. Auto-update.</div>
+            </div>
+            <span class="pbadge2 badge-neutral">In Progress</span>
+          </div>
+          <div class="phase-body">
+            <div class="ptasks">
+              <div class="ptask"><span class="wid">R-301</span>Diagnose silent .exe exit on Win11 hosts (Event Viewer / procmon)</div>
+              <div class="ptask"><span class="wid">R-302</span>Sign Windows .exe with code-signing cert (silences SmartScreen)</div>
+              <div class="ptask"><span class="wid">R-303</span>Sign mac .app with Apple Developer ID + notarize (silences Gatekeeper)</div>
+              <div class="ptask"><span class="wid">R-304</span>Auto-update mechanism for Wails app</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="phase">
+          <div class="phase-head" onclick="togglePhase(this)">
+            <div class="pnum">4</div>
+            <div>
+              <div class="p-title">v0.4 – Performance + UX polish</div>
+              <div class="p-sub">Smooth ETA for long-tail large files, virtual scrolling on diff tables, trackpad scrolling fix.</div>
+            </div>
+            <span class="pbadge2 badge-neutral">Planned</span>
+          </div>
+          <div class="phase-body">
+            <div class="ptasks">
+              <div class="ptask"><span class="wid">R-401</span>Smooth ETA for very large scans with long-tail large files</div>
+              <div class="ptask"><span class="wid">R-402</span>Live diff table virtual scrolling (current cap 5,000 rows)</div>
+              <div class="ptask"><span class="wid">R-403</span>MacBook trackpad scrolling in Python GUI</div>
+              <div class="ptask"><span class="wid">R-404</span>Phase 7 soft compare: extend to same-path hash mismatches</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="phase">
+          <div class="phase-head" onclick="togglePhase(this)">
+            <div class="pnum">5</div>
+            <div>
+              <div class="p-title">v1.0 – Public release</div>
+              <div class="p-sub">Final license, repo URL replaces placeholder, full user manual + screenshots, end-to-end verified.</div>
+            </div>
+            <span class="pbadge2 badge-neutral">Planned</span>
+          </div>
+          <div class="phase-body">
+            <div class="ptasks">
+              <div class="ptask"><span class="wid">R-501</span>License decision (evaluate GPL vs MIT vs Apache)</div>
+              <div class="ptask"><span class="wid">R-502</span>Replace <code>PLACEHOLDER_GITHUB_URL</code> in <code>python/content_list_generator.py</code></div>
+              <div class="ptask"><span class="wid">R-503</span>Full user manual with screenshots</div>
+              <div class="ptask"><span class="wid">R-504</span>Repo ownership transfer or publishing handoff to <code>dpa-snyder</code></div>
+              <div class="ptask"><span class="wid">R-505</span>End-to-end verification: Win11, Win10, macOS arm64+amd64, Ubuntu, Fedora</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="phase">
+          <div class="phase-head" onclick="togglePhase(this)">
+            <div class="pnum stretch">S</div>
+            <div>
+              <div class="p-title">Stretch – Installer distribution</div>
+              <div class="p-sub">MSI / DMG / AppImage instead of portable-only. Revisit after v1.0.</div>
+            </div>
+            <span class="pbadge2 badge-warn">Optional</span>
+          </div>
+          <div class="phase-body">
+            <div class="ptasks">
+              <div class="ptask"><span class="wid">R-SB1</span>Windows MSI via WiX or InnoSetup</div>
+              <div class="ptask"><span class="wid">R-SB2</span>macOS DMG with proper drag-to-Applications layout</div>
+              <div class="ptask"><span class="wid">R-SB3</span>Linux AppImage or .deb / .rpm</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </article>
+
+  <div class="col2">
+
+    <article class="panel">
+      <div class="ph">
+        <h2>Recently Shipped</h2>
+        <span class="pbadge">v0.2.0 – v0.2.1</span>
+      </div>
+      <div class="pb">
+        <div class="done-list">
+          <div class="done-item"><span class="dcheck">✓</span><span class="did">D-013</span><span class="dtext">Project dashboard rebuild — IBM Plex / navy-orange palette, GitHub API live stats, downloads grid, roadmap</span></div>
+          <div class="done-item"><span class="dcheck">✓</span><span class="did">D-012</span><span class="dtext">Debug doc <code>docs/debug/windows-launch-failure.md</code> tracking the silent .exe exit investigation</span></div>
+          <div class="done-item"><span class="dcheck">✓</span><span class="did">D-011</span><span class="dtext">Tag v0.2.1 with <code>-webview2 download</code> flag (default in Wails 2.12, no-op; investigation continues)</span></div>
+          <div class="done-item"><span class="dcheck">✓</span><span class="did">D-010</span><span class="dtext">v0.2.0 published with full multi-platform artifact set — first end-to-end tag → release pipeline test</span></div>
+          <div class="done-item"><span class="dcheck">✓</span><span class="did">D-009</span><span class="dtext">CI build matrix green across mac, linux, Windows GUI amd64+arm64, Windows portable, Windows python source</span></div>
+          <div class="done-item"><span class="dcheck">✓</span><span class="did">D-008</span><span class="dtext">App icon set generated from <code>build/icon.svg</code> — appicon.png + icon.icns + multi-resolution icon.ico</span></div>
+          <div class="done-item"><span class="dcheck">✓</span><span class="did">D-007</span><span class="dtext">Branch protection enabled on <code>main</code>, PR-driven workflow established</span></div>
+          <div class="done-item"><span class="dcheck">✓</span><span class="did">D-006</span><span class="dtext">Python deploy strategy — <code>requirements.txt</code> exact pins + runtime drift banner in GUI</span></div>
+          <div class="done-item"><span class="dcheck">✓</span><span class="did">D-005</span><span class="dtext">Dependabot tuned — minor/patch grouped, semver-major ignored, security alerts still surface</span></div>
+          <div class="done-item"><span class="dcheck">✓</span><span class="did">D-004</span><span class="dtext">Dropped Windows TUI .exe from releases (was mislabeled as GUI)</span></div>
+          <div class="done-item"><span class="dcheck">✓</span><span class="did">D-003</span><span class="dtext">Docs: <code>github-setup-guide.md</code> + <code>windows-build-checklist.md</code> for solo-dev onboarding</span></div>
+        </div>
+      </div>
+    </article>
+
+    <article class="panel">
+      <div class="ph">
+        <h2>Open Decisions</h2>
+        <span class="pbadge">5 items</span>
+      </div>
+      <div class="pb">
+        <div class="decisions">
+          <div class="decision">
+            <div class="dq">Project license?</div>
+            <div class="dd">Default: <strong>undecided</strong>. Candidates: MIT, Apache-2.0, GPL-3.0. Pick before public release.</div>
+          </div>
+          <div class="decision">
+            <div class="dq">Final public GitHub URL?</div>
+            <div class="dd">Currently <strong>snyderb-de/content-list-generator</strong>. Placeholder URLs in code (<code>python/content_list_generator.py</code>) need replacement before v1.0.</div>
+          </div>
+          <div class="decision">
+            <div class="dq">Repo ownership transfer?</div>
+            <div class="dd">Default: <strong>keep with snyderb-de</strong>. Possible handoff to <code>dpa-snyder</code> — confirm before v1.0.</div>
+          </div>
+          <div class="decision">
+            <div class="dq">Distribution: portable-only or installers?</div>
+            <div class="dd">Default: <strong>portable-only through v1.0</strong>. Installers (MSI / DMG / AppImage) stretch goal.</div>
+          </div>
+          <div class="decision">
+            <div class="dq">Windows code-signing cert: EV or standard?</div>
+            <div class="dd">Default: <strong>standard cert</strong> (cheaper, reputation builds). EV (~$300/yr) instantly trusted but requires hardware token.</div>
+          </div>
+        </div>
+      </div>
+    </article>
+
+  </div>
+
+  <article class="panel">
+    <div class="ph"><h2>Resources</h2></div>
+    <div class="pb">
+      <div class="res-grid">
+        <a href="user-manual.html" class="res-card">
+          <div class="rc-label">End User</div>
+          <div class="rc-title">📘 User Manual</div>
+          <div class="rc-desc">Step-by-step guide — scan modes, hash algorithms, email copy, clone compare</div>
+        </a>
+        <a href="https://github.com/snyderb-de/content-list-generator/releases/latest" class="res-card" target="_blank" rel="noopener">
+          <div class="rc-label">Downloads</div>
+          <div class="rc-title">Latest Release</div>
+          <div class="rc-desc">All platform binaries — macOS .app, Windows .exe, Linux binary, portable zip</div>
+        </a>
+        <a href="https://github.com/snyderb-de/content-list-generator/blob/main/README.md" class="res-card" target="_blank" rel="noopener">
+          <div class="rc-label">Overview</div>
+          <div class="rc-title">README.md</div>
+          <div class="rc-desc">Project overview, runtime paths, build commands, release strategy</div>
+        </a>
+        <a href="https://github.com/snyderb-de/content-list-generator/blob/main/TODO.md" class="res-card" target="_blank" rel="noopener">
+          <div class="rc-label">Project</div>
+          <div class="rc-title">TODO.md</div>
+          <div class="rc-desc">Active tasks with priority levels + backlog</div>
+        </a>
+        <a href="https://github.com/snyderb-de/content-list-generator/blob/main/docs/windows-build-checklist.md" class="res-card" target="_blank" rel="noopener">
+          <div class="rc-label">Developer</div>
+          <div class="rc-title">Windows Build Checklist</div>
+          <div class="rc-desc">Step-by-step for building Windows artifacts on a clean machine</div>
+        </a>
+        <a href="https://github.com/snyderb-de/content-list-generator/blob/main/docs/github-setup-guide.md" class="res-card" target="_blank" rel="noopener">
+          <div class="rc-label">Developer</div>
+          <div class="rc-title">GitHub Setup Guide</div>
+          <div class="rc-desc">Branch protection, Dependabot vs Renovate, CODEOWNERS, Actions primer</div>
+        </a>
+        <a href="https://github.com/snyderb-de/content-list-generator/blob/main/docs/debug/windows-launch-failure.md" class="res-card" target="_blank" rel="noopener">
+          <div class="rc-label">Debug</div>
+          <div class="rc-title">Windows Launch Failure</div>
+          <div class="rc-desc">Active investigation: .exe silently exits on Win11</div>
+        </a>
+        <a href="https://github.com/snyderb-de/content-list-generator" class="res-card" target="_blank" rel="noopener">
+          <div class="rc-label">Source</div>
+          <div class="rc-title">GitHub Repository</div>
+          <div class="rc-desc">snyderb-de/content-list-generator — source, issues, commits</div>
+        </a>
+      </div>
+    </div>
+  </article>
+
+</main>
+
+<footer>
+  Content List Generator — Project Dashboard &middot;
+  <a href="https://github.com/snyderb-de/content-list-generator" target="_blank" rel="noopener">snyderb-de/content-list-generator</a>
+</footer>
+
+<script>
+(function () {
+  'use strict';
+
+  function esc(str) {
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
+
+  var KEY = 'clg-dash-theme';
+  var btn = document.getElementById('theme-toggle');
+  var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  var theme = localStorage.getItem(KEY) || (prefersDark ? 'dark' : 'light');
+
+  function applyTheme(t) {
+    document.body.setAttribute('data-theme', t);
+    btn.textContent = 'Theme: ' + (t === 'dark' ? 'Dark' : 'Light');
+    localStorage.setItem(KEY, t);
+    theme = t;
+  }
+  applyTheme(theme);
+  btn.addEventListener('click', function () { applyTheme(theme === 'dark' ? 'light' : 'dark'); });
+
+  window.togglePhase = function (head) {
+    var body = head.nextElementSibling;
+    if (body) body.style.display = body.style.display === 'block' ? 'none' : 'block';
+  };
+
+  var REPO = 'snyderb-de/content-list-generator';
+  var BASE = 'https://api.github.com/repos/' + REPO;
+  var LANG_COLORS = {
+    Go: '#00ADD8', Python: '#3572a5', TypeScript: '#3178c6', JavaScript: '#f1e05a',
+    HTML: '#e44b23', CSS: '#563d7c', Shell: '#89e051', Batchfile: '#aaaaaa',
+    PowerShell: '#012456', Makefile: '#427819', Dockerfile: '#384d54'
+  };
+
+  function fmtSize(kb) { return kb >= 1024 ? (kb / 1024).toFixed(1) + ' MB' : kb + ' KB'; }
+  function fmtDate(iso) { return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); }
+  function setText(id, val) { var el = document.getElementById(id); if (el) el.textContent = val; }
+
+  function setLive(parts) {
+    var row = document.getElementById('live-row');
+    row.textContent = '';
+    parts.forEach(function (p) {
+      var span = document.createElement('span'); span.className = 'lpill';
+      var dot = document.createElement('span'); dot.className = 'ldot';
+      span.appendChild(dot); span.appendChild(document.createTextNode(p));
+      row.appendChild(span);
+    });
+  }
+
+  function buildLangRows(entries, total) {
+    var bar = document.getElementById('lang-bar');
+    var rows = document.getElementById('lang-rows');
+    var badge = document.getElementById('lang-badge');
+    if (badge) badge.textContent = entries.length + ' languages';
+    bar.textContent = '';
+    entries.forEach(function (entry) {
+      var pct = (entry[1] / total * 100).toFixed(2);
+      var div = document.createElement('div');
+      div.style.width = pct + '%'; div.style.height = '100%';
+      div.style.background = LANG_COLORS[entry[0]] || '#888';
+      bar.appendChild(div);
+    });
+    rows.textContent = '';
+    entries.forEach(function (entry) {
+      var name = entry[0], bytes = entry[1];
+      var pct = bytes / total * 100;
+      var pctStr = pct < 1 ? '< 1%' : pct.toFixed(1) + '%';
+      var col = LANG_COLORS[name] || '#888';
+      var row = document.createElement('div'); row.className = 'lang-row';
+      var nameDiv = document.createElement('div'); nameDiv.className = 'lang-name';
+      var dot = document.createElement('div'); dot.className = 'ldot2'; dot.style.background = col;
+      nameDiv.appendChild(dot); nameDiv.appendChild(document.createTextNode(esc(name)));
+      var track = document.createElement('div'); track.className = 'ltrack';
+      var fill = document.createElement('div'); fill.className = 'lfill';
+      fill.style.width = pct.toFixed(1) + '%'; fill.style.background = col;
+      track.appendChild(fill);
+      var pctEl = document.createElement('div'); pctEl.className = 'lpct'; pctEl.textContent = pctStr;
+      row.appendChild(nameDiv); row.appendChild(track); row.appendChild(pctEl);
+      rows.appendChild(row);
+    });
+  }
+
+  function buildIssues(items) {
+    var badge = document.getElementById('issues-badge');
+    var listEl = document.getElementById('issue-list');
+    if (badge) badge.textContent = items.length + ' open';
+    listEl.textContent = '';
+    if (items.length === 0) {
+      var msg = document.createElement('div'); msg.className = 'muted';
+      msg.textContent = 'No open issues or PRs.'; listEl.appendChild(msg); return;
+    }
+    items.forEach(function (item) {
+      var row = document.createElement('div'); row.className = 'issue';
+      var num = document.createElement('span'); num.className = 'inum';
+      num.textContent = (item.pull_request ? 'PR#' : '#') + item.number;
+      var body = document.createElement('div');
+      var titleEl = document.createElement('div'); titleEl.className = 'ititle';
+      var link = document.createElement('a');
+      link.href = item.html_url; link.target = '_blank'; link.rel = 'noopener';
+      link.textContent = item.title; titleEl.appendChild(link);
+      var meta = document.createElement('div'); meta.className = 'imeta';
+      var labelNames = (item.labels || []).map(function (l) { return esc(l.name); }).join(', ');
+      meta.textContent = 'Opened ' + fmtDate(item.created_at) + (labelNames ? ' · ' + labelNames : '');
+      body.appendChild(titleEl); body.appendChild(meta);
+      row.appendChild(num); row.appendChild(body);
+      listEl.appendChild(row);
+    });
+  }
+
+  Promise.all([
+    fetch(BASE).then(function (r) { return r.json(); }),
+    fetch(BASE + '/languages').then(function (r) { return r.json(); }),
+    fetch(BASE + '/issues?state=open&per_page=20').then(function (r) { return r.json(); }),
+    fetch(BASE + '/pulls?state=open&per_page=20').then(function (r) { return r.json(); }),
+    fetch(BASE + '/releases/latest').then(function (r) { return r.ok ? r.json() : null; }),
+  ]).then(function (results) {
+    var repo = results[0];
+    var langs = results[1];
+    var issues = Array.isArray(results[2]) ? results[2] : [];
+    var prs = Array.isArray(results[3]) ? results[3] : [];
+    var release = results[4];
+    var openIssues = issues.filter(function (i) { return !i.pull_request; });
+    var allItems = openIssues.concat(prs).slice(0, 12);
+
+    setText('s-issues', openIssues.length);
+    setText('s-prs', prs.length);
+    setText('s-stars', repo.stargazers_count != null ? repo.stargazers_count : 0);
+    setText('s-forks', repo.forks_count != null ? repo.forks_count : 0);
+    setText('s-size', fmtSize(repo.size || 0));
+    setText('s-push', fmtDate(repo.pushed_at));
+
+    if (release && release.tag_name) {
+      var rb = document.getElementById('release-badge');
+      if (rb) rb.textContent = release.tag_name;
+    }
+
+    setLive([
+      (repo.visibility || 'public').toUpperCase(),
+      'Issues: ' + openIssues.length,
+      'PRs: ' + prs.length,
+      'Pushed ' + fmtDate(repo.pushed_at),
+      release && release.tag_name ? 'Latest: ' + release.tag_name : 'No release yet',
+    ]);
+
+    var entries = Object.entries(langs).sort(function (a, b) { return b[1] - a[1]; });
+    var total = entries.reduce(function (s, e) { return s + e[1]; }, 0);
+    buildLangRows(entries, total);
+    buildIssues(allItems);
+
+  }).catch(function (err) {
+    console.warn('GitHub API unavailable:', err);
+    var row = document.getElementById('live-row');
+    row.textContent = '';
+    var span = document.createElement('span'); span.className = 'lpill';
+    var dot = document.createElement('span'); dot.className = 'ldot';
+    span.appendChild(dot);
+    span.appendChild(document.createTextNode('GitHub API unavailable — stats may be stale'));
+    row.appendChild(span);
+
+    setText('s-issues', '—'); setText('s-prs', '—');
+    setText('s-stars', '—'); setText('s-forks', '—');
+    setText('s-size', '—'); setText('s-push', '—');
+
+    var issueEl = document.getElementById('issue-list');
+    issueEl.textContent = '';
+    var msg = document.createElement('div'); msg.className = 'muted';
+    var link = document.createElement('a');
+    link.href = 'https://github.com/snyderb-de/content-list-generator/issues';
+    link.target = '_blank'; link.rel = 'noopener';
+    link.textContent = 'View on GitHub';
+    msg.textContent = 'API unavailable. '; msg.appendChild(link);
+    issueEl.appendChild(msg);
+
+    var langEl = document.getElementById('lang-rows');
+    langEl.textContent = '';
+    var langMsg = document.createElement('div'); langMsg.className = 'muted';
+    langMsg.textContent = 'Language data unavailable.';
+    langEl.appendChild(langMsg);
+  });
+
+})();
+</script>
+</body>
+</html>
