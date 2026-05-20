@@ -273,7 +273,7 @@ export default function ContentList() {
     return (
       <div>
         <div className="screen-header">
-          <h2 className="screen-title">Scanning…</h2>
+          <h2 className="screen-title">{counting ? 'Counting…' : 'Scanning…'}</h2>
         </div>
         <div className="card">
           <div className="phase-badge">
@@ -287,7 +287,9 @@ export default function ContentList() {
             <div className="stat-block">
               <div className="stat-block-label">Progress</div>
               <div className="stat-block-value">
-                {counting ? '—' : `${(pct * 100).toFixed(1)}%`}
+                {counting
+                  ? `${fmtNum(progress?.files ?? 0)} files, ${fmtNum(progress?.directories ?? 0)} dirs`
+                  : `${(pct * 100).toFixed(1)}%`}
               </div>
             </div>
             <div className="stat-block">
