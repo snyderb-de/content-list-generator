@@ -19,14 +19,14 @@ jobs:
     name: macOS GUI + TUI + Linux TUI
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: ${{ env.GO_VERSION_FILE }}
           cache: true
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
@@ -49,13 +49,13 @@ jobs:
       - name: Build releases (mac TUI + GUI universal, linux TUI)
         run: ./scripts/build_releases.sh
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: macos
           path: releases/macos/
           if-no-files-found: error
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: linux
           path: releases/linux/
@@ -65,14 +65,14 @@ jobs:
     name: Windows Wails GUI (amd64 + arm64)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: ${{ env.GO_VERSION_FILE }}
           cache: true
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
@@ -105,7 +105,7 @@ jobs:
           Copy-Item build\bin\content-list-generator-gui-windows-amd64.exe releases\windows-go\
           Copy-Item build\bin\content-list-generator-gui-windows-arm64.exe releases\windows-go\
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: windows-go
           path: releases/windows-go/
@@ -115,7 +115,7 @@ jobs:
     name: Windows Portable (PyInstaller)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: actions/setup-python@v6
         with:
@@ -125,7 +125,7 @@ jobs:
         shell: pwsh
         run: powershell -ExecutionPolicy Bypass -File .\scripts\package_windows_portable.ps1
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: windows-portable
           path: releases/windows-portable/
@@ -135,14 +135,14 @@ jobs:
     name: Windows Python source bundle
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: ${{ env.GO_VERSION_FILE }}
           cache: true
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
@@ -161,7 +161,7 @@ jobs:
       - name: Build Windows Python bundle
         run: ./scripts/package_windows_python_bundle.sh
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: windows-python
           path: releases/windows-python/
@@ -175,10 +175,10 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Download all build artifacts into releases/
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: releases
 
