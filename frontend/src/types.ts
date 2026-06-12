@@ -184,4 +184,4 @@ export const HASH_ALGORITHMS = [
   { value: 'off',    label: 'No hash' },
 ]
 
-export type Screen = 'content-list' | 'email-copy' | 'clone-compare' | 'about'
+export type Screen = 'content-list' | 'email-copy' | 'clone-compare' | 'manual' | 'about'

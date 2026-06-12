@@ -41,6 +41,8 @@ const DEFAULT_AGENCY_FIELDS: AgencyTemplateFields = {
   recordLevel: 'Item',
 }
 
+const freshAgencyFields = (): AgencyTemplateFields => ({ ...DEFAULT_AGENCY_FIELDS })
+
 const DEFAULT_OPTS: ScanOptions = {
   sourceDir: '', outputDir: '', outputFile: '',
   hashAlgorithm: 'blake3',
@@ -50,7 +52,7 @@ const DEFAULT_OPTS: ScanOptions = {
   foldersOnly: false,
   folderDepth: 0,
   agencyTemplate: false,
-  agencyFields: DEFAULT_AGENCY_FIELDS,
+  agencyFields: freshAgencyFields(),
 }
 
 const toWailsScanOptions = (value: ScanOptions): main.ScanOptions =>
@@ -112,7 +114,9 @@ export default function ContentList() {
   }, [opts.sourceDir, opts.outputDir])
 
   useEffect(() => {
-    GetScanDefaults().then(d => setOpts(o => ({ ...o, ...d }))).catch(() => {})
+    GetScanDefaults()
+      .then(d => setOpts(o => ({ ...o, ...d, agencyFields: freshAgencyFields() })))
+      .catch(() => {})
     return () => {
       EventsOff('scan:progress')
       EventsOff('scan:done')
@@ -140,7 +144,7 @@ export default function ContentList() {
     try {
       const apiOpts = toWailsScanOptions(opts)
       await StartScan(apiOpts)
-      SaveSettings(apiOpts).catch(() => {})
+      SaveSettings(toWailsScanOptions({ ...opts, agencyFields: freshAgencyFields() })).catch(() => {})
     } catch (e: any) {
       EventsOff('scan:progress'); EventsOff('scan:done')
       EventsOff('scan:error');    EventsOff('scan:canceled')
@@ -160,10 +164,13 @@ export default function ContentList() {
 
   const cancel = () => CancelScan().catch(() => {})
 
-  const reset = () => {
+  const reset = (clearAgencyFields = false) => {
     EventsOff('scan:progress'); EventsOff('scan:done')
     EventsOff('scan:error');    EventsOff('scan:canceled')
     setPhase('idle'); setProgress(null); setResult(null); setErr('')
+    if (clearAgencyFields) {
+      setOpts(o => ({ ...o, agencyFields: freshAgencyFields() }))
+    }
   }
 
   const sameFolders = !!(opts.sourceDir && opts.outputDir && opts.sourceDir === opts.outputDir)
@@ -484,7 +491,7 @@ export default function ContentList() {
         </div>
         <div className="card">
           <p className="danger-text" style={{ marginBottom: 16 }}>Error: {err}</p>
-          <button className="btn btn-outline" onClick={reset}>Back to Settings</button>
+          <button className="btn btn-outline" onClick={() => reset()}>Back to Settings</button>
         </div>
       </div>
     )
@@ -551,7 +558,7 @@ export default function ContentList() {
           }}>Open Output Folder</button>
           {result.xlsxPath && <button className="btn btn-outline" onClick={() => OpenPath(result.xlsxPath)}>Open XLSX</button>}
           {result.reportPath && <button className="btn btn-outline" onClick={() => OpenPath(result.reportPath)}>Open Report</button>}
-          <button className="btn btn-ghost" onClick={reset}>New Scan</button>
+          <button className="btn btn-ghost" onClick={() => reset(true)}>New Scan</button>
         </div>
       </div>
 
