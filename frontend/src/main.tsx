@@ -1,6 +1,7 @@
 import React from 'react'
 import { createRoot } from 'react-dom/client'
 import './style.css'
+import './devBridge'
 import App from './App'
 
 const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches

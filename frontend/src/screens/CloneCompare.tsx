@@ -466,9 +466,9 @@ export default function CloneCompare() {
                 fontSize: 12,
                 fontWeight: 600,
                 textAlign: 'center',
-                background: done ? 'var(--success-bg)' : active ? 'rgba(99,102,241,0.12)' : 'rgba(245,158,11,0.08)',
-                color:      done ? 'var(--success)'    : active ? '#6366f1'                : 'var(--warning)',
-                border: `1px solid ${done ? 'var(--success)' : active ? '#6366f1' : 'var(--warning)'}`,
+                background: done ? 'var(--success-bg)' : active ? 'var(--accent-light)' : 'var(--warning-bg)',
+                color:      done ? 'var(--success)'    : active ? 'var(--accent)'       : 'var(--warning)',
+                border: `1px solid ${done ? 'var(--success)' : active ? 'var(--accent)' : 'var(--warning)'}`,
               }}>
                 {done ? '✓' : active ? '▶' : '○'} {phaseLabel(s)}
               </div>

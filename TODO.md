@@ -2,6 +2,11 @@
 
 ## Recently Shipped
 
+### v0.2.6 (2026-06-12)
+- ✅ GUI light/dark theme pass: stronger neutral palettes, clearer text contrast, and less pastel/muddy chrome
+- ✅ Full-width form inputs for readable filenames and paths in the Wails UI
+- ✅ Dev-only Wails bridge stub added so Vite browser UI review can run without crashing outside the desktop shell
+
 ### v0.2.5 (2026-06-12)
 - ✅ Corrective release for the Windows Python source bundle: `deps_check.py` is included so launchers can import the dependency drift checker
 - ✅ Release publisher now uploads only `content-list-generator-windows-python.zip` for the Windows Python source bundle, not loose staging files
@@ -99,4 +104,4 @@
 - Branch protection: review-required rule currently OFF (turned off to allow solo-dev merging). Re-enable when adding collaborators.
 - Dependabot config: ignores semver-major for gomod + npm. Security advisories still surface separately via Security tab.
 - Workflow file path: `.github/workflows/release.yml`. Triggers: tag push, PR to main, manual dispatch.
-- Latest release: **v0.2.5** (2026-06-12) — corrective release for Windows Python source packaging.
+- Latest release: **v0.2.6** (2026-06-12) — GUI contrast/readability pass for light and dark themes.
