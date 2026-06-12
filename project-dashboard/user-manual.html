@@ -322,6 +322,7 @@
       <a class="nav-link" href="#email-types">Email file types</a>
       <a class="nav-link" href="#verdicts">Clone verdicts</a>
       <a class="nav-link" href="#troubleshooting">Troubleshooting</a>
+      <a class="nav-link" href="#faq">FAQ</a>
       <a class="nav-link" href="#tips">Tips</a>
       <a class="nav-link" href="#about">About</a>
     </div>
@@ -505,10 +506,10 @@
             <li><strong>Source folder</strong> — the tree to search for email files.</li>
             <li><strong>Destination folder</strong> — where copies land. Folder structure under the source is mirrored.</li>
             <li><strong>Click Copy.</strong> The app walks the tree, copies files with matching extensions, and writes a manifest CSV.</li>
-            <li><strong>Review the manifest.</strong> One row per copied file with source path, destination path, size, and hash (if requested).</li>
+            <li><strong>Review the manifest.</strong> The destination contains <code>email-copy-manifest-{timestamp}.csv</code> with one row per copied file: <code>Source Path</code>, <code>Destination Path</code>, <code>Relative Path</code>, <code>File Name</code>, <code>Extension</code>, <code>Size in Bytes</code>.</li>
           </ol>
           <div class="note" style="margin-top:14px">
-            <strong>Skips:</strong> files already present at the destination with matching size + mtime. Safe to re-run.
+            <strong>Re-runs overwrite:</strong> every matched file is copied unconditionally; existing files at the destination are replaced. If you need delta-only behavior, copy to an empty destination each run.
           </div>
         </div>
       </div>
@@ -532,8 +533,13 @@
           </ol>
         </div>
         <div class="card">
-          <h3>Soft compare</h3>
-          <p>Off by default. When enabled, the comparator treats a file as a match if its hash exists on both sides — even if the path changed. Useful when the clone re-flattened folder structure but preserved content.</p>
+          <h3>Soft compare (PDFs)</h3>
+          <p>
+            Off by default. When enabled and a PDF's hashes differ at the byte level, the comparator re-reads the last 2&nbsp;KB of each PDF, masks the PDF
+            <code>/ID</code> trailer (the random pair PDF writers stamp on every save), and accepts the pair as a soft match if the masked tails are identical.
+            Use this when a tool re-saved every PDF without changing rendered content — the verdict becomes <code>Metadata Clone</code> instead of <code>Not a Clone</code>.
+          </p>
+          <p style="margin-top:8px">Soft compare only runs on <code>.pdf</code> files. Other file types fall through to strict hash equality.</p>
         </div>
       </div>
     </section>
@@ -550,21 +556,24 @@
           <table>
             <thead><tr><th>Column</th><th>Contents</th></tr></thead>
             <tbody>
-              <tr><td><code>Path</code></td><td>Relative path from the source root.</td></tr>
-              <tr><td><code>Name</code></td><td>Filename only.</td></tr>
-              <tr><td><code>Extension</code></td><td>Lowercased extension, no dot.</td></tr>
-              <tr><td><code>Bytes</code></td><td>File size in bytes.</td></tr>
-              <tr><td><code>Modified</code></td><td>Last-modified timestamp (ISO 8601).</td></tr>
-              <tr><td><code>Hash</code></td><td>Hex digest. Only present if hash mode is on.</td></tr>
+              <tr><td><code>File Name</code></td><td>Filename only, including extension.</td></tr>
+              <tr><td><code>Extension</code></td><td>Lowercased extension with the leading dot (e.g. <code>.pdf</code>).</td></tr>
+              <tr><td><code>Size in Bytes</code></td><td>Raw file size.</td></tr>
+              <tr><td><code>Size in Human Readable</code></td><td>Pretty-printed size (e.g. <code>1.4 MB</code>).</td></tr>
+              <tr><td><code>Path From Root Folder</code></td><td>Relative path from the source root, including the filename.</td></tr>
+              <tr><td><code>Hash Algorithm</code></td><td>Algorithm name (<code>sha1</code>, <code>sha256</code>, <code>blake3</code>) or empty when hashing is off.</td></tr>
+              <tr><td><code>Hash Value</code></td><td>Hex digest. Empty when hashing is off.</td></tr>
             </tbody>
           </table>
+          <p style="margin-top:10px">Folders-only mode writes a single column: <code>Path From Root Folder</code>.</p>
         </div>
         <div class="card">
           <h3>Companion files</h3>
-          <p>Every scan also writes a <code>.report.txt</code> alongside the CSV. It contains totals, filtered samples, top extensions, and the settings used.</p>
+          <p>Every scan also writes a <code>-report.txt</code> alongside the CSV. It contains totals, filtered samples, top extensions, and the settings used.</p>
           <pre><code>my-folder-content-list-2026-05-20T13-45-02.csv
-my-folder-content-list-2026-05-20T13-45-02.report.txt
+my-folder-content-list-2026-05-20T13-45-02-report.txt
 my-folder-content-list-2026-05-20T13-45-02.xlsx   (if XLSX enabled)</code></pre>
+          <p style="margin-top:10px">Default base name is <code>{source-folder}-content-list-{YYYY-MM-DDTHH-MM-SS}.csv</code>. In folders-only mode it becomes <code>…-folder-list-…</code>.</p>
         </div>
       </div>
     </section>
@@ -669,15 +678,21 @@ my-folder-content-list-2026-05-20T13-45-02.xlsx   (if XLSX enabled)</code></pre>
       </div>
       <div class="cards">
         <div class="card">
-          <p>The Copy Email Files workflow looks for files with these extensions.</p>
+          <p>The Copy Email Files workflow looks for files with any of these extensions:</p>
           <table>
             <thead><tr><th>Extension</th><th>Source</th></tr></thead>
             <tbody>
               <tr><td><code>.eml</code></td><td>Standard MIME-encoded email — Apple Mail, Thunderbird, generic mail.</td></tr>
+              <tr><td><code>.emlx</code>, <code>.emlxpart</code></td><td>Apple Mail message + attachment-part files.</td></tr>
               <tr><td><code>.msg</code></td><td>Outlook single-message format.</td></tr>
+              <tr><td><code>.olk14msgsource</code>, <code>.olk15message</code></td><td>Outlook for Mac (2011, 2016+) single-message containers.</td></tr>
               <tr><td><code>.pst</code></td><td>Outlook personal storage table — whole-mailbox archive.</td></tr>
               <tr><td><code>.ost</code></td><td>Outlook offline storage — IMAP/Exchange cached copy.</td></tr>
-              <tr><td><code>.mbox</code></td><td>Unix mailbox format — Apple Mail exports, mutt, pine.</td></tr>
+              <tr><td><code>.mbox</code>, <code>.mbx</code></td><td>Unix mailbox / Eudora mailbox.</td></tr>
+              <tr><td><code>.dbx</code></td><td>Outlook Express folder store.</td></tr>
+              <tr><td><code>.tbb</code></td><td>The Bat! mailbox.</td></tr>
+              <tr><td><code>.rge</code></td><td>Outlook Express identity archive.</td></tr>
+              <tr><td><code>.wdseml</code></td><td>Windows Desktop Search email index entry.</td></tr>
             </tbody>
           </table>
           <div class="note" style="margin-top:10px">
@@ -700,15 +715,14 @@ my-folder-content-list-2026-05-20T13-45-02.xlsx   (if XLSX enabled)</code></pre>
           <table>
             <thead><tr><th>Verdict</th><th>Meaning</th></tr></thead>
             <tbody>
-              <tr><td><span class="pill" style="margin-bottom:0">Exact Match</span></td><td>Every file's path, size, mtime, and hash agree. Perfect clone.</td></tr>
-              <tr><td><span class="pill" style="margin-bottom:0">Hash Clone</span></td><td>Hashes match for every file, but paths or mtimes differ. Common when a clone tool re-flattened or normalized timestamps.</td></tr>
-              <tr><td><span class="pill" style="margin-bottom:0">Metadata Clone</span></td><td>Soft-compare mode only. Hashes match, paths differ. Treats path differences as cosmetic.</td></tr>
-              <tr><td><span class="pill" style="margin-bottom:0">Partial Clone</span></td><td>Most files match, but at least one is missing or has a hash mismatch.</td></tr>
-              <tr><td><span class="pill" style="margin-bottom:0">Mismatch</span></td><td>Significant divergence. Probably not the same content.</td></tr>
+              <tr><td><span class="pill" style="margin-bottom:0">Exact Clone</span></td><td>Every file's path, size, and hash agree across both drives. The clone is byte-identical at the file level.</td></tr>
+              <tr><td><span class="pill" style="margin-bottom:0">Content Clone</span></td><td>Every hash matches, but paths or extra metadata differ. The data is intact; the layout was reorganized.</td></tr>
+              <tr><td><span class="pill" style="margin-bottom:0">Metadata Clone</span></td><td>Soft-compare only. Some PDF hashes differ at the byte level but their normalized content matches — i.e. only the PDF <code>/ID</code> metadata changed. Treated as a content-equivalent clone.</td></tr>
+              <tr><td><span class="pill" style="margin-bottom:0">Not a Clone</span></td><td>At least one file is missing or has a true hash mismatch. Diff CSV lists every divergence.</td></tr>
             </tbody>
           </table>
           <div class="note" style="margin-top:12px">
-            <strong>Tip:</strong> if you got a verdict you didn't expect, sort the diff CSV by the <code>Difference</code> column to see what changed.
+            <strong>Tip:</strong> if you got a verdict you didn't expect, sort the diff CSV by the <code>Difference Type</code> column to see what changed.
           </div>
         </div>
       </div>
@@ -762,6 +776,56 @@ my-folder-content-list-2026-05-20T13-45-02.xlsx   (if XLSX enabled)</code></pre>
             does not match the expected version. Tell your IT Admin — they need to run
             <code>pip install -U -r requirements.txt</code> on the affected machine.
           </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── FAQ ─────────────────────────────────────────────── -->
+    <section class="section" id="faq">
+      <div class="section-header">
+        <p class="eyebrow">Reference</p>
+        <h2>Frequently asked questions</h2>
+      </div>
+      <div class="cards">
+        <div class="card">
+          <h3>Which runtime should I install — Go or Python?</h3>
+          <p>On macOS or Linux, install the Go GUI <code>.app</code> or Linux binary. On Windows, prefer the portable Python <code>.zip</code> for managed fleets (no admin rights, no install, settings beside the launcher); use the Wails <code>.exe</code> on personal machines for the lighter download. Both runtimes produce identical CSV output — parity is enforced by fixture tests.</p>
+        </div>
+        <div class="card">
+          <h3>Does it work on network drives?</h3>
+          <p>Yes. SMB / NFS / mapped drives all scan correctly. Throughput is limited by network round-trip time per file, so a network scan is typically 5–20× slower than a local scan. Run with hashing off first to validate the inventory, then re-run with BLAKE3 if you need verification.</p>
+        </div>
+        <div class="card">
+          <h3>How large a scan can it handle?</h3>
+          <p>There is no fixed cap. CSVs auto-chunk every 300,000 rows, and the scan streams to disk so memory stays flat regardless of row count. Multi-million-row scans are routine. The dominant cost is hash mode (full byte read of every file) and disk throughput.</p>
+        </div>
+        <div class="card">
+          <h3>Why are <code>$RECYCLE.BIN</code> / <code>System Volume Information</code> not in the output?</h3>
+          <p>These OS infrastructure folders are always excluded, with no user toggle, because they never contain archival content. The same applies to swap files (<code>pagefile.sys</code>, <code>hiberfil.sys</code>, <code>swapfile.sys</code>), macOS metadata (<code>.Spotlight-V100</code>, <code>.Trashes</code>, <code>.fseventsd</code>), Office lock files (<code>~$*</code>, <code>.~lock.*</code>), and resource forks (<code>._*</code>).</p>
+        </div>
+        <div class="card">
+          <h3>Can I resume an interrupted scan?</h3>
+          <p>No — stopping a scan discards its partial CSV. Scans are fast enough that restart is the safer model. For very large drives, work folder-by-folder so a stop only loses one subtree.</p>
+        </div>
+        <div class="card">
+          <h3>Why does BLAKE3 require a Python package but SHA-1 / SHA-256 do not?</h3>
+          <p>SHA-1 and SHA-256 ship in Python's standard library (<code>hashlib</code>). BLAKE3 needs the third-party <code>blake3</code> package because it is not yet part of <code>hashlib</code>. The Go runtime has BLAKE3 built in via <code>github.com/zeebo/blake3</code>, no install step required.</p>
+        </div>
+        <div class="card">
+          <h3>Will email-copy modify or open <code>.pst</code> / <code>.ost</code> files?</h3>
+          <p>No. Email-copy is a pure file copy by extension — it never opens, parses, or mutates email containers. Outlook can keep <code>.pst</code> / <code>.ost</code> exclusively locked while open; close Outlook before copying or expect &quot;file in use&quot; errors.</p>
+        </div>
+        <div class="card">
+          <h3>What if soft compare returns <code>Metadata Clone</code> but I want to know which PDFs differed?</h3>
+          <p>The diff CSV always lists every divergence, regardless of verdict. Look for rows where <code>Difference Type</code> indicates a hash mismatch — those are the PDFs that matched only after <code>/ID</code> normalization.</p>
+        </div>
+        <div class="card">
+          <h3>Why is the XLSX file split into multiple files?</h3>
+          <p>Excel's <code>.xlsx</code> format caps at 1,048,576 rows per sheet, and Excel itself becomes sluggish well below that. Splitting at 300,000 rows keeps each file responsive and aligns with the matching CSV chunks for easy cross-referencing.</p>
+        </div>
+        <div class="card">
+          <h3>How do I reset all settings?</h3>
+          <p>Close the app, delete the settings file at the path listed in <a href="#about">About</a> for your OS, relaunch. The app re-creates it with defaults on next save.</p>
         </div>
       </div>
     </section>

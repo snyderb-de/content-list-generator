@@ -14,11 +14,7 @@ cd "$ROOT_DIR"
 
 go build -o "$BUILD_DIR/content-list-generator" .
 
-if go build -tags gui -o "$BUILD_DIR/content-list-generator-gui" .; then
-  echo "  Go GUI binary: $BUILD_DIR/content-list-generator-gui"
-else
-  echo "  Go GUI binary: skipped"
-fi
+echo "  Go GUI app: use ./scripts/build_releases.sh for Wails GUI packaging"
 
 rm -rf "$PY_DIR"
 mkdir -p "$PY_DIR/python" "$PY_DIR/scripts"

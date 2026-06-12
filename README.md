@@ -7,6 +7,8 @@ Content List Generator is maintained as two live desktop runtimes that stay in f
 - Go app for macOS and Linux, with optional Windows `.exe` build outputs
 - Python app for Windows portable deployment
 
+End-user docs: [User Manual](project-dashboard/user-manual.html) · [Project Dashboard](https://snyderb-de.github.io/content-list-generator/)
+
 Both runtimes support:
 
 - recursive content-list export to CSV
