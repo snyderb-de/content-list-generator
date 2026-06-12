@@ -14,9 +14,7 @@ case "$MODE" in
     exec "$BUILD_DIR/content-list-generator"
     ;;
   go-gui)
-    mkdir -p "$BUILD_DIR"
-    go build -tags gui -o "$BUILD_DIR/content-list-generator-gui" .
-    exec "$BUILD_DIR/content-list-generator-gui" --gui
+    exec ./run-go-gui.sh
     ;;
   python|python-gui)
     exec python3 ./python/content_list_generator.py

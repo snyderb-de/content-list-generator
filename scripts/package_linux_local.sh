@@ -23,29 +23,19 @@ cd "$ROOT_DIR"
 ./scripts/dev_check.sh
 
 go build -o "$OUT_DIR/content-list-generator-tui" .
-go build -tags gui -o "$OUT_DIR/content-list-generator-gui" .
 cp README.md "$OUT_DIR/"
 
 cat > "$OUT_DIR/README-PACKAGE.txt" <<'EOF'
 Local Linux package
 
 Included:
-- content-list-generator-gui
 - content-list-generator-tui
 - README.md
 
-Launch the GUI:
-./content-list-generator-gui --gui
+Linux release packaging currently ships the Bubble Tea TUI binary.
 
 Launch the TUI:
 ./content-list-generator-tui
-EOF
-
-cat > "$OUT_DIR/run-content-list-generator-gui.sh" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-DIR="$(cd "$(dirname "$0")" && pwd)"
-exec "$DIR/content-list-generator-gui" --gui "$@"
 EOF
 
 cat > "$OUT_DIR/run-content-list-generator-tui.sh" <<'EOF'
@@ -57,8 +47,6 @@ EOF
 
 chmod +x \
   "$OUT_DIR/content-list-generator-tui" \
-  "$OUT_DIR/content-list-generator-gui" \
-  "$OUT_DIR/run-content-list-generator-gui.sh" \
   "$OUT_DIR/run-content-list-generator-tui.sh"
 
 tar -czf "$TMP_ARCHIVE" -C "$OUT_DIR" .

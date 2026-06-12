@@ -2,6 +2,12 @@
 
 ## Recently Shipped
 
+### v0.2.3 (2026-05-20)
+- ✅ GitHub Pages dashboard deploy workflow shipped and Pages is live at `https://snyderb-de.github.io/content-list-generator/`
+- ✅ User manual redesigned in the dashboard style and linked from `README.md`
+- ✅ Scan progress overlay now persists while navigating between GUI screens
+- ✅ Sponsor button support merged via `.github/FUNDING.yml` after v0.2.3
+
 ### v0.2.2 (2026-05-20)
 - ✅ **Windows GUI silent launch failure FIXED** — root cause was `isGUIContext()` had no Windows production detection; binary fell through to Bubble Tea TUI which tried to open console input with no console attached → exit code 1, `open CONIN$: The handle is invalid.`
 - ✅ Fix detects PE Subsystem field via `debug/pe`: Wails `-H windowsgui` → Subsystem=2 (GUI) routes to Wails; default `go build` → Subsystem=3 (Console) routes to TUI. Platform-agnostic, no env-var sniffing.
@@ -20,23 +26,19 @@
 
 ## Active (priority order)
 
-### 📌 P0 — verify v0.2.2 Windows .exe launches
-- Download `content-list-generator-gui-windows-amd64.exe` from v0.2.2 release on the Win11 host
-- Confirm GUI window opens (no silent exit)
-- Run a small scan end-to-end → CSV written correctly
-- If green: close `docs/debug/windows-launch-failure.md` as FIXED + remove the warning banner from dashboard downloads card
-
-### P0 — verify remaining v0.2.x builds on target machines
+### 📌 P0 — verify v0.2.3 builds on target machines
+- Windows Wails `.exe` from `content-list-generator-gui-windows-amd64.exe` — confirm GUI window opens and a small scan writes CSV correctly
 - macOS `.app` from `content-list-generator-gui-darwin-universal.zip` — verify launch (Gatekeeper bypass per user manual)
 - Linux binary smoke test
 - Windows portable `.zip` — confirmed working
 - Python source bundle on a managed Windows host — verify .bat launchers + drift banner behavior
+- If Windows `.exe` is green on the target host: mark `docs/debug/windows-launch-failure.md` fully verified
 
-### P0 — write real user manual content
-- Replace stub at `project-dashboard/user-manual.html` with full content
-- Cover scan modes, hash algorithms, CSV chunking, email-copy flow, clone-compare verdicts, troubleshooting, FAQ
-- Include platform-specific install + first-run guidance
-- Cross-link from README
+### ~~P0 — write real user manual content~~ ✅ (2026-05-26)
+- ✅ `project-dashboard/user-manual.html` fact-checked against code; CSV columns, verdict names (Exact / Content / Metadata / Not a Clone), full 14-extension email list, soft-compare PDF-only behavior, report file naming all corrected
+- ✅ FAQ section added (10 entries)
+- ✅ README cross-link to user manual added
+- Followup (P2): replace screenshot placeholders once GUI captures available
 
 ### P0 — capture GUI screenshots
 - macOS `.app` (Wails GUI)
@@ -46,21 +48,22 @@
 - Add to README hero + user manual + dashboard hero
 - Suggested resolution: 1600×1000 PNG, light-mode default
 
-### P0 — enable GitHub Pages for the dashboard
-- Repo Settings → Pages → Source: Deploy from a branch → main → /project-dashboard
-- Dashboard URL: `https://snyderb-de.github.io/content-list-generator/`
-- Add the URL to README hero + repo About sidebar
+### ~~P0 — enable GitHub Pages for the dashboard~~ ✅ (2026-05-20)
+- ✅ Dashboard URL: `https://snyderb-de.github.io/content-list-generator/`
+- Followup (P2): add the URL to README hero + repo About sidebar if desired
 
-### P1 — finish dependabot sweep (all 4 PRs now CI-green)
+### P1 — finish dependabot sweep
 - #1 setup-go 5→6 ✅ CI green
 - #3 checkout 4→6 ✅ CI green
 - #5 setup-node 4→6 ✅ CI green
 - #7 download-artifact 4→8 ✅ CI green
-- Merge each via web UI (each touches `.github/workflows/release.yml`; gh CLI lacks `workflow` scope)
+- #28 upload-artifact 4→7 ✅ CI green
+- Merge each via web UI, or refresh `gh` with `workflow` scope first; each touches `.github/workflows/release.yml`
 - Or run `gh auth refresh -s workflow --hostname github.com` in a real terminal to unblock CLI merging
 
 ### P2 — release hygiene followups
 - `releases/windows-python/` ships both the `.zip` AND its loose `.py`/`.bat`/`.md` files. Tighten `publish_github_release.sh` to upload only the zip.
+- Local helper cleanup: old `go build -tags gui` path replaced with Wails-aware scripts
 - Re-enable PR approval rule (or accept solo-dev posture) — branch protection currently allows direct merge without review
 - Bump Node version pin in workflow from 20 → 24 LTS (Node 20 GH Actions deprecation 2026-06-02)
 
@@ -89,4 +92,4 @@
 - Branch protection: review-required rule currently OFF (turned off to allow solo-dev merging). Re-enable when adding collaborators.
 - Dependabot config: ignores semver-major for gomod + npm. Security advisories still surface separately via Security tab.
 - Workflow file path: `.github/workflows/release.yml`. Triggers: tag push, PR to main, manual dispatch.
-- Latest release: **v0.2.2** (2026-05-20) — 18 artifacts attached.
+- Latest release: **v0.2.3** (2026-05-20) — 18 artifacts attached.
