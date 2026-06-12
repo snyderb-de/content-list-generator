@@ -69,6 +69,39 @@ REPORT_HEADERS = [
     "Hash Algorithm",
     "Hash Value",
 ]
+AGENCY_TEMPLATE_HEADERS = [
+    "RG",
+    "SubGr",
+    "Series",
+    "Sub_Series",
+    "RC_Series",
+    "Dept_Organization",
+    "Division",
+    "Section",
+    "Unit",
+    "RC_Series_Name",
+    "Begin_Date",
+    "End_Date",
+    "File_Num",
+    "File_Name",
+    "Description",
+    "Location",
+    "First_Name",
+    "Middle_Name",
+    "Last_Name",
+    "Date_Of_Birth",
+    "File_Type",
+    "Material_Type",
+    "File_Format",
+    "Comments",
+    "Confidential",
+    "Disposition_Date",
+    "Box_Num",
+    "Barcode",
+    "TD_Num",
+    "Location_ID",
+    "Record_Level",
+]
 EMAIL_MANIFEST_HEADERS = [
     "Source Path",
     "Destination Path",
@@ -161,6 +194,7 @@ class ScanResult:
     first_csv_item: str
     last_csv_item: str
     folders_only: bool = False
+    agency_template: bool = False
 
 
 @dataclass
@@ -733,9 +767,10 @@ def iter_scan_csv_rows(paths: list[Path]):
 
 
 class ChunkedCSVReportWriter:
-    def __init__(self, output_path: Path, max_rows_per_csv: int) -> None:
+    def __init__(self, output_path: Path, max_rows_per_csv: int, headers: list[str] | None = None) -> None:
         self.output_path = output_path
         self.max_rows_per_csv = max(1, max_rows_per_csv)
+        self.headers = list(headers or REPORT_HEADERS)
         self.part_paths: list[Path] = []
         self._part_number = 0
         self._rows_in_part = 0
@@ -753,7 +788,7 @@ class ChunkedCSVReportWriter:
         part_path.parent.mkdir(parents=True, exist_ok=True)
         self._handle = part_path.open("w", newline="", encoding="utf-8")
         self._writer = csv.writer(self._handle)
-        self._writer.writerow(REPORT_HEADERS)
+        self._writer.writerow(self.headers)
         self._rows_in_part = 0
         self.part_paths.append(part_path)
 
@@ -768,8 +803,71 @@ class ChunkedCSVReportWriter:
     def close(self) -> None:
         if self._handle is not None:
             self._handle.close()
-            self._handle = None
-            self._writer = None
+        self._handle = None
+        self._writer = None
+
+
+def _agency_field(fields: dict[str, str] | None, key: str, default: str = "") -> str:
+    if not fields:
+        return default
+    value = fields.get(key, default)
+    return str(value) if value is not None else default
+
+
+def _agency_file_format(ext: str) -> str:
+    return ext.removeprefix(".").upper()
+
+
+def _agency_location(fields: dict[str, str] | None, relative: str) -> str:
+    override = _agency_field(fields, "location").strip()
+    if override:
+        return override
+    parent = str(Path(relative).parent).replace("\\", "/")
+    return "" if parent == "." else parent
+
+
+def agency_template_row(
+    file_name: str,
+    ext: str,
+    relative: str,
+    agency_fields: dict[str, str] | None,
+) -> list[str]:
+    comments = _agency_field(agency_fields, "comments").strip()
+    material_type = _agency_field(agency_fields, "material_type", "Born Digital").strip() or "Born Digital"
+    record_level = _agency_field(agency_fields, "record_level", "Item").strip() or "Item"
+    return [
+        _agency_field(agency_fields, "rg"),
+        "",
+        "",
+        "",
+        _agency_field(agency_fields, "rc_series"),
+        _agency_field(agency_fields, "dept_organization"),
+        _agency_field(agency_fields, "division"),
+        _agency_field(agency_fields, "section"),
+        _agency_field(agency_fields, "unit"),
+        _agency_field(agency_fields, "rc_series_name"),
+        _agency_field(agency_fields, "begin_date"),
+        _agency_field(agency_fields, "end_date"),
+        "",
+        file_name,
+        _agency_field(agency_fields, "description"),
+        _agency_location(agency_fields, relative),
+        "",
+        "",
+        "",
+        "",
+        "",
+        material_type,
+        _agency_file_format(ext),
+        comments,
+        _agency_field(agency_fields, "confidential"),
+        _agency_field(agency_fields, "disposition_date"),
+        _agency_field(agency_fields, "box_num"),
+        "",
+        _agency_field(agency_fields, "td_num"),
+        _agency_field(agency_fields, "location_id"),
+        record_level,
+    ]
 
 
 def write_csv_report(
@@ -785,6 +883,8 @@ def write_csv_report(
     total_directories: int,
     filtered: int,
     total_expected_bytes: int,
+    agency_template: bool = False,
+    agency_fields: dict[str, str] | None = None,
     progress_callback: Callable[[ScanProgress], None] | None = None,
     cancel_event=None,
 ) -> tuple[int, int, dict[str, dict[str, int]], int, str, str, list[Path]]:
@@ -795,7 +895,8 @@ def write_csv_report(
     last_csv_item = ""
     hash_workers = 1
     normalized_algorithm = normalize_hash_algorithm(hash_algorithm)
-    csv_writer = ChunkedCSVReportWriter(output_path, max_rows_per_csv)
+    headers = AGENCY_TEMPLATE_HEADERS if agency_template else REPORT_HEADERS
+    csv_writer = ChunkedCSVReportWriter(output_path, max_rows_per_csv, headers)
 
     def write_processed_row(file_path: Path, size: int, relative: str, file_hash: str) -> None:
         nonlocal processed_bytes, processed_files, first_csv_item, last_csv_item
@@ -803,17 +904,18 @@ def write_csv_report(
         bucket = summaries.setdefault(summary_key(ext), {"count": 0, "bytes": 0})
         bucket["count"] += 1
         bucket["bytes"] += size
-        csv_writer.write_row(
-            [
-                file_path.name,
-                ext,
-                str(size),
-                human_bytes(size),
-                relative,
-                hash_algorithm_csv_name(normalized_algorithm),
-                file_hash,
-            ]
-        )
+        row = [
+            file_path.name,
+            ext,
+            str(size),
+            human_bytes(size),
+            relative,
+            hash_algorithm_csv_name(normalized_algorithm),
+            file_hash,
+        ]
+        if agency_template:
+            row = agency_template_row(file_path.name, ext, relative, agency_fields)
+        csv_writer.write_row(row)
         processed_files += 1
         processed_bytes += size
         if not first_csv_item:
@@ -1116,6 +1218,8 @@ def run_scan(
     max_rows_per_csv: int = DEFAULT_MAX_ROWS_PER_CSV,
     folders_only: bool = False,
     folder_depth: int = 0,
+    agency_template: bool = False,
+    agency_fields: dict[str, str] | None = None,
     progress_callback: Callable[[ScanProgress], None] | None = None,
     cancel_event=None,
 ) -> ScanResult:
@@ -1157,6 +1261,8 @@ def run_scan(
             total_directories=directories,
             filtered=filtered,
             total_expected_bytes=total_expected_bytes,
+            agency_template=agency_template,
+            agency_fields=agency_fields,
             progress_callback=progress_callback,
             cancel_event=cancel_event,
         )
@@ -1203,6 +1309,7 @@ def run_scan(
             top_by_size=summarize_entries(summaries, "bytes"),
             first_csv_item=first_csv_item,
             last_csv_item=last_csv_item,
+            agency_template=agency_template,
         )
         write_scan_report(result)
         return result
@@ -1262,6 +1369,7 @@ def build_scan_report(result: ScanResult) -> str:
         f"XLSX files created: {result.xlsx_parts}",
         f"XLSX parts: {summarize_output_parts(result.xlsx_paths)}",
         f"Summary report: {result.report_path.name}",
+        f"Agency template: {'on' if result.agency_template else 'off'}",
         f"Files included: {result.files}",
         f"Folders counted: {result.directories}",
         f"Total size: {human_bytes(result.total_bytes)}",
@@ -1779,6 +1887,7 @@ def build_scan_summary(result: ScanResult) -> str:
         f"XLSX files created: {result.xlsx_parts}",
         f"XLSX parts: {summarize_output_parts(result.xlsx_paths)}",
         f"Summary report: {result.report_path.name}",
+        f"Agency template: {'on' if result.agency_template else 'off'}",
         f"Files included: {result.files}",
         f"Folders counted: {result.directories}",
         f"Total size: {result.total_bytes} ({human_bytes(result.total_bytes)})",

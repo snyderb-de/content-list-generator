@@ -250,6 +250,26 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--preserve-zeros", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--delete-csv-after-xlsx", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--max-rows-per-csv", type=int, default=DEFAULT_MAX_ROWS_PER_CSV)
+    parser.add_argument("--agency-template", action="store_true", help="Write agency content-list headers instead of the standard scan headers")
+    parser.add_argument("--agency-rg", default="")
+    parser.add_argument("--agency-rc-series", default="")
+    parser.add_argument("--agency-dept-organization", default="")
+    parser.add_argument("--agency-division", default="")
+    parser.add_argument("--agency-section", default="")
+    parser.add_argument("--agency-unit", default="")
+    parser.add_argument("--agency-rc-series-name", default="")
+    parser.add_argument("--agency-begin-date", default="")
+    parser.add_argument("--agency-end-date", default="")
+    parser.add_argument("--agency-description", default="")
+    parser.add_argument("--agency-location", default="")
+    parser.add_argument("--agency-material-type", default="Born Digital")
+    parser.add_argument("--agency-comments", default="")
+    parser.add_argument("--agency-confidential", default="")
+    parser.add_argument("--agency-disposition-date", default="")
+    parser.add_argument("--agency-box-num", default="")
+    parser.add_argument("--agency-td-num", default="")
+    parser.add_argument("--agency-location-id", default="")
+    parser.add_argument("--agency-record-level", default="Item")
     parser.add_argument("--cli", action="store_true", help="Force CLI mode instead of Tkinter GUI")
     return parser.parse_args()
 
@@ -710,6 +730,30 @@ def run_cli_scan(args: argparse.Namespace) -> int:
     if args.max_rows_per_csv <= 0:
         print("--max-rows-per-csv must be greater than 0", file=sys.stderr)
         return 1
+    agency_fields = {
+        "rg": args.agency_rg,
+        "rc_series": args.agency_rc_series,
+        "dept_organization": args.agency_dept_organization,
+        "division": args.agency_division,
+        "section": args.agency_section,
+        "unit": args.agency_unit,
+        "rc_series_name": args.agency_rc_series_name,
+        "begin_date": args.agency_begin_date,
+        "end_date": args.agency_end_date,
+        "description": args.agency_description,
+        "location": args.agency_location,
+        "material_type": args.agency_material_type,
+        "comments": args.agency_comments,
+        "confidential": args.agency_confidential,
+        "disposition_date": args.agency_disposition_date,
+        "box_num": args.agency_box_num,
+        "td_num": args.agency_td_num,
+        "location_id": args.agency_location_id,
+        "record_level": args.agency_record_level,
+    }
+    if args.agency_template and not agency_fields["rc_series"].strip():
+        print("--agency-rc-series is required when --agency-template is used", file=sys.stderr)
+        return 1
 
     if hash_algorithm == "blake3" and not is_blake3_available():
         print(
@@ -731,6 +775,8 @@ def run_cli_scan(args: argparse.Namespace) -> int:
         preserve_zeros=preserve_zeros,
         delete_csv=delete_csv_after_xlsx,
         max_rows_per_csv=args.max_rows_per_csv,
+        agency_template=args.agency_template,
+        agency_fields=agency_fields,
     )
     print(build_scan_summary(result))
     return 0
@@ -1167,6 +1213,28 @@ class ContentListApp:
         self.xlsx_var = tk.BooleanVar(value=True)
         self.preserve_zeros_var = tk.BooleanVar(value=True)
         self.delete_csv_var = tk.BooleanVar(value=True)
+        self.agency_template_var = tk.BooleanVar(value=False)
+        self.agency_field_vars = {
+            "rg": tk.StringVar(value=""),
+            "rc_series": tk.StringVar(value=""),
+            "dept_organization": tk.StringVar(value=""),
+            "division": tk.StringVar(value=""),
+            "section": tk.StringVar(value=""),
+            "unit": tk.StringVar(value=""),
+            "rc_series_name": tk.StringVar(value=""),
+            "begin_date": tk.StringVar(value=""),
+            "end_date": tk.StringVar(value=""),
+            "description": tk.StringVar(value=""),
+            "location": tk.StringVar(value=""),
+            "material_type": tk.StringVar(value="Born Digital"),
+            "comments": tk.StringVar(value=""),
+            "confidential": tk.StringVar(value=""),
+            "disposition_date": tk.StringVar(value=""),
+            "box_num": tk.StringVar(value=""),
+            "td_num": tk.StringVar(value=""),
+            "location_id": tk.StringVar(value=""),
+            "record_level": tk.StringVar(value="Item"),
+        }
         self.status_var = tk.StringVar(value="Choose a folder to scan, then click Generate.")
         self.scan_files_var = tk.StringVar(value="0")
         self.scan_skipped_var = tk.StringVar(value="0")
@@ -1190,6 +1258,7 @@ class ContentListApp:
         self.preserve_zeros_toggle: ctk.CTkCheckBox | None = None
         self.delete_csv_toggle: ctk.CTkCheckBox | None = None
         self.delete_csv_tile: ctk.CTkFrame | None = None
+        self.agency_template_toggle: ctk.CTkCheckBox | None = None
         self.pending_clone_result: CloneVerificationResult | None = None
         self.page_frames: dict[str, ctk.CTkFrame] = {}
         self.nav_buttons: dict[str, ctk.CTkButton] = {}
@@ -1563,8 +1632,58 @@ class ContentListApp:
         self.delete_csv_toggle = self.make_option_check(self.delete_csv_tile, "Delete CSV after Excel is created", self.delete_csv_var)
         self.delete_csv_toggle.pack(anchor="w", fill="x")
 
+        agency_card = ctk.CTkFrame(page, fg_color=themed_color("hero_card_bg"), corner_radius=22)
+        agency_card.grid(row=5, column=0, columnspan=2, sticky="ew", padx=28, pady=(18, 0))
+        agency_card.grid_columnconfigure((0, 1, 2), weight=1)
+        ctk.CTkLabel(
+            agency_card,
+            text="Agency Content List",
+            font=ctk.CTkFont(size=20, weight="bold"),
+            text_color=themed_color("body_fg"),
+        ).grid(row=0, column=0, columnspan=3, sticky="w", padx=24, pady=(20, 8))
+        ctk.CTkLabel(
+            agency_card,
+            text="Use the agency transfer headers. RC Series is required; other values can be filled once for the whole sheet.",
+            font=ctk.CTkFont(size=13),
+            text_color=themed_color("hint_fg"),
+            wraplength=920,
+            justify="left",
+        ).grid(row=1, column=0, columnspan=3, sticky="w", padx=24, pady=(0, 10))
+        self.agency_template_toggle = self.make_option_check(agency_card, "Use agency content-list headers", self.agency_template_var, command=self.sync_agency_template_state)
+        self.agency_template_toggle.grid(row=2, column=0, columnspan=3, sticky="w", padx=24, pady=(0, 8))
+
+        agency_fields = [
+            ("RG", "rg"),
+            ("RC Series", "rc_series"),
+            ("Department / Organization", "dept_organization"),
+            ("RC Series Name", "rc_series_name"),
+            ("Division", "division"),
+            ("Section", "section"),
+            ("Unit", "unit"),
+            ("Begin Date", "begin_date"),
+            ("End Date", "end_date"),
+            ("Material Type", "material_type"),
+            ("Confidential", "confidential"),
+            ("Disposition Date", "disposition_date"),
+            ("TD Number", "td_num"),
+            ("Box Number", "box_num"),
+            ("Location ID", "location_id"),
+            ("Record Level", "record_level"),
+            ("Description", "description"),
+            ("Location Override", "location"),
+            ("Comments", "comments"),
+        ]
+        for index, (label, key) in enumerate(agency_fields):
+            row = 3 + index // 3
+            col = index % 3
+            field = ctk.CTkFrame(agency_card, fg_color="transparent")
+            field.grid(row=row, column=col, sticky="ew", padx=(24 if col == 0 else 8, 24 if col == 2 else 8), pady=(0, 10))
+            field.grid_columnconfigure(0, weight=1)
+            ctk.CTkLabel(field, text=label, font=ctk.CTkFont(size=12, weight="bold"), text_color=themed_color("hint_fg")).grid(row=0, column=0, sticky="w", pady=(0, 4))
+            ctk.CTkEntry(field, textvariable=self.agency_field_vars[key], font=ctk.CTkFont(size=13)).grid(row=1, column=0, sticky="ew")
+
         actions = ctk.CTkFrame(page, fg_color="transparent")
-        actions.grid(row=5, column=0, columnspan=2, sticky="ew", padx=28, pady=(18, 0))
+        actions.grid(row=6, column=0, columnspan=2, sticky="ew", padx=28, pady=(18, 0))
         self.reset_button = self.make_secondary_button(actions, "Reset", self.reset_fields)
         self.reset_button.pack(side="left")
         self.generate_button = self.make_primary_button(actions, "Generate", self.start_scan)
@@ -1576,7 +1695,7 @@ class ContentListApp:
         self.open_folder_button.pack(side="left", padx=(10, 0))
 
         progress_card = ctk.CTkFrame(page, fg_color=themed_color("card_bg"), corner_radius=22)
-        progress_card.grid(row=6, column=0, columnspan=2, sticky="ew", padx=28, pady=(18, 0))
+        progress_card.grid(row=7, column=0, columnspan=2, sticky="ew", padx=28, pady=(18, 0))
         progress_card.grid_columnconfigure((0, 1, 2), weight=1)
         ctk.CTkLabel(progress_card, text="Progress", font=ctk.CTkFont(size=20, weight="bold"), text_color=themed_color("body_fg")).grid(row=0, column=0, sticky="w", padx=24, pady=(20, 10))
         metric_row = ctk.CTkFrame(progress_card, fg_color="transparent")
@@ -1888,6 +2007,14 @@ class ContentListApp:
             if source:
                 self.output_name_var.set(default_output_name(Path(source)))
 
+    def sync_agency_template_state(self) -> None:
+        if self.agency_template_var.get() and self.folders_only_var.get():
+            self.folders_only_var.set(False)
+            self.sync_folders_only_state()
+
+    def agency_fields_payload(self) -> dict[str, str]:
+        return {key: value.get().strip() for key, value in self.agency_field_vars.items()}
+
     def clone_hash_algorithm(self) -> str:
         if is_blake3_available():
             return HASH_ALGORITHM_BLAKE3
@@ -1969,6 +2096,14 @@ class ContentListApp:
         self.xlsx_var.set(True)
         self.preserve_zeros_var.set(True)
         self.delete_csv_var.set(True)
+        self.agency_template_var.set(False)
+        for key, value in self.agency_field_vars.items():
+            if key == "material_type":
+                value.set("Born Digital")
+            elif key == "record_level":
+                value.set("Item")
+            else:
+                value.set("")
         if self.progress is not None:
             self.progress.set(0)
         self.status_var.set("Choose a folder to scan, then click Generate.")
@@ -1977,6 +2112,7 @@ class ContentListApp:
         self.scan_saved_var.set("Waiting")
         self.append_summary("")
         self.sync_folders_only_state()
+        self.sync_agency_template_state()
         self.sync_xlsx_state()
         self.sync_clone_state()
         self.root.configure(fg_color=themed_color("app_bg"))
@@ -2088,6 +2224,13 @@ class ContentListApp:
         if not output_name.lower().endswith(".csv"):
             messagebox.showerror("Invalid output file", "Output file name must end in .csv")
             return
+        if self.agency_template_var.get() and self.clone_verify_var.get():
+            messagebox.showerror("Agency template", "Agency template output cannot be used with Clone Drive Verification.")
+            return
+        agency_fields = self.agency_fields_payload()
+        if self.agency_template_var.get() and not agency_fields["rc_series"]:
+            messagebox.showerror("Agency template", "RC Series is required for agency content-list output.")
+            return
 
         output_path = output_dir / output_name
         first_csv_output_path = csv_output_path_for_part(output_path, 1)
@@ -2122,6 +2265,8 @@ class ContentListApp:
                     "create_xlsx": self.xlsx_var.get(),
                     "preserve_zeros": self.preserve_zeros_var.get(),
                     "delete_csv_requested": self.delete_csv_var.get(),
+                    "agency_template": False,
+                    "agency_fields": {},
                 }
             )
             return
@@ -2137,6 +2282,8 @@ class ContentListApp:
                 "create_xlsx": self.xlsx_var.get(),
                 "preserve_zeros": self.preserve_zeros_var.get(),
                 "delete_csv_requested": self.delete_csv_var.get(),
+                "agency_template": self.agency_template_var.get(),
+                "agency_fields": agency_fields,
             }
         )
 
@@ -2157,6 +2304,8 @@ class ContentListApp:
             preserve_zeros = payload["preserve_zeros"]
             delete_csv_requested = payload["delete_csv_requested"]
             mode = payload["mode"]
+            agency_template = bool(payload.get("agency_template", False))
+            agency_fields = payload.get("agency_fields") or {}
 
             def on_progress(progress: ScanProgress) -> None:
                 self.message_queue.put(("progress", progress))
@@ -2174,6 +2323,8 @@ class ContentListApp:
                 max_rows_per_csv=DEFAULT_MAX_ROWS_PER_CSV,
                 folders_only=self.folders_only_var.get(),
                 folder_depth=max(0, int(self.folder_depth_var.get() or "0")),
+                agency_template=agency_template,
+                agency_fields=agency_fields,
                 progress_callback=on_progress,
                 cancel_event=self.scan_cancel_event,
             )
@@ -2191,6 +2342,8 @@ class ContentListApp:
                             "create_xlsx": create_xlsx,
                             "preserve_zeros": preserve_zeros,
                             "delete_csv_requested": delete_csv_requested,
+                            "agency_template": False,
+                            "agency_fields": {},
                         },
                     )
                 )
@@ -2299,6 +2452,8 @@ class ContentListApp:
                             "create_xlsx": payload_map["create_xlsx"],
                             "preserve_zeros": payload_map["preserve_zeros"],
                             "delete_csv_requested": payload_map["delete_csv_requested"],
+                            "agency_template": False,
+                            "agency_fields": {},
                             "drive_a_result": drive_a_result,
                         }
                     )

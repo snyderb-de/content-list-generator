@@ -11,6 +11,30 @@ export interface ScanOptions {
   excludedExts: string
   foldersOnly: boolean
   folderDepth: number
+  agencyTemplate: boolean
+  agencyFields: AgencyTemplateFields
+}
+
+export interface AgencyTemplateFields {
+  rg: string
+  rcSeries: string
+  deptOrganization: string
+  division: string
+  section: string
+  unit: string
+  rcSeriesName: string
+  beginDate: string
+  endDate: string
+  description: string
+  location: string
+  materialType: string
+  comments: string
+  confidential: string
+  dispositionDate: string
+  boxNum: string
+  tdNum: string
+  locationId: string
+  recordLevel: string
 }
 
 export interface AppSettings {
@@ -21,6 +45,10 @@ export interface AppSettings {
   preserveZeros: boolean
   deleteCSV: boolean
   excludedExts: string
+  foldersOnly: boolean
+  folderDepth: number
+  agencyTemplate: boolean
+  agencyFields: AgencyTemplateFields
 }
 
 export interface SummaryEntry {

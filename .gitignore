@@ -36,9 +36,6 @@ __pycache__/
 !/frontend/dist/gitkeep
 
 # Local test and design assets should stay untracked
-*_test.go
-/python/tests/
-/testing/
 /design/
 CLAUDE.md
 .claude/settings.local.json

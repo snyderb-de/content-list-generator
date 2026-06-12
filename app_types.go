@@ -1,30 +1,56 @@
 package main
 
 type ScanOptions struct {
-	SourceDir     string `json:"sourceDir"`
-	OutputDir     string `json:"outputDir"`
-	OutputFile    string `json:"outputFile"`
-	HashAlgorithm string `json:"hashAlgorithm"`
-	ExcludeHidden bool   `json:"excludeHidden"`
-	ExcludeSystem bool   `json:"excludeSystem"`
-	CreateXLSX    bool   `json:"createXLSX"`
-	PreserveZeros bool   `json:"preserveZeros"`
-	DeleteCSV     bool   `json:"deleteCSV"`
-	ExcludedExts  string `json:"excludedExts"`
-	FoldersOnly   bool   `json:"foldersOnly"`
-	FolderDepth   int    `json:"folderDepth"`
+	SourceDir      string               `json:"sourceDir"`
+	OutputDir      string               `json:"outputDir"`
+	OutputFile     string               `json:"outputFile"`
+	HashAlgorithm  string               `json:"hashAlgorithm"`
+	ExcludeHidden  bool                 `json:"excludeHidden"`
+	ExcludeSystem  bool                 `json:"excludeSystem"`
+	CreateXLSX     bool                 `json:"createXLSX"`
+	PreserveZeros  bool                 `json:"preserveZeros"`
+	DeleteCSV      bool                 `json:"deleteCSV"`
+	ExcludedExts   string               `json:"excludedExts"`
+	FoldersOnly    bool                 `json:"foldersOnly"`
+	FolderDepth    int                  `json:"folderDepth"`
+	AgencyTemplate bool                 `json:"agencyTemplate"`
+	AgencyFields   AgencyTemplateFields `json:"agencyFields"`
+}
+
+type AgencyTemplateFields struct {
+	RG               string `json:"rg"`
+	RCSeries         string `json:"rcSeries"`
+	DeptOrganization string `json:"deptOrganization"`
+	Division         string `json:"division"`
+	Section          string `json:"section"`
+	Unit             string `json:"unit"`
+	RCSeriesName     string `json:"rcSeriesName"`
+	BeginDate        string `json:"beginDate"`
+	EndDate          string `json:"endDate"`
+	Description      string `json:"description"`
+	Location         string `json:"location"`
+	MaterialType     string `json:"materialType"`
+	Comments         string `json:"comments"`
+	Confidential     string `json:"confidential"`
+	DispositionDate  string `json:"dispositionDate"`
+	BoxNum           string `json:"boxNum"`
+	TDNum            string `json:"tdNum"`
+	LocationID       string `json:"locationId"`
+	RecordLevel      string `json:"recordLevel"`
 }
 
 type AppSettings struct {
-	HashAlgorithm string `json:"hashAlgorithm"`
-	ExcludeHidden bool   `json:"excludeHidden"`
-	ExcludeSystem bool   `json:"excludeSystem"`
-	CreateXLSX    bool   `json:"createXLSX"`
-	PreserveZeros bool   `json:"preserveZeros"`
-	DeleteCSV     bool   `json:"deleteCSV"`
-	ExcludedExts  string `json:"excludedExts"`
-	FoldersOnly   bool   `json:"foldersOnly"`
-	FolderDepth   int    `json:"folderDepth"`
+	HashAlgorithm  string               `json:"hashAlgorithm"`
+	ExcludeHidden  bool                 `json:"excludeHidden"`
+	ExcludeSystem  bool                 `json:"excludeSystem"`
+	CreateXLSX     bool                 `json:"createXLSX"`
+	PreserveZeros  bool                 `json:"preserveZeros"`
+	DeleteCSV      bool                 `json:"deleteCSV"`
+	ExcludedExts   string               `json:"excludedExts"`
+	FoldersOnly    bool                 `json:"foldersOnly"`
+	FolderDepth    int                  `json:"folderDepth"`
+	AgencyTemplate bool                 `json:"agencyTemplate"`
+	AgencyFields   AgencyTemplateFields `json:"agencyFields"`
 }
 
 type SummaryEntry struct {
@@ -134,20 +160,20 @@ type DiffRowPayload struct {
 }
 
 type CloneDonePayload struct {
-	DiffPath       string  `json:"diffPath"`
-	ReportPath     string  `json:"reportPath"`
-	HashAlgorithm  string  `json:"hashAlgorithm"`
-	ElapsedSecs    float64 `json:"elapsedSecs"`
-	Verdict        string  `json:"verdict"`
-	Compared       uint64  `json:"compared"`
-	Differences    uint64  `json:"differences"`
-	MovedFiles     uint64  `json:"movedFiles"`
-	DuplicatesOnB  uint64  `json:"duplicatesOnB"`
-	DuplicatesOnA  uint64  `json:"duplicatesOnA"`
-	MissingNoMatch uint64  `json:"missingNoMatch"`
-	ExtraNoMatch   uint64  `json:"extraNoMatch"`
-	SizeMismatches uint64  `json:"sizeMismatches"`
-	HashMismatches uint64  `json:"hashMismatches"`
+	DiffPath          string  `json:"diffPath"`
+	ReportPath        string  `json:"reportPath"`
+	HashAlgorithm     string  `json:"hashAlgorithm"`
+	ElapsedSecs       float64 `json:"elapsedSecs"`
+	Verdict           string  `json:"verdict"`
+	Compared          uint64  `json:"compared"`
+	Differences       uint64  `json:"differences"`
+	MovedFiles        uint64  `json:"movedFiles"`
+	DuplicatesOnB     uint64  `json:"duplicatesOnB"`
+	DuplicatesOnA     uint64  `json:"duplicatesOnA"`
+	MissingNoMatch    uint64  `json:"missingNoMatch"`
+	ExtraNoMatch      uint64  `json:"extraNoMatch"`
+	SizeMismatches    uint64  `json:"sizeMismatches"`
+	HashMismatches    uint64  `json:"hashMismatches"`
 	ExcludedSystem    uint64  `json:"excludedSystem"`
 	MetadataOnlyDiffs uint64  `json:"metadataOnlyDiffs"`
 	SoftCompare       bool    `json:"softCompare"`
