@@ -2,6 +2,12 @@
 
 ## Recently Shipped
 
+### v0.2.4 (2026-06-12)
+- ✅ Agency content-list template output mode added using `Content List Agencies.xlsx` headers
+- ✅ Staff can fill constant agency fields once per sheet; `RC_Series` is required in agency mode
+- ✅ Standard scan output remains available for audit/hash details
+- ✅ Local Go/Python tests and shared fixtures are now tracked so CI runs real parity coverage
+
 ### v0.2.3 (2026-05-20)
 - ✅ GitHub Pages dashboard deploy workflow shipped and Pages is live at `https://snyderb-de.github.io/content-list-generator/`
 - ✅ User manual redesigned in the dashboard style and linked from `README.md`
@@ -92,4 +98,4 @@
 - Branch protection: review-required rule currently OFF (turned off to allow solo-dev merging). Re-enable when adding collaborators.
 - Dependabot config: ignores semver-major for gomod + npm. Security advisories still surface separately via Security tab.
 - Workflow file path: `.github/workflows/release.yml`. Triggers: tag push, PR to main, manual dispatch.
-- Latest release: **v0.2.3** (2026-05-20) — 18 artifacts attached.
+- Latest release: **v0.2.4** (2026-06-12) — pending release workflow.

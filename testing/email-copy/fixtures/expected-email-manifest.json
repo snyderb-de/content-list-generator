@@ -1,0 +1,17 @@
+{
+  "copied": 2,
+  "rows": [
+    {
+      "Relative Path": "mail/archive.pst",
+      "File Name": "archive.pst",
+      "Extension": ".pst",
+      "Size in Bytes": "13"
+    },
+    {
+      "Relative Path": "mail/inbox.eml",
+      "File Name": "inbox.eml",
+      "Extension": ".eml",
+      "Size in Bytes": "10"
+    }
+  ]
+}

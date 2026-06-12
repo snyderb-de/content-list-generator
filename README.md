@@ -14,6 +14,7 @@ Both runtimes support:
 - recursive content-list export to CSV
 - automatic CSV chunking for large scans (default: 300,000 rows per file, named like `report-001.csv`, `report-002.csv`)
 - optional XLSX generation
+- agency content-list template export with constant metadata fields
 - hash verification modes for migration workflows
 - plain-text scan reports
 - integrated email-file copy with manifest output

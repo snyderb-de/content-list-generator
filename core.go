@@ -61,6 +61,29 @@ type scanDoneMsg struct {
 	firstCSVItem    string
 	lastCSVItem     string
 	foldersOnly     bool
+	agencyTemplate  bool
+}
+
+type agencyTemplateFields struct {
+	RG               string
+	RCSeries         string
+	DeptOrganization string
+	Division         string
+	Section          string
+	Unit             string
+	RCSeriesName     string
+	BeginDate        string
+	EndDate          string
+	Description      string
+	Location         string
+	MaterialType     string
+	Comments         string
+	Confidential     string
+	DispositionDate  string
+	BoxNum           string
+	TDNum            string
+	LocationID       string
+	RecordLevel      string
 }
 
 type scanOptions struct {
@@ -75,6 +98,8 @@ type scanOptions struct {
 	ExcludedExtsText string
 	FoldersOnly      bool
 	FolderDepth      int
+	AgencyTemplate   bool
+	AgencyFields     agencyTemplateFields
 }
 
 type scanWork struct {
@@ -221,6 +246,7 @@ type reportWriter interface {
 type csvReportWriter struct {
 	baseOutputPath    string
 	maxRowsPerFile    uint64
+	headers           []string
 	rowsInCurrentFile uint64
 	currentPart       int
 	outputPaths       []string
@@ -231,13 +257,61 @@ type csvReportWriter struct {
 
 const defaultMaxRowsPerCSV uint64 = 300000
 
-func newReportWriter(outputPath string, maxRowsPerFile uint64) (reportWriter, error) {
+var standardReportHeaders = []string{
+	"File Name",
+	"Extension",
+	"Size in Bytes",
+	"Size in Human Readable",
+	"Path From Root Folder",
+	"Hash Algorithm",
+	"Hash Value",
+}
+
+var agencyTemplateHeaders = []string{
+	"RG",
+	"SubGr",
+	"Series",
+	"Sub_Series",
+	"RC_Series",
+	"Dept_Organization",
+	"Division",
+	"Section",
+	"Unit",
+	"RC_Series_Name",
+	"Begin_Date",
+	"End_Date",
+	"File_Num",
+	"File_Name",
+	"Description",
+	"Location",
+	"First_Name",
+	"Middle_Name",
+	"Last_Name",
+	"Date_Of_Birth",
+	"File_Type",
+	"Material_Type",
+	"File_Format",
+	"Comments",
+	"Confidential",
+	"Disposition_Date",
+	"Box_Num",
+	"Barcode",
+	"TD_Num",
+	"Location_ID",
+	"Record_Level",
+}
+
+func newReportWriter(outputPath string, maxRowsPerFile uint64, headers []string) (reportWriter, error) {
 	if maxRowsPerFile == 0 {
 		maxRowsPerFile = defaultMaxRowsPerCSV
+	}
+	if len(headers) == 0 {
+		headers = standardReportHeaders
 	}
 	writer := &csvReportWriter{
 		baseOutputPath: outputPath,
 		maxRowsPerFile: maxRowsPerFile,
+		headers:        slices.Clone(headers),
 		outputPaths:    make([]string, 0, 4),
 	}
 	if err := writer.openPart(1); err != nil {
@@ -247,15 +321,7 @@ func newReportWriter(outputPath string, maxRowsPerFile uint64) (reportWriter, er
 }
 
 func (w *csvReportWriter) WriteHeader() error {
-	return w.writer.Write([]string{
-		"File Name",
-		"Extension",
-		"Size in Bytes",
-		"Size in Human Readable",
-		"Path From Root Folder",
-		"Hash Algorithm",
-		"Hash Value",
-	})
+	return w.writer.Write(w.headers)
 }
 
 func (w *csvReportWriter) WriteRow(values []string) error {
@@ -341,6 +407,66 @@ func (w *csvReportWriter) closeCurrent() error {
 	return nil
 }
 
+func agencyFileFormat(ext string) string {
+	return strings.ToUpper(strings.TrimPrefix(ext, "."))
+}
+
+func agencyLocation(fields agencyTemplateFields, relative string) string {
+	if strings.TrimSpace(fields.Location) != "" {
+		return fields.Location
+	}
+	dir := filepath.ToSlash(filepath.Dir(relative))
+	if dir == "." {
+		return ""
+	}
+	return dir
+}
+
+func agencyTemplateRow(work scanWork, fields agencyTemplateFields) []string {
+	comments := strings.TrimSpace(fields.Comments)
+	materialType := fields.MaterialType
+	if strings.TrimSpace(materialType) == "" {
+		materialType = "Born Digital"
+	}
+	recordLevel := fields.RecordLevel
+	if strings.TrimSpace(recordLevel) == "" {
+		recordLevel = "Item"
+	}
+	return []string{
+		fields.RG,
+		"",
+		"",
+		"",
+		fields.RCSeries,
+		fields.DeptOrganization,
+		fields.Division,
+		fields.Section,
+		fields.Unit,
+		fields.RCSeriesName,
+		fields.BeginDate,
+		fields.EndDate,
+		"",
+		work.name,
+		fields.Description,
+		agencyLocation(fields, work.relative),
+		"",
+		"",
+		"",
+		"",
+		"",
+		materialType,
+		agencyFileFormat(work.ext),
+		comments,
+		fields.Confidential,
+		fields.DispositionDate,
+		fields.BoxNum,
+		"",
+		fields.TDNum,
+		fields.LocationID,
+		recordLevel,
+	}
+}
+
 func runScan(sourceDir, outputPath string, options scanOptions) (scanDoneMsg, error) {
 	return runScanWithContext(context.Background(), sourceDir, outputPath, options)
 }
@@ -369,7 +495,11 @@ func runScanWithContext(parent context.Context, sourceDir, outputPath string, op
 		return scanDoneMsg{}, err
 	}
 
-	reportWriter, err := newReportWriter(outputPath, options.MaxRowsPerCSV)
+	headers := standardReportHeaders
+	if options.AgencyTemplate {
+		headers = agencyTemplateHeaders
+	}
+	reportWriter, err := newReportWriter(outputPath, options.MaxRowsPerCSV, headers)
 	if err != nil {
 		return scanDoneMsg{}, err
 	}
@@ -406,9 +536,9 @@ func runScanWithContext(parent context.Context, sourceDir, outputPath string, op
 	walkErrCh := make(chan error, 1)
 	typeTotals := make(map[string]summaryEntry)
 	pending := make(map[uint64]scanResult)
-	filteredHidden  := uint64(0)
-	filteredSystem  := uint64(0)
-	filteredExts    := uint64(0)
+	filteredHidden := uint64(0)
+	filteredSystem := uint64(0)
+	filteredExts := uint64(0)
 	filteredOSNoise := uint64(0)
 	filteredSamples := make([]string, 0, 8)
 	firstCSVItem := ""
@@ -590,7 +720,7 @@ func runScanWithContext(parent context.Context, sourceDir, outputPath string, op
 				continue
 			}
 
-			if err := reportWriter.WriteRow([]string{
+			row := []string{
 				ready.work.name,
 				ready.work.ext,
 				fmt.Sprintf("%d", ready.work.size),
@@ -598,7 +728,11 @@ func runScanWithContext(parent context.Context, sourceDir, outputPath string, op
 				ready.work.relative,
 				options.HashAlgorithm.CSVName(),
 				ready.hash,
-			}); err != nil {
+			}
+			if options.AgencyTemplate {
+				row = agencyTemplateRow(ready.work, options.AgencyFields)
+			}
+			if err := reportWriter.WriteRow(row); err != nil {
 				cancel()
 				return scanDoneMsg{}, err
 			}
@@ -741,6 +875,7 @@ func runScanWithContext(parent context.Context, sourceDir, outputPath string, op
 		filteredSamples: filteredSamples,
 		firstCSVItem:    firstCSVItem,
 		lastCSVItem:     lastCSVItem,
+		agencyTemplate:  options.AgencyTemplate,
 	}
 	if err := writeScanReport(reportPath, report); err != nil {
 		return scanDoneMsg{}, err
@@ -809,11 +944,11 @@ func runFolderOnlyScanWithContext(parent context.Context, sourceDir, outputPath 
 		}
 		totalDirs++
 		setProgress(globalProgress{
-			phase:            progressPhaseCounting,
-			directories:      totalDirs,
-			currentItem:      filepath.ToSlash(path),
-			startedAt:        startedAt,
-			phaseStartedAt:   startedAt,
+			phase:          progressPhaseCounting,
+			directories:    totalDirs,
+			currentItem:    filepath.ToSlash(path),
+			startedAt:      startedAt,
+			phaseStartedAt: startedAt,
 		})
 		if options.FolderDepth > 0 && depth == options.FolderDepth {
 			return filepath.SkipDir
@@ -1017,6 +1152,7 @@ func buildScanReport(done scanDoneMsg) string {
 		fmt.Sprintf("XLSX files created: %d", done.xlsxPartCount),
 		fmt.Sprintf("XLSX parts: %s", summarizeOutputParts(done.xlsxPaths)),
 		fmt.Sprintf("Summary report: %s", filepath.Base(done.reportPath)),
+		fmt.Sprintf("Agency template: %s", onOff(done.agencyTemplate)),
 		fmt.Sprintf("Files included: %d", done.files),
 		fmt.Sprintf("Folders counted: %d", done.directories),
 		fmt.Sprintf("Total size: %s", humanBytes(done.bytes)),

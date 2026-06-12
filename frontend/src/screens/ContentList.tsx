@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { CheckOutputExists, GetScanDefaults, OpenPath, SaveSettings, StartScan, CancelScan, ValidateScanPaths } from '../../wailsjs/go/main/App'
+import { main } from '../../wailsjs/go/models'
 import { EventsOff, EventsOn } from '../../wailsjs/runtime/runtime'
 import FolderPicker from '../components/FolderPicker'
 import ProgressBar from '../components/ProgressBar'
 import Toggle from '../components/Toggle'
-import { HASH_ALGORITHMS, ScanDonePayload, ScanOptions, ScanProgressPayload } from '../types'
+import { AgencyTemplateFields, HASH_ALGORITHMS, ScanDonePayload, ScanOptions, ScanProgressPayload } from '../types'
 
 type Phase = 'idle' | 'scanning' | 'done' | 'error' | 'canceled' | 'confirm-overwrite'
 
@@ -18,6 +19,28 @@ function defaultOutputFilename(sourceDir: string): string {
   return `${name}-content-list-${stamp}.csv`
 }
 
+const DEFAULT_AGENCY_FIELDS: AgencyTemplateFields = {
+  rg: '',
+  rcSeries: '',
+  deptOrganization: '',
+  division: '',
+  section: '',
+  unit: '',
+  rcSeriesName: '',
+  beginDate: '',
+  endDate: '',
+  description: '',
+  location: '',
+  materialType: 'Born Digital',
+  comments: '',
+  confidential: '',
+  dispositionDate: '',
+  boxNum: '',
+  tdNum: '',
+  locationId: '',
+  recordLevel: 'Item',
+}
+
 const DEFAULT_OPTS: ScanOptions = {
   sourceDir: '', outputDir: '', outputFile: '',
   hashAlgorithm: 'blake3',
@@ -26,7 +49,12 @@ const DEFAULT_OPTS: ScanOptions = {
   excludedExts: '',
   foldersOnly: false,
   folderDepth: 0,
+  agencyTemplate: false,
+  agencyFields: DEFAULT_AGENCY_FIELDS,
 }
+
+const toWailsScanOptions = (value: ScanOptions): main.ScanOptions =>
+  value as unknown as main.ScanOptions
 
 function defaultFolderListFilename(sourceDir: string): string {
   const parts = sourceDir.replace(/\\/g, '/').split('/').filter(Boolean)
@@ -96,6 +124,9 @@ export default function ContentList() {
   const set = (key: keyof ScanOptions, value: any) =>
     setOpts(o => ({ ...o, [key]: value }))
 
+  const setAgency = (key: keyof AgencyTemplateFields, value: string) =>
+    setOpts(o => ({ ...o, agencyFields: { ...DEFAULT_AGENCY_FIELDS, ...o.agencyFields, [key]: value } }))
+
   const doScan = async () => {
     setPhase('scanning')
     setProgress(null)
@@ -107,8 +138,9 @@ export default function ContentList() {
     EventsOn('scan:canceled', ()                        => setPhase('canceled'))
 
     try {
-      await StartScan(opts)
-      SaveSettings(opts).catch(() => {})
+      const apiOpts = toWailsScanOptions(opts)
+      await StartScan(apiOpts)
+      SaveSettings(apiOpts).catch(() => {})
     } catch (e: any) {
       EventsOff('scan:progress'); EventsOff('scan:done')
       EventsOff('scan:error');    EventsOff('scan:canceled')
@@ -118,7 +150,7 @@ export default function ContentList() {
   }
 
   const start = async () => {
-    const exists = await CheckOutputExists(opts).catch(() => false)
+    const exists = await CheckOutputExists(toWailsScanOptions(opts)).catch(() => false)
     if (exists) {
       setPhase('confirm-overwrite')
     } else {
@@ -135,7 +167,8 @@ export default function ContentList() {
   }
 
   const sameFolders = !!(opts.sourceDir && opts.outputDir && opts.sourceDir === opts.outputDir)
-  const canStart = opts.sourceDir.length > 0 && opts.outputDir.length > 0 && !sameFolders && !pathError
+  const agencyMissingRCSeries = opts.agencyTemplate && !opts.agencyFields.rcSeries.trim()
+  const canStart = opts.sourceDir.length > 0 && opts.outputDir.length > 0 && !sameFolders && !pathError && !agencyMissingRCSeries
 
   // ── Confirm overwrite ─────────────────────────────────────
   if (phase === 'confirm-overwrite') {
@@ -256,6 +289,109 @@ export default function ContentList() {
             <Toggle label="Delete CSV after XLSX created"  checked={opts.deleteCSV && opts.createXLSX}
               onChange={v => set('deleteCSV', v)} disabled={!opts.createXLSX || opts.foldersOnly} indent />
           </div>
+        </div>
+
+        <div className="card">
+          <p className="card-title">Agency Template</p>
+          <Toggle label="Use agency content-list headers" checked={opts.agencyTemplate} onChange={v => {
+            setOpts(o => ({
+              ...o,
+              agencyTemplate: v,
+              foldersOnly: v ? false : o.foldersOnly,
+              agencyFields: { ...DEFAULT_AGENCY_FIELDS, ...o.agencyFields },
+            }))
+          }} />
+          {opts.agencyTemplate && (
+            <>
+              {agencyMissingRCSeries && (
+                <p className="danger-text" style={{ margin: '4px 0 8px' }}>
+                  RC Series is required for agency template output.
+                </p>
+              )}
+              <div className="field-grid">
+                <div className="field">
+                  <label className="field-label">RG</label>
+                  <input className="text-input" value={opts.agencyFields.rg} onChange={e => setAgency('rg', e.target.value)} placeholder="4-digit record group" />
+                </div>
+                <div className="field">
+                  <label className="field-label">RC Series</label>
+                  <input className="text-input" value={opts.agencyFields.rcSeries} onChange={e => setAgency('rcSeries', e.target.value)} placeholder="required" />
+                </div>
+                <div className="field">
+                  <label className="field-label">Department / Organization</label>
+                  <input className="text-input" value={opts.agencyFields.deptOrganization} onChange={e => setAgency('deptOrganization', e.target.value)} />
+                </div>
+                <div className="field">
+                  <label className="field-label">RC Series Name</label>
+                  <input className="text-input" value={opts.agencyFields.rcSeriesName} onChange={e => setAgency('rcSeriesName', e.target.value)} />
+                </div>
+                <div className="field">
+                  <label className="field-label">Division</label>
+                  <input className="text-input" value={opts.agencyFields.division} onChange={e => setAgency('division', e.target.value)} />
+                </div>
+                <div className="field">
+                  <label className="field-label">Section</label>
+                  <input className="text-input" value={opts.agencyFields.section} onChange={e => setAgency('section', e.target.value)} />
+                </div>
+                <div className="field">
+                  <label className="field-label">Unit</label>
+                  <input className="text-input" value={opts.agencyFields.unit} onChange={e => setAgency('unit', e.target.value)} />
+                </div>
+                <div className="field">
+                  <label className="field-label">Begin Date</label>
+                  <input className="text-input" value={opts.agencyFields.beginDate} onChange={e => setAgency('beginDate', e.target.value)} placeholder="YYYY or MM/YYYY" />
+                </div>
+                <div className="field">
+                  <label className="field-label">End Date</label>
+                  <input className="text-input" value={opts.agencyFields.endDate} onChange={e => setAgency('endDate', e.target.value)} placeholder="YYYY or MM/YYYY" />
+                </div>
+                <div className="field">
+                  <label className="field-label">Material Type</label>
+                  <input className="text-input" value={opts.agencyFields.materialType} onChange={e => setAgency('materialType', e.target.value)} placeholder="Born Digital" />
+                </div>
+                <div className="field">
+                  <label className="field-label">Confidential</label>
+                  <select className="select" value={opts.agencyFields.confidential} onChange={e => setAgency('confidential', e.target.value)}>
+                    <option value="">blank</option>
+                    <option value="No">No</option>
+                    <option value="Yes">Yes</option>
+                  </select>
+                </div>
+                <div className="field">
+                  <label className="field-label">Disposition Date</label>
+                  <input className="text-input" value={opts.agencyFields.dispositionDate} onChange={e => setAgency('dispositionDate', e.target.value)} />
+                </div>
+                <div className="field">
+                  <label className="field-label">TD Number</label>
+                  <input className="text-input" value={opts.agencyFields.tdNum} onChange={e => setAgency('tdNum', e.target.value)} />
+                </div>
+                <div className="field">
+                  <label className="field-label">Box Number</label>
+                  <input className="text-input" value={opts.agencyFields.boxNum} onChange={e => setAgency('boxNum', e.target.value)} placeholder="###.###" />
+                </div>
+                <div className="field">
+                  <label className="field-label">Location ID</label>
+                  <input className="text-input" value={opts.agencyFields.locationId} onChange={e => setAgency('locationId', e.target.value)} placeholder="drive, share, or storage location" />
+                </div>
+                <div className="field">
+                  <label className="field-label">Record Level</label>
+                  <input className="text-input" value={opts.agencyFields.recordLevel} onChange={e => setAgency('recordLevel', e.target.value)} placeholder="Item" />
+                </div>
+              </div>
+              <div className="field">
+                <label className="field-label">Description</label>
+                <textarea className="text-input" value={opts.agencyFields.description} onChange={e => setAgency('description', e.target.value)} rows={2} />
+              </div>
+              <div className="field">
+                <label className="field-label">Location Override</label>
+                <input className="text-input" value={opts.agencyFields.location} onChange={e => setAgency('location', e.target.value)} placeholder="leave blank to use parent folder path" />
+              </div>
+              <div className="field">
+                <label className="field-label">Comments</label>
+                <textarea className="text-input" value={opts.agencyFields.comments} onChange={e => setAgency('comments', e.target.value)} rows={2} placeholder="optional constant note" />
+              </div>
+            </>
+          )}
         </div>
 
         <div style={{ marginTop: 16 }}>

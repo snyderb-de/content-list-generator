@@ -15,13 +15,13 @@ import (
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-const appVersion = "1.0.0"
+const appVersion = "0.2.4"
 
 type App struct {
-	ctx          context.Context
-	startDir     string
-	cloneCancel  func()
-	emailCancel  func()
+	ctx           context.Context
+	startDir      string
+	cloneCancel   func()
+	emailCancel   func()
 	cloneDriveBCh chan string // non-nil only while awaiting drive B in single-drive mode
 }
 
@@ -70,6 +70,10 @@ func (a *App) GetScanDefaults() ScanOptions {
 		CreateXLSX:    true,
 		PreserveZeros: true,
 		DeleteCSV:     true,
+		AgencyFields: AgencyTemplateFields{
+			MaterialType: "Born Digital",
+			RecordLevel:  "Item",
+		},
 	}
 	saved, err := a.loadSettings()
 	if err != nil {
@@ -86,20 +90,30 @@ func (a *App) GetScanDefaults() ScanOptions {
 	defaults.ExcludedExts = saved.ExcludedExts
 	defaults.FoldersOnly = saved.FoldersOnly
 	defaults.FolderDepth = saved.FolderDepth
+	defaults.AgencyTemplate = saved.AgencyTemplate
+	defaults.AgencyFields = saved.AgencyFields
+	if defaults.AgencyFields.MaterialType == "" {
+		defaults.AgencyFields.MaterialType = "Born Digital"
+	}
+	if defaults.AgencyFields.RecordLevel == "" {
+		defaults.AgencyFields.RecordLevel = "Item"
+	}
 	return defaults
 }
 
 func (a *App) SaveSettings(opts ScanOptions) {
 	s := AppSettings{
-		HashAlgorithm: opts.HashAlgorithm,
-		ExcludeHidden: opts.ExcludeHidden,
-		ExcludeSystem: opts.ExcludeSystem,
-		CreateXLSX:    opts.CreateXLSX,
-		PreserveZeros: opts.PreserveZeros,
-		DeleteCSV:     opts.DeleteCSV,
-		ExcludedExts:  opts.ExcludedExts,
-		FoldersOnly:   opts.FoldersOnly,
-		FolderDepth:   opts.FolderDepth,
+		HashAlgorithm:  opts.HashAlgorithm,
+		ExcludeHidden:  opts.ExcludeHidden,
+		ExcludeSystem:  opts.ExcludeSystem,
+		CreateXLSX:     opts.CreateXLSX,
+		PreserveZeros:  opts.PreserveZeros,
+		DeleteCSV:      opts.DeleteCSV,
+		ExcludedExts:   opts.ExcludedExts,
+		FoldersOnly:    opts.FoldersOnly,
+		FolderDepth:    opts.FolderDepth,
+		AgencyTemplate: opts.AgencyTemplate,
+		AgencyFields:   opts.AgencyFields,
 	}
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
@@ -167,6 +181,28 @@ func (a *App) StartScan(opts ScanOptions) error {
 		ExcludedExtsText: opts.ExcludedExts,
 		FoldersOnly:      opts.FoldersOnly,
 		FolderDepth:      opts.FolderDepth,
+		AgencyTemplate:   opts.AgencyTemplate,
+		AgencyFields: agencyTemplateFields{
+			RG:               opts.AgencyFields.RG,
+			RCSeries:         opts.AgencyFields.RCSeries,
+			DeptOrganization: opts.AgencyFields.DeptOrganization,
+			Division:         opts.AgencyFields.Division,
+			Section:          opts.AgencyFields.Section,
+			Unit:             opts.AgencyFields.Unit,
+			RCSeriesName:     opts.AgencyFields.RCSeriesName,
+			BeginDate:        opts.AgencyFields.BeginDate,
+			EndDate:          opts.AgencyFields.EndDate,
+			Description:      opts.AgencyFields.Description,
+			Location:         opts.AgencyFields.Location,
+			MaterialType:     opts.AgencyFields.MaterialType,
+			Comments:         opts.AgencyFields.Comments,
+			Confidential:     opts.AgencyFields.Confidential,
+			DispositionDate:  opts.AgencyFields.DispositionDate,
+			BoxNum:           opts.AgencyFields.BoxNum,
+			TDNum:            opts.AgencyFields.TDNum,
+			LocationID:       opts.AgencyFields.LocationID,
+			RecordLevel:      opts.AgencyFields.RecordLevel,
+		},
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -525,20 +561,20 @@ func (a *App) StartCloneCompare(opts CloneCompareOptions) error {
 		}
 
 		wailsRuntime.EventsEmit(a.ctx, "clone:done", CloneDonePayload{
-			DiffPath:       result.diffPath,
-			ReportPath:     result.reportPath,
-			HashAlgorithm:  string(result.hashAlgorithm),
-			ElapsedSecs:    result.elapsed.Seconds(),
-			Verdict:        string(result.verdict),
-			Compared:       result.compared,
-			Differences:    result.differences,
-			MovedFiles:     result.movedFiles,
-			DuplicatesOnB:  result.duplicatesOnB,
-			DuplicatesOnA:  result.duplicatesOnA,
-			MissingNoMatch: result.missingNoMatch,
-			ExtraNoMatch:   result.extraNoMatch,
-			SizeMismatches: result.sizeMismatches,
-			HashMismatches: result.hashMismatches,
+			DiffPath:          result.diffPath,
+			ReportPath:        result.reportPath,
+			HashAlgorithm:     string(result.hashAlgorithm),
+			ElapsedSecs:       result.elapsed.Seconds(),
+			Verdict:           string(result.verdict),
+			Compared:          result.compared,
+			Differences:       result.differences,
+			MovedFiles:        result.movedFiles,
+			DuplicatesOnB:     result.duplicatesOnB,
+			DuplicatesOnA:     result.duplicatesOnA,
+			MissingNoMatch:    result.missingNoMatch,
+			ExtraNoMatch:      result.extraNoMatch,
+			SizeMismatches:    result.sizeMismatches,
+			HashMismatches:    result.hashMismatches,
 			ExcludedSystem:    result.excludedSystem,
 			MetadataOnlyDiffs: result.metadataOnlyDiffs,
 			SoftCompare:       result.softCompare,
