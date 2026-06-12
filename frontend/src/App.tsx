@@ -3,6 +3,7 @@ import Sidebar from './components/Sidebar'
 import ContentList from './screens/ContentList'
 import EmailCopy from './screens/EmailCopy'
 import CloneCompare from './screens/CloneCompare'
+import UserManual from './screens/UserManual'
 import About from './screens/About'
 import { Screen } from './types'
 
@@ -54,6 +55,7 @@ export default function App() {
         {screen === 'content-list'  && <ContentList />}
         {screen === 'email-copy'    && <EmailCopy />}
         {screen === 'clone-compare' && <CloneCompare />}
+        {screen === 'manual'        && <UserManual />}
         {screen === 'about'         && <About />}
       </main>
     </div>

@@ -46,6 +46,13 @@ const Icons = {
       <rect x="7.25" y="7.5" width="1.5" height="4" rx="0.75"/>
     </svg>
   ),
+  manual: (
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 2.5h7.5A2.5 2.5 0 0113 5v8.5H5.2A2.2 2.2 0 013 11.3V2.5z"/>
+      <path d="M5.2 13.5A2.2 2.2 0 013 11.3V4.7A2.2 2.2 0 015.2 2.5"/>
+      <path d="M5.8 6h4.4M5.8 8.4h3.6"/>
+    </svg>
+  ),
   sun: (
     <svg viewBox="0 0 16 16" fill="currentColor">
       <circle cx="8" cy="8" r="3"/>
@@ -94,6 +101,7 @@ export default function Sidebar({ active, onNav, theme, onCycleTheme }: SidebarP
         <NavItem id="content-list"  label="Content List"  icon={Icons.list}  active={active === 'content-list'}  onClick={onNav} />
         <NavItem id="email-copy"    label="Email Copy"    icon={Icons.mail}  active={active === 'email-copy'}    onClick={onNav} />
         <NavItem id="clone-compare" label="Clone Compare" icon={Icons.clone} active={active === 'clone-compare'} onClick={onNav} />
+        <NavItem id="manual"        label="User Manual"   icon={Icons.manual} active={active === 'manual'}        onClick={onNav} />
         <NavItem id="about"         label="About"         icon={Icons.info}  active={active === 'about'}         onClick={onNav} />
       </nav>
 

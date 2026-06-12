@@ -70,10 +70,7 @@ func (a *App) GetScanDefaults() ScanOptions {
 		CreateXLSX:    true,
 		PreserveZeros: true,
 		DeleteCSV:     true,
-		AgencyFields: AgencyTemplateFields{
-			MaterialType: "Born Digital",
-			RecordLevel:  "Item",
-		},
+		AgencyFields:  defaultAgencyTemplateFields(),
 	}
 	saved, err := a.loadSettings()
 	if err != nil {
@@ -91,14 +88,14 @@ func (a *App) GetScanDefaults() ScanOptions {
 	defaults.FoldersOnly = saved.FoldersOnly
 	defaults.FolderDepth = saved.FolderDepth
 	defaults.AgencyTemplate = saved.AgencyTemplate
-	defaults.AgencyFields = saved.AgencyFields
-	if defaults.AgencyFields.MaterialType == "" {
-		defaults.AgencyFields.MaterialType = "Born Digital"
-	}
-	if defaults.AgencyFields.RecordLevel == "" {
-		defaults.AgencyFields.RecordLevel = "Item"
-	}
 	return defaults
+}
+
+func defaultAgencyTemplateFields() AgencyTemplateFields {
+	return AgencyTemplateFields{
+		MaterialType: "Born Digital",
+		RecordLevel:  "Item",
+	}
 }
 
 func (a *App) SaveSettings(opts ScanOptions) {
@@ -113,7 +110,7 @@ func (a *App) SaveSettings(opts ScanOptions) {
 		FoldersOnly:    opts.FoldersOnly,
 		FolderDepth:    opts.FolderDepth,
 		AgencyTemplate: opts.AgencyTemplate,
-		AgencyFields:   opts.AgencyFields,
+		AgencyFields:   defaultAgencyTemplateFields(),
 	}
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
