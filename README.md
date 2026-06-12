@@ -151,7 +151,9 @@ git push origin main
 scripts/publish_github_release.sh v0.1.0 --target main --draft
 ```
 
-The publish helper uploads every file under `releases/`, excluding `.gitkeep`.
+The publish helper uploads release artifacts under `releases/`, excluding `.gitkeep`;
+for the Windows Python source bundle it uploads only the zip, not the loose
+staging files used to build that zip.
 Build platform-specific artifacts first; for example, run the portable Windows
 packager on Windows before publishing if that ZIP should be included.
 

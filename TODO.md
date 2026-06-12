@@ -2,6 +2,11 @@
 
 ## Recently Shipped
 
+### v0.2.5 (2026-06-12)
+- ✅ Corrective release for the Windows Python source bundle: `deps_check.py` is included so launchers can import the dependency drift checker
+- ✅ Release publisher now uploads only `content-list-generator-windows-python.zip` for the Windows Python source bundle, not loose staging files
+- ✅ Release workflow builds with Node 24
+
 ### v0.2.4 (2026-06-12)
 - ✅ Agency content-list template output mode added using `Content List Agencies.xlsx` headers
 - ✅ Staff can fill constant agency fields once per sheet; `RC_Series` is required in agency mode
@@ -34,10 +39,10 @@
 
 ## Active (priority order)
 
-### 📌 P0 — finish v0.2.4 target-machine verification
+### 📌 P0 — finish v0.2.5 target-machine verification
 - macOS `.app` from `content-list-generator-gui-darwin-universal.zip` — local launch probe passed on Apple Silicon; still verify on a normal user machine (Gatekeeper bypass per user manual)
 - Windows Wails `.exe` from `content-list-generator-gui-windows-amd64.exe` — confirm GUI window opens and a small agency-template scan writes CSV correctly
-- Windows portable `.zip` — verify current v0.2.4 bundle launches and writes CSV correctly on a managed Windows host
+- Windows portable `.zip` — verify current v0.2.5 bundle launches and writes CSV correctly on a managed Windows host
 - Python source bundle — `deps_check.py` packaging bug fixed; local rebuilt bundle writes agency-template CSV correctly; still verify `.bat` launchers + drift banner behavior on Windows
 - Linux binary smoke test on a Linux host
 - If Windows `.exe` is green on the target host: mark `docs/debug/windows-launch-failure.md` fully verified
@@ -67,7 +72,6 @@
 - ✅ PR and post-merge workflows passed
 
 ### P2 — release hygiene followups
-- `releases/windows-python/` ships both the `.zip` AND its loose `.py`/`.bat`/`.md` files. Tighten `publish_github_release.sh` to upload only the zip.
 - Local helper cleanup: old `go build -tags gui` path replaced with Wails-aware scripts
 - Re-enable PR approval rule (or accept solo-dev posture) — branch protection currently allows direct merge without review
 
@@ -95,4 +99,4 @@
 - Branch protection: review-required rule currently OFF (turned off to allow solo-dev merging). Re-enable when adding collaborators.
 - Dependabot config: ignores semver-major for gomod + npm. Security advisories still surface separately via Security tab.
 - Workflow file path: `.github/workflows/release.yml`. Triggers: tag push, PR to main, manual dispatch.
-- Latest release: **v0.2.4** (2026-06-12) — published.
+- Latest release: **v0.2.5** (2026-06-12) — corrective release for Windows Python source packaging.

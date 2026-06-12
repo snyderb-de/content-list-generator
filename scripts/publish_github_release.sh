@@ -7,13 +7,15 @@ RELEASES_DIR="$ROOT_DIR/releases"
 usage() {
   cat <<'EOF'
 Usage:
-  scripts/publish_github_release.sh <tag> [--target <branch-or-sha>] [--title <title>] [--notes <notes>] [--notes-file <file>] [--draft] [--prerelease]
+  scripts/publish_github_release.sh <tag> [--target <branch-or-sha>] [--title <title>] [--notes <notes>] [--notes-file <file>] [--draft] [--prerelease] [--dry-run]
 
 Examples:
   scripts/publish_github_release.sh v0.1.0 --target main --draft
   scripts/publish_github_release.sh v0.1.0 --title "Content List Generator v0.1.0" --notes-file release-notes.md
 
-Uploads every release artifact under releases/, excluding .gitkeep.
+Uploads release artifacts under releases/, excluding .gitkeep.
+The Windows Python source bundle publishes only content-list-generator-windows-python.zip,
+not the loose staging files used to create that zip.
 If the GitHub release already exists, matching assets are overwritten.
 EOF
 }
@@ -37,6 +39,7 @@ NOTES=""
 NOTES_FILE=""
 DRAFT=0
 PRERELEASE=0
+DRY_RUN=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -64,6 +67,10 @@ while [[ $# -gt 0 ]]; do
       PRERELEASE=1
       shift
       ;;
+    --dry-run)
+      DRY_RUN=1
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -76,13 +83,26 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if ! command -v gh >/dev/null 2>&1; then
-  echo "GitHub CLI is required. Install gh and run 'gh auth login' first." >&2
+WINDOWS_PY_DIR="$RELEASES_DIR/windows-python"
+WINDOWS_PY_ZIP="$WINDOWS_PY_DIR/content-list-generator-windows-python.zip"
+
+if [[ -d "$WINDOWS_PY_DIR" ]] && [[ -n "$(find "$WINDOWS_PY_DIR" -maxdepth 1 -type f ! -name ".gitkeep" -print -quit)" ]] && [[ ! -f "$WINDOWS_PY_ZIP" ]]; then
+  echo "Windows Python release staging exists but $WINDOWS_PY_ZIP is missing." >&2
   exit 1
 fi
 
 mapfile -d '' ASSETS < <(
-  find "$RELEASES_DIR" -mindepth 2 -maxdepth 2 -type f ! -name ".gitkeep" -print0 | sort -z
+  find "$RELEASES_DIR" -mindepth 2 -maxdepth 2 -type f ! -name ".gitkeep" -print0 |
+    sort -z |
+    while IFS= read -r -d '' asset; do
+      relative="${asset#$RELEASES_DIR/}"
+      case "$relative" in
+        windows-python/*)
+          [[ "$asset" == "$WINDOWS_PY_ZIP" ]] || continue
+          ;;
+      esac
+      printf '%s\0' "$asset"
+    done
 )
 
 if [[ ${#ASSETS[@]} -eq 0 ]]; then
@@ -94,6 +114,16 @@ echo "Release assets:"
 for asset in "${ASSETS[@]}"; do
   printf '  %s\n' "${asset#$ROOT_DIR/}"
 done
+
+if [[ "$DRY_RUN" -eq 1 ]]; then
+  echo "Dry run only; no GitHub release was created or updated."
+  exit 0
+fi
+
+if ! command -v gh >/dev/null 2>&1; then
+  echo "GitHub CLI is required. Install gh and run 'gh auth login' first." >&2
+  exit 1
+fi
 
 if gh release view "$TAG" >/dev/null 2>&1; then
   echo "GitHub release $TAG already exists; uploading assets with --clobber."
