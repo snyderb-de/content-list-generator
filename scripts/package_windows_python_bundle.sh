@@ -16,7 +16,7 @@ rm -f "$ARCHIVE" "$TMP_ARCHIVE"
 cd "$ROOT_DIR"
 
 ./scripts/parity_check.sh
-# python/tests/ is gitignored; skip discovery on clean checkouts (CI).
+# Some downstream deployment copies do not include tests; skip discovery there.
 if [ -d "./python/tests" ] && ls ./python/tests/test_*.py >/dev/null 2>&1; then
   python3 -m unittest discover -s ./python/tests -p 'test_*.py'
 else
