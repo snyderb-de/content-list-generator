@@ -8,6 +8,6 @@ cd "$ROOT_DIR"
 go test ./...
 ./scripts/parity_check.sh
 python3 -m unittest discover -s ./python/tests -p 'test_*.py'
-python3 -m py_compile ./python/content_list_core.py ./python/content_list_generator.py ./scripts/copy_email_files.py
+python3 -m py_compile ./python/content_list_core.py ./python/content_list_generator.py ./python/deps_check.py ./scripts/copy_email_files.py
 
 echo "All checks passed."

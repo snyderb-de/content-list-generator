@@ -22,10 +22,11 @@ if [ -d "./python/tests" ] && ls ./python/tests/test_*.py >/dev/null 2>&1; then
 else
   echo "Skipping python/tests discovery — directory absent in this checkout."
 fi
-python3 -m py_compile ./python/content_list_core.py ./python/content_list_generator.py
+python3 -m py_compile ./python/content_list_core.py ./python/content_list_generator.py ./python/deps_check.py
 
 cp python/content_list_core.py "$OUT_DIR/"
 cp python/content_list_generator.py "$OUT_DIR/"
+cp python/deps_check.py "$OUT_DIR/"
 cp README.md "$OUT_DIR/"
 cp requirements.txt "$OUT_DIR/"
 
@@ -62,6 +63,7 @@ if not exist "%SCRIPT%" (
     echo Required files:
     echo   content_list_generator.py
     echo   content_list_core.py
+    echo   deps_check.py
     echo.
     pause
     exit /b 1

@@ -7,6 +7,8 @@
 - ✅ Staff can fill constant agency fields once per sheet; `RC_Series` is required in agency mode
 - ✅ Standard scan output remains available for audit/hash details
 - ✅ Local Go/Python tests and shared fixtures are now tracked so CI runs real parity coverage
+- ✅ GitHub Release published at `https://github.com/snyderb-de/content-list-generator/releases/tag/v0.2.4`
+- ✅ GitHub Actions JavaScript actions updated to Node 24-compatible major versions
 
 ### v0.2.3 (2026-05-20)
 - ✅ GitHub Pages dashboard deploy workflow shipped and Pages is live at `https://snyderb-de.github.io/content-list-generator/`
@@ -32,12 +34,12 @@
 
 ## Active (priority order)
 
-### 📌 P0 — verify v0.2.3 builds on target machines
-- Windows Wails `.exe` from `content-list-generator-gui-windows-amd64.exe` — confirm GUI window opens and a small scan writes CSV correctly
-- macOS `.app` from `content-list-generator-gui-darwin-universal.zip` — verify launch (Gatekeeper bypass per user manual)
-- Linux binary smoke test
-- Windows portable `.zip` — confirmed working
-- Python source bundle on a managed Windows host — verify .bat launchers + drift banner behavior
+### 📌 P0 — finish v0.2.4 target-machine verification
+- macOS `.app` from `content-list-generator-gui-darwin-universal.zip` — local launch probe passed on Apple Silicon; still verify on a normal user machine (Gatekeeper bypass per user manual)
+- Windows Wails `.exe` from `content-list-generator-gui-windows-amd64.exe` — confirm GUI window opens and a small agency-template scan writes CSV correctly
+- Windows portable `.zip` — verify current v0.2.4 bundle launches and writes CSV correctly on a managed Windows host
+- Python source bundle — `deps_check.py` packaging bug fixed; local rebuilt bundle writes agency-template CSV correctly; still verify `.bat` launchers + drift banner behavior on Windows
+- Linux binary smoke test on a Linux host
 - If Windows `.exe` is green on the target host: mark `docs/debug/windows-launch-failure.md` fully verified
 
 ### ~~P0 — write real user manual content~~ ✅ (2026-05-26)
@@ -58,20 +60,16 @@
 - ✅ Dashboard URL: `https://snyderb-de.github.io/content-list-generator/`
 - Followup (P2): add the URL to README hero + repo About sidebar if desired
 
-### P1 — finish dependabot sweep
-- #1 setup-go 5→6 ✅ CI green
-- #3 checkout 4→6 ✅ CI green
-- #5 setup-node 4→6 ✅ CI green
-- #7 download-artifact 4→8 ✅ CI green
-- #28 upload-artifact 4→7 ✅ CI green
-- Merge each via web UI, or refresh `gh` with `workflow` scope first; each touches `.github/workflows/release.yml`
-- Or run `gh auth refresh -s workflow --hostname github.com` in a real terminal to unblock CLI merging
+### ~~P1 — finish dependabot / Actions runtime sweep~~ ✅ (2026-06-12)
+- ✅ `checkout` 4→6, `setup-go` 5→6, `setup-node` 4→6, `upload-artifact` 4→7, `download-artifact` 4→8
+- ✅ Pages actions bumped: `configure-pages` 5→6, `upload-pages-artifact` 3→5, `deploy-pages` 4→5
+- ✅ Release workflow build Node pin moved from 20 → 24
+- ✅ PR and post-merge workflows passed
 
 ### P2 — release hygiene followups
 - `releases/windows-python/` ships both the `.zip` AND its loose `.py`/`.bat`/`.md` files. Tighten `publish_github_release.sh` to upload only the zip.
 - Local helper cleanup: old `go build -tags gui` path replaced with Wails-aware scripts
 - Re-enable PR approval rule (or accept solo-dev posture) — branch protection currently allows direct merge without review
-- Bump Node version pin in workflow from 20 → 24 LTS (Node 20 GH Actions deprecation 2026-06-02)
 
 ### P3 — feature/test work
 - Test large scan (>300k rows) — verify CSV chunking visible in GUI progress
@@ -91,11 +89,10 @@
 - Package the Linux release from a Linux build host
 - Live diff table virtual scrolling (cap at 5000 rows currently — DOM choke risk at 100k+)
 - Phase 7 soft compare: extend to same-path hash mismatches (not just path-renamed PDFs)
-- Un-gitignore `python/tests/` and `*_test.go` so CI actually runs the parity/unit tests instead of skipping
 - CI parity check: fail if `python/*.py` and `deploy/windows/scripts/content-list-gen/*.py` drift apart
 
 ## Notes
 - Branch protection: review-required rule currently OFF (turned off to allow solo-dev merging). Re-enable when adding collaborators.
 - Dependabot config: ignores semver-major for gomod + npm. Security advisories still surface separately via Security tab.
 - Workflow file path: `.github/workflows/release.yml`. Triggers: tag push, PR to main, manual dispatch.
-- Latest release: **v0.2.4** (2026-06-12) — pending release workflow.
+- Latest release: **v0.2.4** (2026-06-12) — published.
