@@ -1,0 +1,5 @@
+.corepack-bin/
+.direnv/
+.npm-cache/
+.npm-global/
+node_modules/
