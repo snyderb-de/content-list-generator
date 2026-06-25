@@ -2,6 +2,13 @@
 
 ## Recently Shipped
 
+### v0.2.7 (2026-06-12)
+- ✅ Agency-template constant fields now start fresh for each new scan so old sheet-wide values cannot be reused by mistake
+- ✅ `RC_Series` remains required in agency-template mode; Start Scan stays disabled until it is filled
+- ✅ In-app User Manual added to the main menu with staff-facing workflow guidance and light/dark theme matching
+- ✅ Settings regression tests added for fresh agency fields and legacy saved settings
+- ✅ GitHub Release published at `https://github.com/snyderb-de/content-list-generator/releases/tag/v0.2.7`
+
 ### v0.2.6 (2026-06-12)
 - ✅ GUI light/dark theme pass: stronger neutral palettes, clearer text contrast, and less pastel/muddy chrome
 - ✅ Full-width form inputs for readable filenames and paths in the Wails UI
@@ -44,11 +51,15 @@
 
 ## Active (priority order)
 
-### 📌 P0 — finish v0.2.5 target-machine verification
-- macOS `.app` from `content-list-generator-gui-darwin-universal.zip` — local launch probe passed on Apple Silicon; still verify on a normal user machine (Gatekeeper bypass per user manual)
-- Windows Wails `.exe` from `content-list-generator-gui-windows-amd64.exe` — confirm GUI window opens and a small agency-template scan writes CSV correctly
-- Windows portable `.zip` — verify current v0.2.5 bundle launches and writes CSV correctly on a managed Windows host
-- Python source bundle — `deps_check.py` packaging bug fixed; local rebuilt bundle writes agency-template CSV correctly; still verify `.bat` launchers + drift banner behavior on Windows
+### 📌 P0 — sign and verify v0.2.7 user release
+- Owner handoff: Bryan will sign the Windows and macOS release artifacts before broad staff distribution
+- Decide signed-asset release path:
+  - Replace the existing `v0.2.7` release assets if only the signatures change and the source commit stays `c425abd`
+  - Cut `v0.2.8` only if signing changes packaging scripts, release metadata, or any shipped source/content
+- macOS `.app` from `content-list-generator-gui-darwin-universal.zip` — verify signed/notarized app opens on a normal user machine and runs a small content-list scan
+- Windows Wails `.exe` from `content-list-generator-gui-windows-amd64.exe` — verify signed app opens without unexpected SmartScreen friction and writes a small agency-template XLSX/CSV correctly
+- Windows portable `.zip` — verify current v0.2.7 bundle launches and writes CSV correctly on a managed Windows host
+- Python source bundle — verify `.bat` launchers, dependency drift banner behavior, and agency-template CSV output on Windows
 - Linux binary smoke test on a Linux host
 - If Windows `.exe` is green on the target host: mark `docs/debug/windows-launch-failure.md` fully verified
 
@@ -78,15 +89,13 @@
 
 ### P2 — release hygiene followups
 - Local helper cleanup: old `go build -tags gui` path replaced with Wails-aware scripts
-- Re-enable PR approval rule (or accept solo-dev posture) — branch protection currently allows direct merge without review
+- Re-enable PR approval rule (or accept solo-dev posture) — branch protection requires PRs but currently allows merge without review
 
 ### P3 — feature/test work
 - Test large scan (>300k rows) — verify CSV chunking visible in GUI progress
 - Test Phase 7 (soft compare) — Newark drives CON-P74THY / CON-M4EM1V with soft compare on; verdict should be `Metadata Clone`, 1,831 metadata-only diffs
 
 ## Backlog (no order)
-- Windows code-signing for Wails .exe (silence SmartScreen)
-- macOS code-signing + Apple Developer ID notarization (silence Gatekeeper)
 - Auto-update mechanism for Wails app
 - Decide the final public GitHub repo URL and replace placeholder links in `python/content_list_generator.py`
 - Transfer repo ownership or publishing control to `dpa-snyder`
@@ -104,4 +113,4 @@
 - Branch protection: review-required rule currently OFF (turned off to allow solo-dev merging). Re-enable when adding collaborators.
 - Dependabot config: ignores semver-major for gomod + npm. Security advisories still surface separately via Security tab.
 - Workflow file path: `.github/workflows/release.yml`. Triggers: tag push, PR to main, manual dispatch.
-- Latest release: **v0.2.6** (2026-06-12) — GUI contrast/readability pass for light and dark themes.
+- Latest release: **v0.2.7** (2026-06-12) — fresh agency-template fields plus in-app staff user manual.
