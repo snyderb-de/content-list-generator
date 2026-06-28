@@ -55,6 +55,7 @@ from content_list_core import (
     hash_algorithm_labels,
     human_bytes,
     is_blake3_available,
+    normalize_agency_template_fields,
     normalize_exts,
     normalize_hash_algorithm,
     run_scan,
@@ -252,6 +253,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-rows-per-csv", type=int, default=DEFAULT_MAX_ROWS_PER_CSV)
     parser.add_argument("--agency-template", action="store_true", help="Write agency content-list headers instead of the standard scan headers")
     parser.add_argument("--agency-rg", default="")
+    parser.add_argument("--agency-sg", default="")
+    parser.add_argument("--agency-series", default="")
     parser.add_argument("--agency-rc-series", default="")
     parser.add_argument("--agency-dept-organization", default="")
     parser.add_argument("--agency-division", default="")
@@ -732,6 +735,8 @@ def run_cli_scan(args: argparse.Namespace) -> int:
         return 1
     agency_fields = {
         "rg": args.agency_rg,
+        "sg": args.agency_sg,
+        "series": args.agency_series,
         "rc_series": args.agency_rc_series,
         "dept_organization": args.agency_dept_organization,
         "division": args.agency_division,
@@ -754,6 +759,12 @@ def run_cli_scan(args: argparse.Namespace) -> int:
     if args.agency_template and not agency_fields["rc_series"].strip():
         print("--agency-rc-series is required when --agency-template is used", file=sys.stderr)
         return 1
+    if args.agency_template:
+        try:
+            agency_fields = normalize_agency_template_fields(agency_fields)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
 
     if hash_algorithm == "blake3" and not is_blake3_available():
         print(
@@ -1216,6 +1227,8 @@ class ContentListApp:
         self.agency_template_var = tk.BooleanVar(value=False)
         self.agency_field_vars = {
             "rg": tk.StringVar(value=""),
+            "sg": tk.StringVar(value=""),
+            "series": tk.StringVar(value=""),
             "rc_series": tk.StringVar(value=""),
             "dept_organization": tk.StringVar(value=""),
             "division": tk.StringVar(value=""),
@@ -1654,6 +1667,8 @@ class ContentListApp:
 
         agency_fields = [
             ("RG", "rg"),
+            ("SG", "sg"),
+            ("Series", "series"),
             ("RC Series", "rc_series"),
             ("Department / Organization", "dept_organization"),
             ("RC Series Name", "rc_series_name"),
@@ -2231,6 +2246,12 @@ class ContentListApp:
         if self.agency_template_var.get() and not agency_fields["rc_series"]:
             messagebox.showerror("Agency template", "RC Series is required for agency content-list output.")
             return
+        if self.agency_template_var.get():
+            try:
+                agency_fields = normalize_agency_template_fields(agency_fields)
+            except ValueError as exc:
+                messagebox.showerror("Agency template", str(exc))
+                return
 
         output_path = output_dir / output_name
         first_csv_output_path = csv_output_path_for_part(output_path, 1)

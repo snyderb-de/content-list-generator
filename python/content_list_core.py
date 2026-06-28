@@ -826,19 +826,39 @@ def _agency_location(fields: dict[str, str] | None, relative: str) -> str:
     return "" if parent == "." else parent
 
 
+def normalize_agency_template_fields(agency_fields: dict[str, str] | None) -> dict[str, str]:
+    normalized = dict(agency_fields or {})
+    normalized["rg"] = _normalize_agency_code("RG", normalized.get("rg", ""), 4)
+    normalized["sg"] = _normalize_agency_code("SG", normalized.get("sg", ""), 3)
+    normalized["series"] = _normalize_agency_code("Series", normalized.get("series", ""), 3)
+    return normalized
+
+
+def _normalize_agency_code(label: str, value: object, width: int) -> str:
+    text = "" if value is None else str(value).strip()
+    if not text:
+        return ""
+    if not text.isdigit():
+        raise ValueError(f"{label} must contain only digits")
+    if len(text) > width:
+        raise ValueError(f"{label} must be {width} digits or fewer")
+    return text.zfill(width)
+
+
 def agency_template_row(
     file_name: str,
     ext: str,
     relative: str,
     agency_fields: dict[str, str] | None,
 ) -> list[str]:
+    agency_fields = normalize_agency_template_fields(agency_fields)
     comments = _agency_field(agency_fields, "comments").strip()
     material_type = _agency_field(agency_fields, "material_type", "Born Digital").strip() or "Born Digital"
     record_level = _agency_field(agency_fields, "record_level", "Item").strip() or "Item"
     return [
         _agency_field(agency_fields, "rg"),
-        "",
-        "",
+        _agency_field(agency_fields, "sg"),
+        _agency_field(agency_fields, "series"),
         "",
         _agency_field(agency_fields, "rc_series"),
         _agency_field(agency_fields, "dept_organization"),
@@ -1233,6 +1253,8 @@ def run_scan(
             progress_callback=progress_callback,
             cancel_event=cancel_event,
         )
+    if agency_template:
+        agency_fields = normalize_agency_template_fields(agency_fields)
     started = time.time()
     max_rows_per_csv = max(1, int(max_rows_per_csv or DEFAULT_MAX_ROWS_PER_CSV))
     csv_paths: list[Path] = []

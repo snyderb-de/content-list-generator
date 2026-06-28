@@ -298,6 +298,8 @@ func TestRunScanWritesAgencyTemplate(t *testing.T) {
 		AgencyTemplate: true,
 		AgencyFields: agencyTemplateFields{
 			RG:               "1325",
+			SG:               "1",
+			Series:           "35",
 			RCSeries:         "GAR-014",
 			DeptOrganization: "Department of State",
 			RCSeriesName:     "Annual Reports",
@@ -331,11 +333,60 @@ func TestRunScanWritesAgencyTemplate(t *testing.T) {
 	}
 	assertRowsEqual(t, [][]string{rows[0]}, [][]string{expectedHeaders})
 	data := rows[1]
+	if data[0] != "1325" || data[1] != "001" || data[2] != "035" {
+		t.Fatalf("expected RG/SG/Series constants in agency row: %#v", data)
+	}
 	if data[4] != "GAR-014" || data[13] != "vendor.pdf" || data[15] != "contracts" || data[22] != "PDF" {
 		t.Fatalf("unexpected agency row: %#v", data)
 	}
 	if data[28] != "3452" || data[29] != "Q: Drive" || data[30] != "Item" {
 		t.Fatalf("expected transfer/location constants in agency row: %#v", data)
+	}
+}
+
+func TestRunScanRejectsInvalidAgencyTemplateCodes(t *testing.T) {
+	workspace := t.TempDir()
+	source := filepath.Join(workspace, "source")
+	if err := ensureDir(source); err != nil {
+		t.Fatalf("mkdir source: %v", err)
+	}
+	if err := writeFixtureFile(filepath.Join(source, "vendor.pdf"), "pdf bytes"); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+
+	tests := []struct {
+		name    string
+		fields  agencyTemplateFields
+		wantErr string
+	}{
+		{
+			name:    "RG letters",
+			fields:  agencyTemplateFields{RG: "12A4", SG: "1", Series: "35"},
+			wantErr: "RG must contain only digits",
+		},
+		{
+			name:    "SG too long",
+			fields:  agencyTemplateFields{RG: "1325", SG: "1234", Series: "35"},
+			wantErr: "SG must be 3 digits or fewer",
+		},
+		{
+			name:    "Series too long",
+			fields:  agencyTemplateFields{RG: "1325", SG: "1", Series: "1234"},
+			wantErr: "Series must be 3 digits or fewer",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := runScan(source, filepath.Join(workspace, tt.name+".csv"), scanOptions{
+				HashAlgorithm:  hashAlgorithmOff,
+				ExcludedExts:   map[string]struct{}{},
+				AgencyTemplate: true,
+				AgencyFields:   tt.fields,
+			})
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("expected error containing %q, got %v", tt.wantErr, err)
+			}
+		})
 	}
 }
 

@@ -88,6 +88,8 @@ class ContentScanTests(unittest.TestCase):
                 agency_template=True,
                 agency_fields={
                     "rg": "1325",
+                    "sg": "1",
+                    "series": "35",
                     "rc_series": "GAR-014",
                     "dept_organization": "Department of State",
                     "rc_series_name": "Annual Reports",
@@ -104,6 +106,9 @@ class ContentScanTests(unittest.TestCase):
             with result.output_path.open("r", newline="", encoding="utf-8") as handle:
                 rows = list(csv.reader(handle))
             self.assertEqual(rows[0], core.AGENCY_TEMPLATE_HEADERS)
+            self.assertEqual(rows[1][0], "1325")
+            self.assertEqual(rows[1][1], "001")
+            self.assertEqual(rows[1][2], "035")
             self.assertEqual(rows[1][4], "GAR-014")
             self.assertEqual(rows[1][13], "vendor.pdf")
             self.assertEqual(rows[1][15], "contracts")
@@ -111,6 +116,35 @@ class ContentScanTests(unittest.TestCase):
             self.assertEqual(rows[1][28], "3452")
             self.assertEqual(rows[1][29], "Q: Drive")
             self.assertEqual(rows[1][30], "Item")
+
+    def test_run_scan_rejects_invalid_agency_codes(self) -> None:
+        with TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            source = workspace / "source"
+            source.mkdir()
+            (source / "vendor.pdf").write_text("pdf bytes", encoding="utf-8")
+
+            cases = [
+                ({"rg": "12A4", "sg": "1", "series": "35"}, "RG must contain only digits"),
+                ({"rg": "1325", "sg": "1234", "series": "35"}, "SG must be 3 digits or fewer"),
+                ({"rg": "1325", "sg": "1", "series": "1234"}, "Series must be 3 digits or fewer"),
+            ]
+            for agency_fields, expected_error in cases:
+                with self.subTest(expected_error=expected_error):
+                    with self.assertRaisesRegex(ValueError, expected_error):
+                        core.run_scan(
+                            source,
+                            workspace / "agency.csv",
+                            hash_algorithm=core.HASH_ALGORITHM_OFF,
+                            include_hidden=False,
+                            include_system=False,
+                            excluded_exts=set(),
+                            create_xlsx=False,
+                            preserve_zeros=False,
+                            delete_csv=False,
+                            agency_template=True,
+                            agency_fields=agency_fields,
+                        )
 
     def test_run_scan_matches_golden_fixture(self) -> None:
         source = REPO_ROOT / "testing" / "content-scan" / "fixtures" / "source"

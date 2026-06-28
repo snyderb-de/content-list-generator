@@ -115,33 +115,25 @@ git status
 
 ## Phase 3 — Build the Wails GUI (.exe)
 
-### [ ] 1. Build amd64 (covers 99% of Windows users)
+### [ ] 1. Build the Windows executable
 ```powershell
-wails build -platform windows/amd64 -clean -o content-list-generator-gui-windows-amd64.exe
+wails build -platform windows/amd64 -clean -o "content-list-generator.exe"
 ```
-- Output: `build\bin\content-list-generator-gui-windows-amd64.exe`
+- Output: `build\bin\content-list-generator.exe`
 - Takes ~2–3 min on first run (frontend npm install + Go compile)
 
-### [ ] 2. Build arm64 (optional, for Surface Pro X / Snapdragon laptops)
-```powershell
-wails build -platform windows/arm64 -o content-list-generator-gui-windows-arm64.exe
-```
-- Output: `build\bin\content-list-generator-gui-windows-arm64.exe`
-
-### [ ] 3. Stage outputs for release
+### [ ] 2. Stage output for release
 ```powershell
 New-Item -ItemType Directory -Force -Path releases\windows-go | Out-Null
-Copy-Item build\bin\content-list-generator-gui-windows-amd64.exe releases\windows-go\
-# arm64 too, if built:
-Copy-Item build\bin\content-list-generator-gui-windows-arm64.exe releases\windows-go\
+Copy-Item "build\bin\content-list-generator.exe" "releases\windows-go\content-list-generator.exe"
 ```
 
-### [ ] 4. Smoke test
-- Double-click `releases\windows-go\content-list-generator-gui-windows-amd64.exe`
+### [ ] 3. Smoke test
+- Double-click `releases\windows-go\content-list-generator.exe`
 - Window opens, title reads "Content List Generator"
 - Click "Generate" → browse a small folder → confirm CSV writes
 
-### [ ] 5. Expected SmartScreen warning
+### [ ] 4. Expected SmartScreen warning
 - First launch will show "Windows protected your PC" because the .exe is unsigned
 - Click "More info" → "Run anyway"
 - Code-signing is a separate backlog item — see `TODO.md`
@@ -242,10 +234,10 @@ Use this checklist when:
 ```powershell
 # Full Windows release in 3 commands (after Phase 1 prereqs):
 git pull
-wails build -platform windows/amd64 -clean -o content-list-generator-gui-windows-amd64.exe
+wails build -platform windows/amd64 -clean -o "content-list-generator.exe"
 powershell -ExecutionPolicy Bypass -File .\scripts\package_windows_portable.ps1
 ```
 
 Outputs:
-- `build\bin\content-list-generator-gui-windows-amd64.exe`
+- `build\bin\content-list-generator.exe`
 - `releases\windows-portable\content-list-generator-windows-portable.zip`

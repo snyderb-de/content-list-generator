@@ -62,7 +62,7 @@ jobs:
           if-no-files-found: error
 
   windows-gui:
-    name: Windows Wails GUI (amd64 + arm64)
+    name: Windows Wails GUI
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
@@ -90,20 +90,15 @@ jobs:
         shell: pwsh
         run: wails doctor
 
-      - name: Build Wails GUI (windows/amd64)
+      - name: Build Wails GUI
         shell: pwsh
-        run: wails build -platform windows/amd64 -clean -webview2 download -o content-list-generator-gui-windows-amd64.exe
-
-      - name: Build Wails GUI (windows/arm64)
-        shell: pwsh
-        run: wails build -platform windows/arm64 -webview2 download -o content-list-generator-gui-windows-arm64.exe
+        run: wails build -platform windows/amd64 -clean -webview2 download -o "content-list-generator.exe"
 
       - name: Stage Windows GUI outputs
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path releases\windows-go | Out-Null
-          Copy-Item build\bin\content-list-generator-gui-windows-amd64.exe releases\windows-go\
-          Copy-Item build\bin\content-list-generator-gui-windows-arm64.exe releases\windows-go\
+          Copy-Item "build\bin\content-list-generator.exe" "releases\windows-go\content-list-generator.exe"
 
       - uses: actions/upload-artifact@v7
         with:

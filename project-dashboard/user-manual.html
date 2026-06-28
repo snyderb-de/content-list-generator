@@ -321,6 +321,7 @@
       <a class="nav-link" href="#filters">Filters &amp; exclusions</a>
       <a class="nav-link" href="#email-types">Email file types</a>
       <a class="nav-link" href="#verdicts">Clone verdicts</a>
+      <a class="nav-link" href="#updates">Updates</a>
       <a class="nav-link" href="#troubleshooting">Troubleshooting</a>
       <a class="nav-link" href="#faq">FAQ</a>
       <a class="nav-link" href="#tips">Tips</a>
@@ -408,7 +409,7 @@
           <div class="card">
             <span class="pill">Windows · native</span>
             <h3 style="margin-bottom:6px">Wails GUI .exe</h3>
-            <p>Download <code>content-list-generator-gui-windows-amd64.exe</code>. Double-click to run.</p>
+            <p>Download <code>content-list-generator.exe</code>. Double-click to run.</p>
             <div class="note">
               <strong>SmartScreen prompt:</strong> click "More info" → "Run anyway." Will go away once the binary is code-signed.
             </div>
@@ -724,6 +725,26 @@ my-folder-content-list-2026-05-20T13-45-02.xlsx   (if XLSX enabled)</code></pre>
           <div class="note" style="margin-top:12px">
             <strong>Tip:</strong> if you got a verdict you didn't expect, sort the diff CSV by the <code>Difference Type</code> column to see what changed.
           </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Updates ─────────────────────────────────────────── -->
+    <section class="section" id="updates">
+      <div class="section-header">
+        <p class="eyebrow">Reference</p>
+        <h2>Updates</h2>
+      </div>
+      <div class="cards">
+        <div class="card">
+          <p>
+            On Windows, the app checks the <code>X:\Apps</code> folder for a newer signed <code>content-list-generator.exe</code>.
+            Open About if support gives you a different release folder.
+          </p>
+          <ul>
+            <li>The app only installs a newer signed executable from the configured release folder.</li>
+            <li>When an update is ready, restart the app from the update prompt.</li>
+          </ul>
         </div>
       </div>
     </section>

@@ -5,7 +5,8 @@ import EmailCopy from './screens/EmailCopy'
 import CloneCompare from './screens/CloneCompare'
 import UserManual from './screens/UserManual'
 import About from './screens/About'
-import { Screen } from './types'
+import { CheckForUpdates, RestartToApplyUpdate } from '../wailsjs/go/main/App'
+import { Screen, UpdateStatus } from './types'
 
 export type ThemeMode = 'light' | 'dark' | 'system'
 
@@ -27,6 +28,7 @@ function loadTheme(): ThemeMode {
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>('content-list')
+  const [updateReady, setUpdateReady] = useState<UpdateStatus | null>(null)
   const [theme, setTheme] = useState<ThemeMode>(() => {
     const t = loadTheme()
     applyTheme(t)
@@ -41,6 +43,14 @@ export default function App() {
     return () => mq.removeEventListener('change', handler)
   }, [theme])
 
+  useEffect(() => {
+    CheckForUpdates()
+      .then(status => {
+        if (status.readyToRestart) setUpdateReady(status)
+      })
+      .catch(() => {})
+  }, [])
+
   const cycleTheme = () => {
     const next: ThemeMode = theme === 'light' ? 'dark' : theme === 'dark' ? 'system' : 'light'
     setTheme(next)
@@ -52,6 +62,17 @@ export default function App() {
     <div className="app-container">
       <Sidebar active={screen} onNav={setScreen} theme={theme} onCycleTheme={cycleTheme} />
       <main className="main-content">
+        {updateReady && (
+          <div className="update-banner" role="status">
+            <div>
+              <strong>Update ready</strong>
+              <span>Version {updateReady.latestVersion} has been downloaded. Restart the app to finish updating.</span>
+            </div>
+            <button className="btn btn-primary btn-sm" onClick={() => RestartToApplyUpdate().catch(() => {})}>
+              Restart
+            </button>
+          </div>
+        )}
         {screen === 'content-list'  && <ContentList />}
         {screen === 'email-copy'    && <EmailCopy />}
         {screen === 'clone-compare' && <CloneCompare />}

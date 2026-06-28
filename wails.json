@@ -9,5 +9,12 @@
   "author": {
     "name": "Bryan Snyder",
     "email": "snyderb.de@gmail.com"
+  },
+  "info": {
+    "companyName": "Bryan Snyder",
+    "productName": "Content List Generator",
+    "productVersion": "0.2.8",
+    "copyright": "Copyright © 2026 Bryan Snyder",
+    "comments": "Content List Generator"
   }
 }

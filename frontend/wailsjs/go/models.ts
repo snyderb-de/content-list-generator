@@ -2,6 +2,8 @@ export namespace main {
 
 	export class AgencyTemplateFields {
 	    rg: string;
+	    sg: string;
+	    series: string;
 	    rcSeries: string;
 	    deptOrganization: string;
 	    division: string;
@@ -28,6 +30,8 @@ export namespace main {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.rg = source["rg"];
+	        this.sg = source["sg"];
+	        this.series = source["series"];
 	        this.rcSeries = source["rcSeries"];
 	        this.deptOrganization = source["deptOrganization"];
 	        this.division = source["division"];
@@ -83,6 +87,7 @@ export namespace main {
 	    folderDepth: number;
 	    agencyTemplate: boolean;
 	    agencyFields: AgencyTemplateFields;
+	    releaseFolder: string;
 
 	    static createFrom(source: any = {}) {
 	        return new ScanOptions(source);
@@ -104,6 +109,35 @@ export namespace main {
 	        this.folderDepth = source["folderDepth"];
 	        this.agencyTemplate = source["agencyTemplate"];
 	        this.agencyFields = AgencyTemplateFields.createFrom(source["agencyFields"]);
+	        this.releaseFolder = source["releaseFolder"];
+	    }
+	}
+	export class UpdateStatus {
+	    supported: boolean;
+	    updateAvailable: boolean;
+	    readyToRestart: boolean;
+	    currentVersion: string;
+	    latestVersion: string;
+	    releaseFolder: string;
+	    releasePath: string;
+	    sha256: string;
+	    message: string;
+
+	    static createFrom(source: any = {}) {
+	        return new UpdateStatus(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.supported = source["supported"];
+	        this.updateAvailable = source["updateAvailable"];
+	        this.readyToRestart = source["readyToRestart"];
+	        this.currentVersion = source["currentVersion"];
+	        this.latestVersion = source["latestVersion"];
+	        this.releaseFolder = source["releaseFolder"];
+	        this.releasePath = source["releasePath"];
+	        this.sha256 = source["sha256"];
+	        this.message = source["message"];
 	    }
 	}
 

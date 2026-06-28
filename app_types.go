@@ -15,10 +15,13 @@ type ScanOptions struct {
 	FolderDepth    int                  `json:"folderDepth"`
 	AgencyTemplate bool                 `json:"agencyTemplate"`
 	AgencyFields   AgencyTemplateFields `json:"agencyFields"`
+	ReleaseFolder  string               `json:"releaseFolder"`
 }
 
 type AgencyTemplateFields struct {
 	RG               string `json:"rg"`
+	SG               string `json:"sg"`
+	Series           string `json:"series"`
 	RCSeries         string `json:"rcSeries"`
 	DeptOrganization string `json:"deptOrganization"`
 	Division         string `json:"division"`
@@ -51,6 +54,19 @@ type AppSettings struct {
 	FolderDepth    int                  `json:"folderDepth"`
 	AgencyTemplate bool                 `json:"agencyTemplate"`
 	AgencyFields   AgencyTemplateFields `json:"agencyFields"`
+	ReleaseFolder  string               `json:"releaseFolder"`
+}
+
+type UpdateStatus struct {
+	Supported       bool   `json:"supported"`
+	UpdateAvailable bool   `json:"updateAvailable"`
+	ReadyToRestart  bool   `json:"readyToRestart"`
+	CurrentVersion  string `json:"currentVersion"`
+	LatestVersion   string `json:"latestVersion"`
+	ReleaseFolder   string `json:"releaseFolder"`
+	ReleasePath     string `json:"releasePath"`
+	SHA256          string `json:"sha256"`
+	Message         string `json:"message"`
 }
 
 type SummaryEntry struct {

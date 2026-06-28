@@ -57,7 +57,7 @@
   - Replace the existing `v0.2.7` release assets if only the signatures change and the source commit stays `c425abd`
   - Cut `v0.2.8` only if signing changes packaging scripts, release metadata, or any shipped source/content
 - macOS `.app` from `content-list-generator-gui-darwin-universal.zip` — verify signed/notarized app opens on a normal user machine and runs a small content-list scan
-- Windows Wails `.exe` from `content-list-generator-gui-windows-amd64.exe` — verify signed app opens without unexpected SmartScreen friction and writes a small agency-template XLSX/CSV correctly
+- Windows Wails `.exe` from `content-list-generator.exe` — verify signed app opens without unexpected SmartScreen friction and writes a small agency-template XLSX/CSV correctly
 - Windows portable `.zip` — verify current v0.2.7 bundle launches and writes CSV correctly on a managed Windows host
 - Python source bundle — verify `.bat` launchers, dependency drift banner behavior, and agency-template CSV output on Windows
 - Linux binary smoke test on a Linux host

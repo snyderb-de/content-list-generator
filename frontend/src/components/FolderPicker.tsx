@@ -1,3 +1,4 @@
+import { useId } from 'react'
 import { PickFolder } from '../../wailsjs/go/main/App'
 
 interface FolderPickerProps {
@@ -9,6 +10,7 @@ interface FolderPickerProps {
 }
 
 export default function FolderPicker({ label, value, onChange, placeholder, disabled }: FolderPickerProps) {
+  const inputId = useId()
   const browse = async () => {
     try {
       const path = await PickFolder(label)
@@ -20,9 +22,10 @@ export default function FolderPicker({ label, value, onChange, placeholder, disa
 
   return (
     <div className="field">
-      <label className="field-label">{label}</label>
+      <label className="field-label" htmlFor={inputId}>{label}</label>
       <div className="field-row">
         <input
+          id={inputId}
           className="text-input monospace"
           value={value}
           onChange={e => onChange(e.target.value)}

@@ -50,7 +50,7 @@ fi
 cd "$ROOT_DIR"
 
 # Windows GUI requires running on Windows — wails cannot cross-compile the WebView2 wrapper.
-# Run on a Windows host: wails build -platform windows/amd64 -o content-list-generator-gui.exe
+# Run on a Windows host: wails build -platform windows/amd64 -o "content-list-generator.exe"
 # Then copy the .exe to releases/windows-go/.
 
 echo "── Done ─────────────────────────────────────────────────────"
