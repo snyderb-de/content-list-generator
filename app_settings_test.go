@@ -36,20 +36,26 @@ func TestSaveSettingsDoesNotPersistAgencyFieldValues(t *testing.T) {
 		DeleteCSV:      true,
 		ExcludedExts:   "tmp,log",
 		AgencyTemplate: true,
+		ReleaseFolder:  `\\server\share\Content List Generator`,
 		AgencyFields: AgencyTemplateFields{
 			RG:               "1325",
+			SG:               "987",
+			Series:           "654",
 			RCSeries:         "GAR-014",
 			DeptOrganization: "Department of State",
 			Location:         "Old shared drive",
 			MaterialType:     "Paper",
 			Comments:         "Do not carry this forward",
-			RecordLevel:      "Folder",
+			RecordLevel:      "Record-Level-Should-Not-Persist",
 		},
 	})
 
 	defaults := app.GetScanDefaults()
 	if !defaults.AgencyTemplate {
 		t.Fatalf("expected agency template mode preference to persist")
+	}
+	if defaults.ReleaseFolder != `\\server\share\Content List Generator` {
+		t.Fatalf("expected release folder to persist, got %q", defaults.ReleaseFolder)
 	}
 	assertAgencyFieldsFresh(t, defaults.AgencyFields)
 
@@ -62,10 +68,21 @@ func TestSaveSettingsDoesNotPersistAgencyFieldValues(t *testing.T) {
 		t.Fatalf("read settings: %v", err)
 	}
 	settingsText := string(settingsBytes)
-	for _, leaked := range []string{"GAR-014", "1325", "Department of State", "Old shared drive", "Do not carry this forward", "Paper", "Folder"} {
+	for _, leaked := range []string{"GAR-014", "1325", "987", "654", "Department of State", "Old shared drive", "Do not carry this forward", "Paper", "Record-Level-Should-Not-Persist"} {
 		if strings.Contains(settingsText, leaked) {
 			t.Fatalf("settings file leaked agency field value %q: %s", leaked, settingsText)
 		}
+	}
+}
+
+func TestGetScanDefaultsUsesDefaultReleaseFolder(t *testing.T) {
+	isolateUserConfig(t)
+
+	app := newApp(filepath.Join(t.TempDir(), "source"))
+
+	defaults := app.GetScanDefaults()
+	if defaults.ReleaseFolder != `X:\Apps` {
+		t.Fatalf("expected default release folder to be X:\\Apps, got %q", defaults.ReleaseFolder)
 	}
 }
 
@@ -88,14 +105,17 @@ func TestGetScanDefaultsIgnoresLegacySavedAgencyFieldValues(t *testing.T) {
   "preserveZeros": true,
   "deleteCSV": true,
   "agencyTemplate": true,
+  "releaseFolder": "\\\\server\\share\\Content List Generator",
   "agencyFields": {
     "rg": "1325",
+    "sg": "987",
+    "series": "654",
     "rcSeries": "GAR-014",
     "deptOrganization": "Department of State",
     "location": "Old shared drive",
     "materialType": "Paper",
     "comments": "Do not carry this forward",
-    "recordLevel": "Folder"
+    "recordLevel": "Record-Level-Should-Not-Persist"
   }
 }`), 0o644); err != nil {
 		t.Fatalf("write legacy settings: %v", err)
@@ -108,6 +128,24 @@ func TestGetScanDefaultsIgnoresLegacySavedAgencyFieldValues(t *testing.T) {
 	if defaults.HashAlgorithm != "sha1" {
 		t.Fatalf("expected non-agency setting to persist, got %q", defaults.HashAlgorithm)
 	}
+	if defaults.ReleaseFolder != `\\server\share\Content List Generator` {
+		t.Fatalf("expected release folder to persist, got %q", defaults.ReleaseFolder)
+	}
+	assertAgencyFieldsFresh(t, defaults.AgencyFields)
+}
+
+func TestSaveReleaseFolderPersistsWithoutAgencyValues(t *testing.T) {
+	isolateUserConfig(t)
+
+	app := newApp(filepath.Join(t.TempDir(), "source"))
+	if err := app.SaveReleaseFolder(`\\server\share\Content List Generator`); err != nil {
+		t.Fatalf("save release folder: %v", err)
+	}
+
+	defaults := app.GetScanDefaults()
+	if defaults.ReleaseFolder != `\\server\share\Content List Generator` {
+		t.Fatalf("expected release folder to persist, got %q", defaults.ReleaseFolder)
+	}
 	assertAgencyFieldsFresh(t, defaults.AgencyFields)
 }
 
@@ -117,7 +155,7 @@ func assertAgencyFieldsFresh(t *testing.T, fields AgencyTemplateFields) {
 	if fields.RCSeries != "" {
 		t.Fatalf("expected RC Series to be fresh, got %q", fields.RCSeries)
 	}
-	if fields.RG != "" || fields.DeptOrganization != "" || fields.Location != "" || fields.Comments != "" {
+	if fields.RG != "" || fields.SG != "" || fields.Series != "" || fields.DeptOrganization != "" || fields.Location != "" || fields.Comments != "" {
 		t.Fatalf("expected agency constants to be blank, got %#v", fields)
 	}
 	if fields.MaterialType != "Born Digital" {

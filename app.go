@@ -10,19 +10,22 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-const appVersion = "0.2.6"
+const appVersion = "0.2.8"
 
 type App struct {
-	ctx           context.Context
-	startDir      string
-	cloneCancel   func()
-	emailCancel   func()
-	cloneDriveBCh chan string // non-nil only while awaiting drive B in single-drive mode
+	ctx            context.Context
+	startDir       string
+	cloneCancel    func()
+	emailCancel    func()
+	cloneDriveBCh  chan string // non-nil only while awaiting drive B in single-drive mode
+	updateMu       sync.Mutex
+	preparedUpdate *preparedUpdate
 }
 
 func newApp(startDir string) *App {
@@ -71,6 +74,7 @@ func (a *App) GetScanDefaults() ScanOptions {
 		PreserveZeros: true,
 		DeleteCSV:     true,
 		AgencyFields:  defaultAgencyTemplateFields(),
+		ReleaseFolder: defaultReleaseFolder,
 	}
 	saved, err := a.loadSettings()
 	if err != nil {
@@ -88,6 +92,9 @@ func (a *App) GetScanDefaults() ScanOptions {
 	defaults.FoldersOnly = saved.FoldersOnly
 	defaults.FolderDepth = saved.FolderDepth
 	defaults.AgencyTemplate = saved.AgencyTemplate
+	if strings.TrimSpace(saved.ReleaseFolder) != "" {
+		defaults.ReleaseFolder = saved.ReleaseFolder
+	}
 	return defaults
 }
 
@@ -111,6 +118,7 @@ func (a *App) SaveSettings(opts ScanOptions) {
 		FolderDepth:    opts.FolderDepth,
 		AgencyTemplate: opts.AgencyTemplate,
 		AgencyFields:   defaultAgencyTemplateFields(),
+		ReleaseFolder:  strings.TrimSpace(opts.ReleaseFolder),
 	}
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
@@ -181,6 +189,8 @@ func (a *App) StartScan(opts ScanOptions) error {
 		AgencyTemplate:   opts.AgencyTemplate,
 		AgencyFields: agencyTemplateFields{
 			RG:               opts.AgencyFields.RG,
+			SG:               opts.AgencyFields.SG,
+			Series:           opts.AgencyFields.Series,
 			RCSeries:         opts.AgencyFields.RCSeries,
 			DeptOrganization: opts.AgencyFields.DeptOrganization,
 			Division:         opts.AgencyFields.Division,
@@ -200,6 +210,13 @@ func (a *App) StartScan(opts ScanOptions) error {
 			LocationID:       opts.AgencyFields.LocationID,
 			RecordLevel:      opts.AgencyFields.RecordLevel,
 		},
+	}
+	if options.AgencyTemplate {
+		normalizedFields, err := normalizeAgencyTemplateFields(options.AgencyFields)
+		if err != nil {
+			return err
+		}
+		options.AgencyFields = normalizedFields
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())

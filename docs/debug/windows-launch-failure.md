@@ -6,7 +6,7 @@
 
 ## Symptom
 
-Downloading `content-list-generator-gui-windows-amd64.exe` from the GitHub Release and double-clicking it produces:
+Downloading `content-list-generator.exe` from the GitHub Release and double-clicking it produces:
 
 1. SmartScreen warning ("Microsoft Defender SmartScreen prevented an unrecognized app from starting")
 2. User clicks "More info" → "Run anyway"
@@ -19,7 +19,7 @@ Running from `cmd.exe` produces no stdout/stderr either.
 ## What's NOT the issue
 
 - ✅ **WebView2 runtime** — confirmed installed (`webview2 installer reports "already on system"`). Earlier `Get-Package` queries returned empty but that was a query-target issue, not a missing-runtime issue.
-- ✅ **Architecture mismatch** — host is AMD Ryzen 5950X (x64), binary is windows-amd64. Match.
+- ✅ **Architecture mismatch** — host is AMD Ryzen 5950X (x64), binary is windows/amd64. Match.
 - ✅ **Antivirus quarantine** — not flagged in AV logs.
 - ✅ **SmartScreen block** — user explicitly unblocked + "Run anyway".
 - ✅ **`-webview2 download` build flag (v0.2.1)** — added in PR #18 but is the Wails 2.12 default. No-op. Didn't change behavior.
@@ -77,7 +77,7 @@ Run on the affected Windows machine and paste outputs below.
 ### D2 — PowerShell capture + exit code
 ```powershell
 cd <download folder>
-& ".\content-list-generator-gui-windows-amd64.exe" 2>&1 | Out-File wails-stderr.log
+& ".\content-list-generator.exe" 2>&1 | Out-File wails-stderr.log
 $LASTEXITCODE
 Get-Content wails-stderr.log
 ```
@@ -98,8 +98,8 @@ Exit code decoder:
 
 ### D3 — File integrity
 ```powershell
-Get-FileHash content-list-generator-gui-windows-amd64.exe
-Get-Item content-list-generator-gui-windows-amd64.exe | Select-Object Length, LastWriteTime
+Get-FileHash "content-list-generator.exe"
+Get-Item "content-list-generator.exe" | Select-Object Length, LastWriteTime
 ```
 Paste:
 ```
@@ -112,7 +112,7 @@ Install Sysinternals Process Monitor:
 https://learn.microsoft.com/en-us/sysinternals/downloads/procmon
 
 1. Open `procmon.exe`
-2. Filter: Process Name → is → content-list-generator-gui-windows-amd64.exe → Include
+2. Filter: Process Name → is → content-list-generator.exe → Include
 3. Reset filter, then double-click the .exe
 4. Stop capture after 5 seconds
 5. File → Save → save as `.PML`

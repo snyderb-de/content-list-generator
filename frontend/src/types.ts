@@ -13,10 +13,13 @@ export interface ScanOptions {
   folderDepth: number
   agencyTemplate: boolean
   agencyFields: AgencyTemplateFields
+  releaseFolder: string
 }
 
 export interface AgencyTemplateFields {
   rg: string
+  sg: string
+  series: string
   rcSeries: string
   deptOrganization: string
   division: string
@@ -49,6 +52,19 @@ export interface AppSettings {
   folderDepth: number
   agencyTemplate: boolean
   agencyFields: AgencyTemplateFields
+  releaseFolder: string
+}
+
+export interface UpdateStatus {
+  supported: boolean
+  updateAvailable: boolean
+  readyToRestart: boolean
+  currentVersion: string
+  latestVersion: string
+  releaseFolder: string
+  releasePath: string
+  sha256: string
+  message: string
 }
 
 export interface SummaryEntry {

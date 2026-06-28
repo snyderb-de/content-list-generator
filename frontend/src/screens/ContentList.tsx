@@ -21,6 +21,8 @@ function defaultOutputFilename(sourceDir: string): string {
 
 const DEFAULT_AGENCY_FIELDS: AgencyTemplateFields = {
   rg: '',
+  sg: '',
+  series: '',
   rcSeries: '',
   deptOrganization: '',
   division: '',
@@ -53,6 +55,7 @@ const DEFAULT_OPTS: ScanOptions = {
   folderDepth: 0,
   agencyTemplate: false,
   agencyFields: freshAgencyFields(),
+  releaseFolder: '',
 }
 
 const toWailsScanOptions = (value: ScanOptions): main.ScanOptions =>
@@ -84,6 +87,21 @@ function fmtETA(etaSecs: number, phase: string) {
   if (phase !== 'Scanning') return phase === 'Counting' ? 'after count' : '…'
   if (etaSecs <= 0) return 'calculating…'
   return fmtSecs(etaSecs)
+}
+
+function agencyCodeError(fields: AgencyTemplateFields) {
+  const checks: Array<[keyof AgencyTemplateFields, string, number]> = [
+    ['rg', 'RG', 4],
+    ['sg', 'SG', 3],
+    ['series', 'Series', 3],
+  ]
+  for (const [key, label, width] of checks) {
+    const value = fields[key].trim()
+    if (!value) continue
+    if (!/^\d+$/.test(value)) return `${label} must use digits only.`
+    if (value.length > width) return `${label} must be ${width} digits or fewer.`
+  }
+  return ''
 }
 
 export default function ContentList() {
@@ -175,7 +193,8 @@ export default function ContentList() {
 
   const sameFolders = !!(opts.sourceDir && opts.outputDir && opts.sourceDir === opts.outputDir)
   const agencyMissingRCSeries = opts.agencyTemplate && !opts.agencyFields.rcSeries.trim()
-  const canStart = opts.sourceDir.length > 0 && opts.outputDir.length > 0 && !sameFolders && !pathError && !agencyMissingRCSeries
+  const agencyFieldError = opts.agencyTemplate ? agencyCodeError(opts.agencyFields) : ''
+  const canStart = opts.sourceDir.length > 0 && opts.outputDir.length > 0 && !sameFolders && !pathError && !agencyMissingRCSeries && !agencyFieldError
 
   // ── Confirm overwrite ─────────────────────────────────────
   if (phase === 'confirm-overwrite') {
@@ -315,10 +334,23 @@ export default function ContentList() {
                   RC Series is required for agency template output.
                 </p>
               )}
+              {agencyFieldError && (
+                <p className="danger-text" style={{ margin: '4px 0 8px' }}>
+                  {agencyFieldError}
+                </p>
+              )}
               <div className="field-grid">
                 <div className="field">
                   <label className="field-label">RG</label>
-                  <input className="text-input" value={opts.agencyFields.rg} onChange={e => setAgency('rg', e.target.value)} placeholder="4-digit record group" />
+                  <input className="text-input" value={opts.agencyFields.rg} onChange={e => setAgency('rg', e.target.value)} placeholder="4 digits, e.g. 1325" inputMode="numeric" maxLength={4} />
+                </div>
+                <div className="field">
+                  <label className="field-label">SG</label>
+                  <input className="text-input" value={opts.agencyFields.sg} onChange={e => setAgency('sg', e.target.value)} placeholder="3 digits, e.g. 1 -> 001" inputMode="numeric" maxLength={3} />
+                </div>
+                <div className="field">
+                  <label className="field-label">Series</label>
+                  <input className="text-input" value={opts.agencyFields.series} onChange={e => setAgency('series', e.target.value)} placeholder="3 digits, e.g. 35 -> 035" inputMode="numeric" maxLength={3} />
                 </div>
                 <div className="field">
                   <label className="field-label">RC Series</label>

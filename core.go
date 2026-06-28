@@ -66,6 +66,8 @@ type scanDoneMsg struct {
 
 type agencyTemplateFields struct {
 	RG               string
+	SG               string
+	Series           string
 	RCSeries         string
 	DeptOrganization string
 	Division         string
@@ -422,6 +424,36 @@ func agencyLocation(fields agencyTemplateFields, relative string) string {
 	return dir
 }
 
+func normalizeAgencyTemplateFields(fields agencyTemplateFields) (agencyTemplateFields, error) {
+	var err error
+	if fields.RG, err = normalizeAgencyCode("RG", fields.RG, 4); err != nil {
+		return fields, err
+	}
+	if fields.SG, err = normalizeAgencyCode("SG", fields.SG, 3); err != nil {
+		return fields, err
+	}
+	if fields.Series, err = normalizeAgencyCode("Series", fields.Series, 3); err != nil {
+		return fields, err
+	}
+	return fields, nil
+}
+
+func normalizeAgencyCode(label, value string, width int) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", nil
+	}
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return "", fmt.Errorf("%s must contain only digits", label)
+		}
+	}
+	if len(value) > width {
+		return "", fmt.Errorf("%s must be %d digits or fewer", label, width)
+	}
+	return strings.Repeat("0", width-len(value)) + value, nil
+}
+
 func agencyTemplateRow(work scanWork, fields agencyTemplateFields) []string {
 	comments := strings.TrimSpace(fields.Comments)
 	materialType := fields.MaterialType
@@ -434,8 +466,8 @@ func agencyTemplateRow(work scanWork, fields agencyTemplateFields) []string {
 	}
 	return []string{
 		fields.RG,
-		"",
-		"",
+		fields.SG,
+		fields.Series,
 		"",
 		fields.RCSeries,
 		fields.DeptOrganization,
@@ -474,6 +506,13 @@ func runScan(sourceDir, outputPath string, options scanOptions) (scanDoneMsg, er
 func runScanWithContext(parent context.Context, sourceDir, outputPath string, options scanOptions) (scanDoneMsg, error) {
 	if options.FoldersOnly {
 		return runFolderOnlyScanWithContext(parent, sourceDir, outputPath, options)
+	}
+	if options.AgencyTemplate {
+		normalizedFields, err := normalizeAgencyTemplateFields(options.AgencyFields)
+		if err != nil {
+			return scanDoneMsg{}, err
+		}
+		options.AgencyFields = normalizedFields
 	}
 	startedAt := time.Now()
 	ctx, cancel := context.WithCancel(parent)

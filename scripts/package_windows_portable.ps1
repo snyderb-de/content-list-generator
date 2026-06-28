@@ -49,7 +49,7 @@ try {
         --noconfirm `
         --clean `
         --windowed `
-        --name "Content List Generator" `
+        --name "content-list-generator" `
         --distpath $PyInstallerDistDir `
         --workpath $PyInstallerWorkDir `
         --specpath $BuildDir `
@@ -58,7 +58,7 @@ try {
         --collect-all blake3 `
         ".\python\content_list_generator.py"
 
-    $BuiltAppDir = Join-Path $PyInstallerDistDir "Content List Generator"
+    $BuiltAppDir = Join-Path $PyInstallerDistDir "content-list-generator"
     if (-not (Test-Path $BuiltAppDir)) {
         throw "PyInstaller did not create the expected app folder: $BuiltAppDir"
     }
@@ -73,7 +73,7 @@ set "APP_DIR=%~dp0app"
 set "DATA_DIR=%~dp0data"
 if not exist "%DATA_DIR%" mkdir "%DATA_DIR%"
 set "CONTENT_LIST_GENERATOR_SETTINGS=%DATA_DIR%\content-list-generator-settings.json"
-start "" "%APP_DIR%\Content List Generator.exe" %*
+start "" "%APP_DIR%\content-list-generator.exe" %*
 "@ | Set-Content -Path (Join-Path $PortableRoot "Start Content List Generator.cmd") -Encoding ASCII
 
     @"

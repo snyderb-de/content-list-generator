@@ -14,6 +14,10 @@ export function CancelScan() {
   return window['go']['main']['App']['CancelScan']();
 }
 
+export function CheckForUpdates() {
+  return window['go']['main']['App']['CheckForUpdates']();
+}
+
 export function CheckOutputExists(arg1) {
   return window['go']['main']['App']['CheckOutputExists'](arg1);
 }
@@ -40,6 +44,14 @@ export function ResumeCloneWithDriveB(arg1) {
 
 export function SaveSettings(arg1) {
   return window['go']['main']['App']['SaveSettings'](arg1);
+}
+
+export function SaveReleaseFolder(arg1) {
+  return window['go']['main']['App']['SaveReleaseFolder'](arg1);
+}
+
+export function RestartToApplyUpdate() {
+  return window['go']['main']['App']['RestartToApplyUpdate']();
 }
 
 export function StartCloneCompare(arg1) {

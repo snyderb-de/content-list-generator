@@ -11,7 +11,8 @@ const settingsRows = [
 
 const agencyRows = [
   ['RC Series', 'Required for every agency-template scan. Enter it before starting the scan.'],
-  ['RG, Department, Division, Section, Unit', 'Use these when the same value belongs on every row in the sheet.'],
+  ['RG, SG, Series', 'Use digits only. RG exports as 4 digits; SG and Series export as 3 digits, so 1 becomes 001 and 35 becomes 035.'],
+  ['Department, Division, Section, Unit', 'Use these when the same value belongs on every row in the sheet.'],
   ['Begin Date, End Date', 'Use these when one date range applies to the whole sheet.'],
   ['Description, Comments', 'Use these for notes that should appear on every row.'],
   ['Location Override', 'Optional. Leave it blank unless every row should use one shared location.'],
@@ -39,6 +40,7 @@ export default function UserManual() {
           <a href="#manual-email-copy">Email Copy</a>
           <a href="#manual-clone-compare">Clone Compare</a>
           <a href="#manual-outputs">Outputs</a>
+          <a href="#manual-updates">Updates</a>
           <a href="#manual-troubleshooting">Troubleshooting</a>
         </nav>
 
@@ -138,6 +140,19 @@ export default function UserManual() {
               <li>XLSX files are Excel workbooks. Create one when the final handoff should be an Excel file.</li>
               <li>The report file includes totals, the options used, skipped-file examples, and file type summaries.</li>
               <li>Very large jobs may be split into multiple spreadsheet parts so Excel can still open them.</li>
+            </ul>
+          </section>
+
+          <section id="manual-updates" className="manual-section">
+            <p className="manual-kicker">Reference</p>
+            <h3>Updates</h3>
+            <p>
+              On Windows, the app checks the <code>X:\Apps</code> folder for a newer signed <code>content-list-generator.exe</code>.
+              Open About if support gives you a different release folder.
+            </p>
+            <ul className="manual-list">
+              <li>The app only installs a newer signed executable from the configured release folder.</li>
+              <li>When an update is ready, restart the app from the update prompt.</li>
             </ul>
           </section>
 

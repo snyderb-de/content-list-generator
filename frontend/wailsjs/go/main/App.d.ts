@@ -8,6 +8,8 @@ export function CancelEmailCopy():Promise<void>;
 
 export function CancelScan():Promise<void>;
 
+export function CheckForUpdates():Promise<main.UpdateStatus>;
+
 export function CheckOutputExists(arg1:main.ScanOptions):Promise<boolean>;
 
 export function GetAppVersion():Promise<string>;
@@ -21,6 +23,10 @@ export function PickFolder(arg1:string):Promise<string>;
 export function ResumeCloneWithDriveB(arg1:string):Promise<void>;
 
 export function SaveSettings(arg1:main.ScanOptions):Promise<void>;
+
+export function SaveReleaseFolder(arg1:string):Promise<void>;
+
+export function RestartToApplyUpdate():Promise<void>;
 
 export function StartCloneCompare(arg1:main.CloneCompareOptions):Promise<void>;
 

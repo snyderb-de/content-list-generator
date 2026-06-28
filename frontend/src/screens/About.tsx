@@ -1,13 +1,32 @@
 import { useEffect, useState } from 'react'
-import { GetAppVersion } from '../../wailsjs/go/main/App'
+import { CheckForUpdates, GetAppVersion, GetScanDefaults, RestartToApplyUpdate, SaveReleaseFolder } from '../../wailsjs/go/main/App'
 import { BrowserOpenURL } from '../../wailsjs/runtime/runtime'
+import FolderPicker from '../components/FolderPicker'
+import { UpdateStatus } from '../types'
 
 export default function About() {
   const [version, setVersion] = useState('…')
+  const [releaseFolder, setReleaseFolder] = useState('')
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null)
+  const [updateError, setUpdateError] = useState('')
 
   useEffect(() => {
     GetAppVersion().then(setVersion).catch(() => setVersion('unknown'))
+    GetScanDefaults().then(defaults => setReleaseFolder(defaults.releaseFolder || '')).catch(() => {})
   }, [])
+
+  const saveAndCheckUpdates = async () => {
+    setUpdateError('')
+    setUpdateStatus(null)
+    try {
+      await SaveReleaseFolder(releaseFolder)
+      const status = await CheckForUpdates()
+      setUpdateStatus(status)
+    } catch (err: any) {
+      setUpdateStatus(null)
+      setUpdateError(String(err))
+    }
+  }
 
   return (
     <div>
@@ -59,6 +78,35 @@ export default function About() {
             </button>
           </span>
         </div>
+      </div>
+
+      <div className="card">
+        <p className="card-title">Updates</p>
+        <p className="info-text" style={{ marginBottom: 14 }}>
+          Set the mapped network folder where the signed Windows executable is published for staff. The default checks X:\Apps\content-list-generator.exe.
+        </p>
+        <FolderPicker
+          label="Release Folder"
+          value={releaseFolder}
+          onChange={setReleaseFolder}
+          placeholder="X:\Apps"
+        />
+        <div className="result-actions" style={{ marginTop: 12 }}>
+          <button className="btn btn-primary" onClick={saveAndCheckUpdates}>
+            Save and Check
+          </button>
+          {updateStatus?.readyToRestart && (
+            <button className="btn btn-outline" onClick={() => RestartToApplyUpdate().catch(err => setUpdateError(String(err)))}>
+              Restart
+            </button>
+          )}
+        </div>
+        {updateStatus && (
+          <p className={updateStatus.readyToRestart ? 'success-text' : 'info-text'} style={{ marginTop: 12 }}>
+            {updateStatus.message || (updateStatus.supported ? 'No update found.' : 'Windows executable updates are only available on Windows.')}
+          </p>
+        )}
+        {updateError && <p className="danger-text" style={{ marginTop: 12 }}>{updateError}</p>}
       </div>
     </div>
   )

@@ -105,8 +105,8 @@ Windows portable no-install ZIP:
 Windows Wails GUI path:
 
 - must be built on a Windows host (Wails cannot cross-compile WebView2)
-- run `wails build -platform windows/amd64 -o content-list-generator-gui.exe`
-- copy the resulting `.exe` into `releases/windows-go/`
+- run `wails build -platform windows/amd64 -o "content-list-generator.exe"`
+- copy the resulting `.exe` into `releases/windows-go/` with the same filename
 - the Windows TUI binary is intentionally not shipped — Windows users get the Wails GUI or the Python bundles
 
 ## Testing
