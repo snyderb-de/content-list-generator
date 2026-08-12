@@ -31,6 +31,7 @@ class ContentScanTests(unittest.TestCase):
 
     def test_format_file_timestamp_unknown(self) -> None:
         self.assertEqual(core.format_file_timestamp(None), "unknown")
+        self.assertEqual(core.format_file_timestamp(0), "unknown")
         self.assertEqual(core.file_creation_timestamp(SimpleNamespace()), None)
 
     def assert_file_timestamp(self, value: str, *, allow_unknown: bool) -> None:

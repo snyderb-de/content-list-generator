@@ -138,7 +138,7 @@ _PDF_SOFT_TAIL = 2048
 
 
 def format_file_timestamp(value: float | None) -> str:
-    if value is None:
+    if value is None or value == 0:
         return UNKNOWN_FILE_TIMESTAMP
     try:
         return datetime.fromtimestamp(value).astimezone().isoformat(sep=" ", timespec="seconds")
