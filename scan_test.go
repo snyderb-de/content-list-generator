@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/xuri/excelize/v2"
 )
@@ -22,6 +23,15 @@ func TestRunScanWritesCSVAndHashes(t *testing.T) {
 	}
 	if err := writeFixtureFile(filepath.Join(source, "nested", "b.bin"), "1234567890"); err != nil {
 		t.Fatalf("write b.bin: %v", err)
+	}
+	fixedModified := time.Date(2024, 5, 1, 12, 34, 56, 0, time.Local)
+	for _, path := range []string{
+		filepath.Join(source, "a.txt"),
+		filepath.Join(source, "nested", "b.bin"),
+	} {
+		if err := os.Chtimes(path, fixedModified, fixedModified); err != nil {
+			t.Fatalf("set fixture timestamps: %v", err)
+		}
 	}
 
 	output := filepath.Join(workspace, "report.csv")
@@ -61,6 +71,16 @@ func TestRunScanWritesCSVAndHashes(t *testing.T) {
 	rows := readCSVRows(t, done.outputPath)
 	if len(rows) != 3 {
 		t.Fatalf("expected 3 rows, got %d", len(rows))
+	}
+	expectedHeaders := []string{
+		"File Name", "Extension", "Size in Bytes", "Size in Human Readable",
+		"Path From Root Folder", "Hash Algorithm", "Hash Value",
+		"Date Created", "Date Modified",
+	}
+	assertRowsEqual(t, [][]string{rows[0]}, [][]string{expectedHeaders})
+	assertFileTimestampValue(t, rows[1][7], true)
+	if rows[1][8] != formatFileTimestamp(fixedModified, true) {
+		t.Fatalf("unexpected modified timestamp: %q", rows[1][8])
 	}
 	if rows[1][0] != "a.txt" {
 		t.Fatalf("expected first data row to be a.txt, got %q", rows[1][0])
@@ -132,6 +152,10 @@ func TestRunScanCreatesXLSX(t *testing.T) {
 	if err := writeFixtureFile(filepath.Join(source, "report.txt"), "hello"); err != nil {
 		t.Fatalf("write report.txt: %v", err)
 	}
+	fixedModified := time.Date(2024, 5, 1, 12, 34, 56, 0, time.Local)
+	if err := os.Chtimes(filepath.Join(source, "report.txt"), fixedModified, fixedModified); err != nil {
+		t.Fatalf("set fixture timestamps: %v", err)
+	}
 
 	output := filepath.Join(workspace, "report.csv")
 	done, err := runScan(source, output, scanOptions{
@@ -162,6 +186,24 @@ func TestRunScanCreatesXLSX(t *testing.T) {
 	if value != "report.txt" {
 		t.Fatalf("expected xlsx to contain report.txt, got %q", value)
 	}
+	for cell, want := range map[string]string{
+		"H1": "Date Created",
+		"I1": "Date Modified",
+		"I2": formatFileTimestamp(fixedModified, true),
+	} {
+		value, err := book.GetCellValue("Sheet1", cell)
+		if err != nil {
+			t.Fatalf("read xlsx cell %s: %v", cell, err)
+		}
+		if value != want {
+			t.Fatalf("unexpected xlsx cell %s: got %q want %q", cell, value, want)
+		}
+	}
+	value, err = book.GetCellValue("Sheet1", "H2")
+	if err != nil {
+		t.Fatalf("read xlsx cell H2: %v", err)
+	}
+	assertFileTimestampValue(t, value, true)
 }
 
 func TestRunScanDeletesCSVAfterXLSXWhenEnabled(t *testing.T) {
@@ -333,6 +375,9 @@ func TestRunScanWritesAgencyTemplate(t *testing.T) {
 	}
 	assertRowsEqual(t, [][]string{rows[0]}, [][]string{expectedHeaders})
 	data := rows[1]
+	if len(data) != len(expectedHeaders) {
+		t.Fatalf("expected %d agency columns, got %d", len(expectedHeaders), len(data))
+	}
 	if data[0] != "1325" || data[1] != "001" || data[2] != "035" {
 		t.Fatalf("expected RG/SG/Series constants in agency row: %#v", data)
 	}
@@ -394,6 +439,19 @@ func TestRunScanMatchesGoldenFixture(t *testing.T) {
 	workspace := t.TempDir()
 	output := filepath.Join(workspace, "report.csv")
 	source := filepath.Join("testing", "content-scan", "fixtures", "source")
+	fixed := time.Unix(1_714_566_896, 0)
+	for _, relative := range []string{
+		"keep.txt",
+		"mail/archive.pst",
+		"mail/inbox.eml",
+		"nested/0007.txt",
+		"nested/data.bin",
+	} {
+		path := filepath.Join(source, relative)
+		if err := os.Chtimes(path, fixed, fixed); err != nil {
+			t.Fatalf("set fixture timestamp for %s: %v", relative, err)
+		}
+	}
 
 	done, err := runScan(source, output, scanOptions{
 		HashAlgorithm: hashAlgorithmSHA256,
@@ -412,7 +470,38 @@ func TestRunScanMatchesGoldenFixture(t *testing.T) {
 
 	actualRows := readCSVRows(t, done.outputPath)
 	expectedRows := readCSVRows(t, filepath.Join("testing", "content-scan", "fixtures", "expected-scan-hash.csv"))
-	assertRowsEqual(t, actualRows, expectedRows)
+	if len(actualRows) != len(expectedRows) {
+		t.Fatalf("row count mismatch: got %d want %d", len(actualRows), len(expectedRows))
+	}
+	for rowIndex, expectedRow := range expectedRows {
+		if len(actualRows[rowIndex]) != len(expectedRow) {
+			t.Fatalf("column count mismatch at row %d: got %d want %d", rowIndex, len(actualRows[rowIndex]), len(expectedRow))
+		}
+		for colIndex, expectedValue := range expectedRow {
+			switch expectedValue {
+			case "<native-or-unknown>":
+				assertFileTimestampValue(t, actualRows[rowIndex][colIndex], true)
+			case "<fixed-modified>":
+				if actualRows[rowIndex][colIndex] != formatFileTimestamp(fixed, true) {
+					t.Fatalf("unexpected modified timestamp at row %d: got %q", rowIndex, actualRows[rowIndex][colIndex])
+				}
+			default:
+				if actualRows[rowIndex][colIndex] != expectedValue {
+					t.Fatalf("cell mismatch at row %d col %d: got %q want %q", rowIndex, colIndex, actualRows[rowIndex][colIndex], expectedValue)
+				}
+			}
+		}
+	}
+}
+
+func assertFileTimestampValue(t *testing.T, value string, allowUnknown bool) {
+	t.Helper()
+	if allowUnknown && value == unknownFileTimestamp {
+		return
+	}
+	if _, err := time.Parse(fileTimestampLayout, value); err != nil {
+		t.Fatalf("invalid file timestamp %q: %v", value, err)
+	}
 }
 
 func TestCompareScanOutputsReportsDifferences(t *testing.T) {

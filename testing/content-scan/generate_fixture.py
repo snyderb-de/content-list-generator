@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import os
 import shutil
 from pathlib import Path
 
@@ -9,6 +10,7 @@ from pathlib import Path
 FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures"
 SOURCE_DIR = FIXTURE_DIR / "source"
 EXPECTED_CSV = FIXTURE_DIR / "expected-scan-hash.csv"
+FIXED_MODIFIED_EPOCH = 1_714_566_896
 
 SOURCE_FILES = {
     ".hidden/secret.txt": b"secret\n",
@@ -38,6 +40,7 @@ def write_source_tree() -> None:
         target = SOURCE_DIR / relative_path
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(content)
+        os.utime(target, (FIXED_MODIFIED_EPOCH, FIXED_MODIFIED_EPOCH))
 
 
 def human_size(size: int) -> str:
@@ -46,7 +49,7 @@ def human_size(size: int) -> str:
 
 def write_expected_csv() -> None:
     with EXPECTED_CSV.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.writer(handle)
+        writer = csv.writer(handle, lineterminator="\n")
         writer.writerow(
             [
                 "File Name",
@@ -56,6 +59,8 @@ def write_expected_csv() -> None:
                 "Path From Root Folder",
                 "Hash Algorithm",
                 "Hash Value",
+                "Date Created",
+                "Date Modified",
             ]
         )
         for relative_path in KEPT_FILES:
@@ -70,6 +75,8 @@ def write_expected_csv() -> None:
                     relative_path,
                     "SHA-256",
                     hashlib.sha256(data).hexdigest(),
+                    "<native-or-unknown>",
+                    "<fixed-modified>",
                 ]
             )
 
