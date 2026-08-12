@@ -134,7 +134,7 @@ func TestCheckForUpdatesClearsPreparedUpdateOnPrepareError(t *testing.T) {
 	}
 
 	status, err := app.checkForUpdates(currentExe, func(string) (string, error) {
-		return "0.2.10", nil
+		return "0.2.11", nil
 	}, func(string, string) error {
 		return nil
 	})
