@@ -141,18 +141,37 @@ def format_file_timestamp(value: float | None) -> str:
     if value is None or value == 0:
         return UNKNOWN_FILE_TIMESTAMP
     try:
-        return datetime.fromtimestamp(value).astimezone().isoformat(sep=" ", timespec="seconds")
-    except (OSError, OverflowError, ValueError):
+        local_value = datetime.fromtimestamp(value).astimezone()
+        offset = local_value.utcoffset()
+        if offset is None:
+            return UNKNOWN_FILE_TIMESTAMP
+        offset_seconds = int(offset.total_seconds())
+    except (OSError, OverflowError, TypeError, ValueError):
         return UNKNOWN_FILE_TIMESTAMP
+    sign = "+" if offset_seconds >= 0 else "-"
+    offset_minutes = abs(offset_seconds) // 60
+    offset_hours, offset_minutes = divmod(offset_minutes, 60)
+    return (
+        f"{local_value.year:04d}-{local_value.month:02d}-{local_value.day:02d} "
+        f"{local_value.hour:02d}:{local_value.minute:02d}:{local_value.second:02d} "
+        f"{sign}{offset_hours:02d}:{offset_minutes:02d}"
+    )
 
 
 def file_creation_timestamp(stat_result: os.stat_result) -> float | None:
     birth_time = getattr(stat_result, "st_birthtime", None)
     if birth_time is not None:
-        return float(birth_time)
+        try:
+            return float(birth_time)
+        except (OverflowError, TypeError, ValueError):
+            return None
     if os.name == "nt":
         windows_creation_time = getattr(stat_result, "st_ctime", None)
-        return float(windows_creation_time) if windows_creation_time is not None else None
+        if windows_creation_time is not None:
+            try:
+                return float(windows_creation_time)
+            except (OverflowError, TypeError, ValueError):
+                return None
     return None
 
 

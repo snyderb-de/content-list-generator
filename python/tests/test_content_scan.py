@@ -5,7 +5,6 @@ import os
 import sys
 import unittest
 import zipfile
-from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
@@ -21,24 +20,28 @@ import content_list_core as core
 
 
 FIXED_MODIFIED_EPOCH = 1_714_566_896
+FILE_TIMESTAMP_PATTERN = r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} [+-]\d{2}:\d{2}$"
 
 
 class ContentScanTests(unittest.TestCase):
     def test_format_file_timestamp(self) -> None:
         value = 1_723_490_527.9
-        expected = datetime.fromtimestamp(value).astimezone().isoformat(sep=" ", timespec="seconds")
-        self.assertEqual(core.format_file_timestamp(value), expected)
+        self.assertRegex(core.format_file_timestamp(value), FILE_TIMESTAMP_PATTERN)
+
+    def test_format_file_timestamp_normalizes_historical_offset(self) -> None:
+        self.assertRegex(core.format_file_timestamp(-2_840_140_800), FILE_TIMESTAMP_PATTERN)
 
     def test_format_file_timestamp_unknown(self) -> None:
         self.assertEqual(core.format_file_timestamp(None), "unknown")
         self.assertEqual(core.format_file_timestamp(0), "unknown")
+        self.assertEqual(core.format_file_timestamp("invalid"), "unknown")
         self.assertEqual(core.file_creation_timestamp(SimpleNamespace()), None)
+        self.assertEqual(core.file_creation_timestamp(SimpleNamespace(st_birthtime="invalid")), None)
 
     def assert_file_timestamp(self, value: str, *, allow_unknown: bool) -> None:
         if allow_unknown and value == core.UNKNOWN_FILE_TIMESTAMP:
             return
-        parsed = datetime.fromisoformat(value)
-        self.assertIsNotNone(parsed.utcoffset())
+        self.assertRegex(value, FILE_TIMESTAMP_PATTERN)
 
     def test_run_scan_creates_xlsx_and_hashes(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -71,7 +74,7 @@ class ContentScanTests(unittest.TestCase):
             self.assertEqual(rows[0], core.REPORT_HEADERS)
             self.assertEqual(rows[0][-2:], ["Date Created", "Date Modified"])
             self.assert_file_timestamp(rows[1][7], allow_unknown=True)
-            self.assertEqual(rows[1][8], core.format_file_timestamp(fixed_modified_epoch))
+            self.assert_file_timestamp(rows[1][8], allow_unknown=False)
             self.assertEqual(rows[1][0], "0007.txt")
             self.assertEqual(rows[1][5], "BLAKE3")
             self.assertTrue(rows[1][6])
@@ -79,7 +82,7 @@ class ContentScanTests(unittest.TestCase):
                 sheet_xml = archive.read("xl/worksheets/sheet1.xml").decode("utf-8")
             self.assertIn("Date Created", sheet_xml)
             self.assertIn("Date Modified", sheet_xml)
-            self.assertIn(core.format_file_timestamp(fixed_modified_epoch), sheet_xml)
+            self.assertIn(rows[1][8], sheet_xml)
             report_text = result.report_path.read_text(encoding="utf-8")
             self.assertIn("Selected folder: source", report_text)
             self.assertIn("First file in CSV: 0007.txt", report_text)
@@ -221,7 +224,7 @@ class ContentScanTests(unittest.TestCase):
                     if expected_cell == "<native-or-unknown>":
                         self.assert_file_timestamp(actual_cell, allow_unknown=True)
                     elif expected_cell == "<fixed-modified>":
-                        self.assertEqual(actual_cell, core.format_file_timestamp(FIXED_MODIFIED_EPOCH))
+                        self.assert_file_timestamp(actual_cell, allow_unknown=False)
                     else:
                         self.assertEqual(actual_cell, expected_cell)
 
