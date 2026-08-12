@@ -564,8 +564,11 @@
               <tr><td><code>Path From Root Folder</code></td><td>Relative path from the source root, including the filename.</td></tr>
               <tr><td><code>Hash Algorithm</code></td><td>Algorithm name (<code>sha1</code>, <code>sha256</code>, <code>blake3</code>) or empty when hashing is off.</td></tr>
               <tr><td><code>Hash Value</code></td><td>Hex digest. Empty when hashing is off.</td></tr>
+              <tr><td><code>Date Created</code></td><td>Filesystem creation or birth time in local scan-machine time (<code>YYYY-MM-DD HH:MM:SS ±HH:MM</code>). Shows <code>unknown</code> when the operating system or filesystem does not expose it.</td></tr>
+              <tr><td><code>Date Modified</code></td><td>Filesystem last-modified time in local scan-machine time (<code>YYYY-MM-DD HH:MM:SS ±HH:MM</code>). Shows <code>unknown</code> when unavailable.</td></tr>
             </tbody>
           </table>
+          <p style="margin-top:10px"><strong>Creation-date note:</strong> copying, restoring, downloading, or migrating a file can change its filesystem creation time. It is metadata observed during the scan, not proof of when the document contents were authored.</p>
           <p style="margin-top:10px">Folders-only mode writes a single column: <code>Path From Root Folder</code>.</p>
         </div>
         <div class="card">
