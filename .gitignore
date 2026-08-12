@@ -39,3 +39,6 @@ __pycache__/
 /design/
 CLAUDE.md
 .claude/settings.local.json
+
+# Isolated feature worktrees
+/.worktrees/

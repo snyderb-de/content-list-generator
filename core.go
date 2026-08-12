@@ -105,12 +105,14 @@ type scanOptions struct {
 }
 
 type scanWork struct {
-	index    uint64
-	path     string
-	relative string
-	name     string
-	ext      string
-	size     uint64
+	index        uint64
+	path         string
+	relative     string
+	name         string
+	ext          string
+	size         uint64
+	dateCreated  string
+	dateModified string
 }
 
 type scanResult struct {
@@ -267,6 +269,8 @@ var standardReportHeaders = []string{
 	"Path From Root Folder",
 	"Hash Algorithm",
 	"Hash Value",
+	"Date Created",
+	"Date Modified",
 }
 
 var agencyTemplateHeaders = []string{
@@ -701,6 +705,8 @@ func runScanWithContext(parent context.Context, sourceDir, outputPath string, op
 			if !info.Mode().IsRegular() {
 				return nil
 			}
+			createdAt, createdAvailable := fileCreationTime(info)
+			modifiedAt := info.ModTime()
 
 			relative, err := filepath.Rel(sourceDir, path)
 			if err != nil {
@@ -709,12 +715,14 @@ func runScanWithContext(parent context.Context, sourceDir, outputPath string, op
 			}
 
 			work := scanWork{
-				index:    index,
-				path:     path,
-				relative: filepath.ToSlash(relative),
-				name:     filepath.Base(path),
-				ext:      normalizeExt(filepath.Ext(path)),
-				size:     uint64(info.Size()),
+				index:        index,
+				path:         path,
+				relative:     filepath.ToSlash(relative),
+				name:         filepath.Base(path),
+				ext:          normalizeExt(filepath.Ext(path)),
+				size:         uint64(info.Size()),
+				dateCreated:  formatFileTimestamp(createdAt, createdAvailable),
+				dateModified: formatFileTimestamp(modifiedAt, !modifiedAt.IsZero()),
 			}
 			index++
 
@@ -767,6 +775,8 @@ func runScanWithContext(parent context.Context, sourceDir, outputPath string, op
 				ready.work.relative,
 				options.HashAlgorithm.CSVName(),
 				ready.hash,
+				ready.work.dateCreated,
+				ready.work.dateModified,
 			}
 			if options.AgencyTemplate {
 				row = agencyTemplateRow(ready.work, options.AgencyFields)
