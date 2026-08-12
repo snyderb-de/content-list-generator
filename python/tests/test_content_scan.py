@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import csv
+import os
 import sys
 import unittest
 import zipfile
+from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 
 
 CURRENT_DIR = Path(__file__).resolve().parent
@@ -17,13 +20,33 @@ if str(PYTHON_DIR) not in sys.path:
 import content_list_core as core
 
 
+FIXED_MODIFIED_EPOCH = 1_714_566_896
+
+
 class ContentScanTests(unittest.TestCase):
+    def test_format_file_timestamp(self) -> None:
+        value = 1_723_490_527.9
+        expected = datetime.fromtimestamp(value).astimezone().isoformat(sep=" ", timespec="seconds")
+        self.assertEqual(core.format_file_timestamp(value), expected)
+
+    def test_format_file_timestamp_unknown(self) -> None:
+        self.assertEqual(core.format_file_timestamp(None), "unknown")
+        self.assertEqual(core.file_creation_timestamp(SimpleNamespace()), None)
+
+    def assert_file_timestamp(self, value: str, *, allow_unknown: bool) -> None:
+        if allow_unknown and value == core.UNKNOWN_FILE_TIMESTAMP:
+            return
+        parsed = datetime.fromisoformat(value)
+        self.assertIsNotNone(parsed.utcoffset())
+
     def test_run_scan_creates_xlsx_and_hashes(self) -> None:
         with TemporaryDirectory() as tmp:
             workspace = Path(tmp)
             source = workspace / "source"
             source.mkdir()
             (source / "0007.txt").write_text("hello\n", encoding="utf-8")
+            fixed_modified_epoch = 1_723_490_527
+            os.utime(source / "0007.txt", (fixed_modified_epoch, fixed_modified_epoch))
 
             result = core.run_scan(
                 source,
@@ -44,9 +67,18 @@ class ContentScanTests(unittest.TestCase):
 
             with result.output_path.open("r", newline="", encoding="utf-8") as handle:
                 rows = list(csv.reader(handle))
+            self.assertEqual(rows[0], core.REPORT_HEADERS)
+            self.assertEqual(rows[0][-2:], ["Date Created", "Date Modified"])
+            self.assert_file_timestamp(rows[1][7], allow_unknown=True)
+            self.assertEqual(rows[1][8], core.format_file_timestamp(fixed_modified_epoch))
             self.assertEqual(rows[1][0], "0007.txt")
             self.assertEqual(rows[1][5], "BLAKE3")
             self.assertTrue(rows[1][6])
+            with zipfile.ZipFile(result.xlsx_path, "r") as archive:
+                sheet_xml = archive.read("xl/worksheets/sheet1.xml").decode("utf-8")
+            self.assertIn("Date Created", sheet_xml)
+            self.assertIn("Date Modified", sheet_xml)
+            self.assertIn(core.format_file_timestamp(fixed_modified_epoch), sheet_xml)
             report_text = result.report_path.read_text(encoding="utf-8")
             self.assertIn("Selected folder: source", report_text)
             self.assertIn("First file in CSV: 0007.txt", report_text)
@@ -106,6 +138,8 @@ class ContentScanTests(unittest.TestCase):
             with result.output_path.open("r", newline="", encoding="utf-8") as handle:
                 rows = list(csv.reader(handle))
             self.assertEqual(rows[0], core.AGENCY_TEMPLATE_HEADERS)
+            self.assertEqual(len(rows[0]), 31)
+            self.assertEqual(len(rows[1]), 31)
             self.assertEqual(rows[1][0], "1325")
             self.assertEqual(rows[1][1], "001")
             self.assertEqual(rows[1][2], "035")
@@ -152,6 +186,15 @@ class ContentScanTests(unittest.TestCase):
 
         with TemporaryDirectory() as tmp:
             output_path = Path(tmp) / "report.csv"
+            kept_source_files = [
+                source / "keep.txt",
+                source / "mail" / "archive.pst",
+                source / "mail" / "inbox.eml",
+                source / "nested" / "0007.txt",
+                source / "nested" / "data.bin",
+            ]
+            for source_file in kept_source_files:
+                os.utime(source_file, (FIXED_MODIFIED_EPOCH, FIXED_MODIFIED_EPOCH))
             result = core.run_scan(
                 source,
                 output_path,
@@ -170,7 +213,16 @@ class ContentScanTests(unittest.TestCase):
                 actual_rows = list(csv.reader(actual_handle))
             with expected_path.open("r", newline="", encoding="utf-8") as expected_handle:
                 expected_rows = list(csv.reader(expected_handle))
-            self.assertEqual(actual_rows, expected_rows)
+            self.assertEqual(len(actual_rows), len(expected_rows))
+            for actual_row, expected_row in zip(actual_rows, expected_rows, strict=True):
+                self.assertEqual(len(actual_row), len(expected_row))
+                for actual_cell, expected_cell in zip(actual_row, expected_row, strict=True):
+                    if expected_cell == "<native-or-unknown>":
+                        self.assert_file_timestamp(actual_cell, allow_unknown=True)
+                    elif expected_cell == "<fixed-modified>":
+                        self.assertEqual(actual_cell, core.format_file_timestamp(FIXED_MODIFIED_EPOCH))
+                    else:
+                        self.assertEqual(actual_cell, expected_cell)
 
     def test_run_scan_deletes_csv_after_xlsx_when_enabled(self) -> None:
         with TemporaryDirectory() as tmp:

@@ -10,6 +10,7 @@ import zipfile
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Callable
 from xml.sax.saxutils import escape
@@ -60,6 +61,7 @@ HASH_ALGORITHM_BLAKE3 = "blake3"
 HASH_ALGORITHM_SHA1 = "sha1"
 HASH_ALGORITHM_SHA256 = "sha256"
 DEFAULT_MAX_ROWS_PER_CSV = 300_000
+UNKNOWN_FILE_TIMESTAMP = "unknown"
 REPORT_HEADERS = [
     "File Name",
     "Extension",
@@ -68,6 +70,8 @@ REPORT_HEADERS = [
     "Path From Root Folder",
     "Hash Algorithm",
     "Hash Value",
+    "Date Created",
+    "Date Modified",
 ]
 AGENCY_TEMPLATE_HEADERS = [
     "RG",
@@ -131,6 +135,25 @@ CLONE_VERDICT_NOT      = "Not a Clone"
 
 _PDF_ID_RE = re.compile(rb'/ID\s*\[<[0-9a-fA-F]+><[0-9a-fA-F]+>\]')
 _PDF_SOFT_TAIL = 2048
+
+
+def format_file_timestamp(value: float | None) -> str:
+    if value is None:
+        return UNKNOWN_FILE_TIMESTAMP
+    try:
+        return datetime.fromtimestamp(value).astimezone().isoformat(sep=" ", timespec="seconds")
+    except (OSError, OverflowError, ValueError):
+        return UNKNOWN_FILE_TIMESTAMP
+
+
+def file_creation_timestamp(stat_result: os.stat_result) -> float | None:
+    birth_time = getattr(stat_result, "st_birthtime", None)
+    if birth_time is not None:
+        return float(birth_time)
+    if os.name == "nt":
+        windows_creation_time = getattr(stat_result, "st_ctime", None)
+        return float(windows_creation_time) if windows_creation_time is not None else None
+    return None
 
 
 def _pdf_normalized_tail(path: Path) -> bytes | None:
@@ -581,7 +604,13 @@ def iter_scan_files(
                 continue
             if not candidate.is_file():
                 continue
-            yield candidate, stat.st_size, candidate.relative_to(source_dir).as_posix()
+            yield (
+                candidate,
+                stat.st_size,
+                candidate.relative_to(source_dir).as_posix(),
+                format_file_timestamp(file_creation_timestamp(stat)),
+                format_file_timestamp(getattr(stat, "st_mtime", None)),
+            )
 
 
 def _folder_rel_depth(rel: str) -> int:
@@ -918,7 +947,14 @@ def write_csv_report(
     headers = AGENCY_TEMPLATE_HEADERS if agency_template else REPORT_HEADERS
     csv_writer = ChunkedCSVReportWriter(output_path, max_rows_per_csv, headers)
 
-    def write_processed_row(file_path: Path, size: int, relative: str, file_hash: str) -> None:
+    def write_processed_row(
+        file_path: Path,
+        size: int,
+        relative: str,
+        date_created: str,
+        date_modified: str,
+        file_hash: str,
+    ) -> None:
         nonlocal processed_bytes, processed_files, first_csv_item, last_csv_item
         ext = normalize_extension(file_path)
         bucket = summaries.setdefault(summary_key(ext), {"count": 0, "bytes": 0})
@@ -932,6 +968,8 @@ def write_csv_report(
             relative,
             hash_algorithm_csv_name(normalized_algorithm),
             file_hash,
+            date_created,
+            date_modified,
         ]
         if agency_template:
             row = agency_template_row(file_path.name, ext, relative, agency_fields)
@@ -962,7 +1000,7 @@ def write_csv_report(
             max_in_flight = max(hash_workers*4, 8)
             with ThreadPoolExecutor(max_workers=hash_workers) as pool:
                 pending = deque()
-                for file_path, size, relative in iter_scan_files(
+                for file_path, size, relative, date_created, date_modified in iter_scan_files(
                     source_dir,
                     include_hidden,
                     include_system,
@@ -976,18 +1014,34 @@ def write_csv_report(
                             file_path,
                             size,
                             relative,
+                            date_created,
+                            date_modified,
                             pool.submit(hash_file, file_path, normalized_algorithm, cancel_event),
                         )
                     )
                     if len(pending) >= max_in_flight:
-                        next_path, next_size, next_relative, next_future = pending.popleft()
-                        write_processed_row(next_path, next_size, next_relative, next_future.result())
+                        next_path, next_size, next_relative, next_created, next_modified, next_future = pending.popleft()
+                        write_processed_row(
+                            next_path,
+                            next_size,
+                            next_relative,
+                            next_created,
+                            next_modified,
+                            next_future.result(),
+                        )
 
                 while pending:
-                    next_path, next_size, next_relative, next_future = pending.popleft()
-                    write_processed_row(next_path, next_size, next_relative, next_future.result())
+                    next_path, next_size, next_relative, next_created, next_modified, next_future = pending.popleft()
+                    write_processed_row(
+                        next_path,
+                        next_size,
+                        next_relative,
+                        next_created,
+                        next_modified,
+                        next_future.result(),
+                    )
         else:
-            for file_path, size, relative in iter_scan_files(
+            for file_path, size, relative, date_created, date_modified in iter_scan_files(
                 source_dir,
                 include_hidden,
                 include_system,
@@ -996,7 +1050,7 @@ def write_csv_report(
             ):
                 if cancel_event is not None and cancel_event.is_set():
                     raise ScanCanceled()
-                write_processed_row(file_path, size, relative, "")
+                write_processed_row(file_path, size, relative, date_created, date_modified, "")
     finally:
         csv_writer.close()
 
